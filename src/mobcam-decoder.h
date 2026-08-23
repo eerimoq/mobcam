@@ -46,6 +46,14 @@ struct mobcam_decoder *mobcam_decoder_create(void);
 void mobcam_decoder_destroy(struct mobcam_decoder *decoder);
 
 /*
+ * Chooses whether video is decoded on the GPU. Hardware decoding is a request
+ * rather than a demand: a machine with nothing that decodes the codec falls
+ * back to software instead of failing. Takes effect the next time the video
+ * decoder is opened, so it must be set while nothing is decoding.
+ */
+void mobcam_decoder_set_hardware(struct mobcam_decoder *decoder, bool hardware);
+
+/*
  * Opens, or reopens, a decoder for a config message. Reopening is skipped when
  * the codec and the configuration record are unchanged, so calling these for
  * every config message is free.

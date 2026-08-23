@@ -25,6 +25,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <libavcodec/avcodec.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/pixdesc.h>
 #include <libavutil/samplefmt.h>
 
@@ -41,16 +42,32 @@ struct mobcam_stream {
 	uint8_t codec;
 	uint8_t *record;
 	size_t record_size;
+	/* What the caller asked for, which is not always what was opened. */
+	bool hardware;
+
+	/*
+	 * Set while a hardware device is attached. Frames then land in hw_frame
+	 * in hw_format and are copied down into frame, which is the only place
+	 * OBS can read them from.
+	 */
+	AVBufferRef *hw_device;
+	AVFrame *hw_frame;
+	enum AVHWDeviceType hw_type;
+	enum AVPixelFormat hw_format;
 };
 
 struct mobcam_decoder {
 	struct mobcam_stream video;
 	struct mobcam_stream audio;
 
+	/* Decode video on the GPU when the machine has something that can. */
+	bool hardware;
+
 	/* Video is held back until the first keyframe after every open. */
 	bool got_keyframe;
 	/* Unsupported formats are logged once instead of once per frame. */
 	int logged_pixel_format;
+	bool logged_transfer_failure;
 	int logged_sample_format;
 	int logged_channels;
 };
@@ -65,7 +82,11 @@ static bool stream_init(struct mobcam_stream *stream)
 
 static void stream_close(struct mobcam_stream *stream)
 {
+	/* Drops the reference the context holds on the hardware device. */
 	avcodec_free_context(&stream->context);
+	av_buffer_unref(&stream->hw_device);
+	stream->hw_type = AV_HWDEVICE_TYPE_NONE;
+	stream->hw_format = AV_PIX_FMT_NONE;
 	bfree(stream->record);
 	stream->record = NULL;
 	stream->record_size = 0;
@@ -76,14 +97,106 @@ static void stream_free(struct mobcam_stream *stream)
 	stream_close(stream);
 	av_packet_free(&stream->packet);
 	av_frame_free(&stream->frame);
+	av_frame_free(&stream->hw_frame);
 }
 
 /* True when the stream is already decoding exactly this configuration. */
-static bool stream_configured(const struct mobcam_stream *stream, uint8_t codec, const uint8_t *record,
+static bool stream_configured(const struct mobcam_stream *stream, uint8_t codec, bool hardware, const uint8_t *record,
 			      size_t record_size)
 {
-	return stream->context != NULL && stream->codec == codec && stream->record_size == record_size &&
-	       memcmp(stream->record, record, record_size) == 0;
+	return stream->context != NULL && stream->codec == codec && stream->hardware == hardware &&
+	       stream->record_size == record_size && memcmp(stream->record, record, record_size) == 0;
+}
+
+/*
+ * Hardware decoders to try, in the order they are preferred. Every machine has
+ * only one or two of these, and creating a device for the rest simply fails,
+ * which is what picks the right one here.
+ */
+static const enum AVHWDeviceType hardware_types[] = {
+	AV_HWDEVICE_TYPE_VIDEOTOOLBOX, AV_HWDEVICE_TYPE_D3D11VA, AV_HWDEVICE_TYPE_CUDA,  AV_HWDEVICE_TYPE_VAAPI,
+	AV_HWDEVICE_TYPE_QSV,          AV_HWDEVICE_TYPE_DXVA2,   AV_HWDEVICE_TYPE_VDPAU,
+};
+
+/*
+ * The pixel format frames from this codec arrive in on one kind of device, or
+ * AV_PIX_FMT_NONE when the codec cannot be decoded on it at all.
+ */
+static enum AVPixelFormat hardware_pixel_format(const AVCodec *codec, enum AVHWDeviceType type)
+{
+	for (int i = 0;; i++) {
+		const AVCodecHWConfig *config = avcodec_get_hw_config(codec, i);
+
+		if (config == NULL) {
+			return AV_PIX_FMT_NONE;
+		}
+
+		if ((config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) != 0 && config->device_type == type) {
+			return config->pix_fmt;
+		}
+	}
+}
+
+/*
+ * Attaches the first hardware device this codec decodes on. Attaching none is a
+ * normal outcome and leaves the context decoding in software, so there is
+ * nothing for the caller to handle.
+ */
+static void stream_attach_hardware(struct mobcam_stream *stream, const AVCodec *codec)
+{
+	for (size_t i = 0; i < sizeof(hardware_types) / sizeof(hardware_types[0]); i++) {
+		enum AVPixelFormat format = hardware_pixel_format(codec, hardware_types[i]);
+
+		if (format == AV_PIX_FMT_NONE) {
+			continue;
+		}
+
+		AVBufferRef *device = NULL;
+
+		if (av_hwdevice_ctx_create(&device, hardware_types[i], NULL, NULL, 0) < 0) {
+			continue;
+		}
+
+		if (stream->hw_frame == NULL) {
+			stream->hw_frame = av_frame_alloc();
+		}
+
+		if (stream->hw_frame == NULL) {
+			av_buffer_unref(&device);
+			return;
+		}
+
+		stream->context->hw_device_ctx = av_buffer_ref(device);
+		stream->hw_device = device;
+		stream->hw_type = hardware_types[i];
+		stream->hw_format = format;
+
+		return;
+	}
+}
+
+/*
+ * Brings a decoded frame down into system memory, since that is the only place
+ * OBS can take it from. A frame that is already there is passed through, which
+ * covers a hardware decoder falling back to software mid-stream.
+ */
+static AVFrame *stream_download(struct mobcam_stream *stream, AVFrame *frame)
+{
+	if (stream->hw_device == NULL || frame->format != stream->hw_format) {
+		return frame;
+	}
+
+	av_frame_unref(stream->frame);
+
+	if (av_hwframe_transfer_data(stream->frame, frame, 0) < 0) {
+		return NULL;
+	}
+
+	if (av_frame_copy_props(stream->frame, frame) < 0) {
+		return NULL;
+	}
+
+	return stream->frame;
 }
 
 /*
@@ -115,8 +228,8 @@ static bool stream_begin(struct mobcam_stream *stream, const AVCodec *codec, con
 	return true;
 }
 
-static bool stream_open(struct mobcam_stream *stream, const AVCodec *codec, uint8_t wire_codec, const uint8_t *record,
-			size_t record_size)
+static bool stream_open(struct mobcam_stream *stream, const AVCodec *codec, uint8_t wire_codec, bool hardware,
+			const uint8_t *record, size_t record_size)
 {
 	if (avcodec_open2(stream->context, codec, NULL) < 0) {
 		stream_close(stream);
@@ -124,6 +237,7 @@ static bool stream_open(struct mobcam_stream *stream, const AVCodec *codec, uint
 	}
 
 	stream->codec = wire_codec;
+	stream->hardware = hardware;
 	stream->record = bmemdup(record, record_size);
 	stream->record_size = record_size;
 
@@ -163,6 +277,8 @@ struct mobcam_decoder *mobcam_decoder_create(void)
 	decoder->logged_pixel_format = AV_PIX_FMT_NONE;
 	decoder->logged_sample_format = AV_SAMPLE_FMT_NONE;
 	decoder->logged_channels = -1;
+	decoder->video.hw_format = AV_PIX_FMT_NONE;
+	decoder->audio.hw_format = AV_PIX_FMT_NONE;
 
 	if (!stream_init(&decoder->video) || !stream_init(&decoder->audio)) {
 		mobcam_decoder_destroy(decoder);
@@ -181,6 +297,15 @@ void mobcam_decoder_destroy(struct mobcam_decoder *decoder)
 	stream_free(&decoder->video);
 	stream_free(&decoder->audio);
 	bfree(decoder);
+}
+
+void mobcam_decoder_set_hardware(struct mobcam_decoder *decoder, bool hardware)
+{
+	if (decoder == NULL) {
+		return;
+	}
+
+	decoder->hardware = hardware;
 }
 
 void mobcam_decoder_reset(struct mobcam_decoder *decoder)
@@ -213,7 +338,7 @@ bool mobcam_decoder_configure_video(struct mobcam_decoder *decoder, const struct
 		return false;
 	}
 
-	if (stream_configured(stream, config->codec, config->record, config->record_size)) {
+	if (stream_configured(stream, config->codec, decoder->hardware, config->record, config->record_size)) {
 		return true;
 	}
 
@@ -242,14 +367,20 @@ bool mobcam_decoder_configure_video(struct mobcam_decoder *decoder, const struct
 	/* Frame threading would add a frame of latency to a live camera. */
 	stream->context->thread_type = FF_THREAD_SLICE;
 
-	if (!stream_open(stream, codec, config->codec, config->record, config->record_size)) {
+	if (decoder->hardware) {
+		stream_attach_hardware(stream, codec);
+	}
+
+	if (!stream_open(stream, codec, config->codec, decoder->hardware, config->record, config->record_size)) {
 		obs_log(LOG_ERROR, "failed to open the %s decoder", mobcam_video_codec_name(config->codec));
 		return false;
 	}
 
 	decoder->logged_pixel_format = AV_PIX_FMT_NONE;
+	decoder->logged_transfer_failure = false;
 
-	obs_log(LOG_INFO, "decoding %s %ux%u", mobcam_video_codec_name(config->codec), config->width, config->height);
+	obs_log(LOG_INFO, "decoding %s %ux%u in %s", mobcam_video_codec_name(config->codec), config->width,
+		config->height, stream->hw_device != NULL ? av_hwdevice_get_type_name(stream->hw_type) : "software");
 
 	return true;
 }
@@ -268,7 +399,7 @@ bool mobcam_decoder_configure_audio(struct mobcam_decoder *decoder, const struct
 		return false;
 	}
 
-	if (stream_configured(stream, config->codec, config->record, config->record_size)) {
+	if (stream_configured(stream, config->codec, false, config->record, config->record_size)) {
 		return true;
 	}
 
@@ -293,7 +424,7 @@ bool mobcam_decoder_configure_audio(struct mobcam_decoder *decoder, const struct
 	stream->context->sample_rate = (int)config->sample_rate;
 	av_channel_layout_default(&stream->context->ch_layout, config->channels);
 
-	if (!stream_open(stream, codec, config->codec, config->record, config->record_size)) {
+	if (!stream_open(stream, codec, config->codec, false, config->record, config->record_size)) {
 		obs_log(LOG_ERROR, "failed to open the %s decoder", mobcam_audio_codec_name(config->codec));
 		return false;
 	}
@@ -499,8 +630,10 @@ bool mobcam_decoder_decode_video(struct mobcam_decoder *decoder, const struct mo
 		return true;
 	}
 
+	AVFrame *received = stream->hw_device != NULL ? stream->hw_frame : stream->frame;
+
 	for (;;) {
-		int result = avcodec_receive_frame(stream->context, stream->frame);
+		int result = avcodec_receive_frame(stream->context, received);
 
 		if (result == AVERROR(EAGAIN) || result == AVERROR_EOF) {
 			break;
@@ -510,12 +643,19 @@ bool mobcam_decoder_decode_video(struct mobcam_decoder *decoder, const struct mo
 			return false;
 		}
 
+		AVFrame *decoded = stream_download(stream, received);
 		struct obs_source_frame frame;
 
-		if (frame_to_obs(decoder, stream->frame, &frame)) {
-			callback(param, &frame, (uint64_t)stream->frame->pts);
+		if (decoded == NULL) {
+			if (!decoder->logged_transfer_failure) {
+				decoder->logged_transfer_failure = true;
+				obs_log(LOG_WARNING, "failed to read a frame back from the hardware decoder");
+			}
+		} else if (frame_to_obs(decoder, decoded, &frame)) {
+			callback(param, &frame, (uint64_t)decoded->pts);
 		}
 
+		av_frame_unref(received);
 		av_frame_unref(stream->frame);
 	}
 

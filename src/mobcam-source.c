@@ -33,6 +33,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #define SETTING_DEVICE "device"
 #define SETTING_PORT "port"
+#define SETTING_HARDWARE_DECODE "hardware_decode"
 #define SETTING_BUFFERING "buffering"
 #define SETTING_CLEAR_ON_DISCONNECT "clear_on_disconnect"
 #define SETTING_DISCONNECT_WHEN_HIDDEN "disconnect_when_hidden"
@@ -60,6 +61,7 @@ struct mobcam_source {
 	/* Latched settings. Only touched while the worker thread is stopped. */
 	char *serial;
 	uint16_t port;
+	bool hardware_decode;
 	bool disconnect_when_hidden;
 
 	/* Read by the worker thread while the OBS thread writes it. */
@@ -443,19 +445,28 @@ static void mobcam_source_update(void *data, obs_data_t *settings)
 	struct mobcam_source *context = data;
 	const char *serial = obs_data_get_string(settings, SETTING_DEVICE);
 	uint16_t port = (uint16_t)obs_data_get_int(settings, SETTING_PORT);
+	bool hardware_decode = obs_data_get_bool(settings, SETTING_HARDWARE_DECODE);
 	bool buffering = obs_data_get_bool(settings, SETTING_BUFFERING);
 	bool disconnect_when_hidden = obs_data_get_bool(settings, SETTING_DISCONNECT_WHEN_HIDDEN);
 
 	os_atomic_set_bool(&context->clear_on_disconnect, obs_data_get_bool(settings, SETTING_CLEAR_ON_DISCONNECT));
 	obs_source_set_async_unbuffered(context->source, !buffering);
 
-	bool restart = (port != context->port) || (strcmp(serial, context->serial == NULL ? "" : context->serial) != 0);
+	bool restart = (port != context->port) || (hardware_decode != context->hardware_decode) ||
+		       (strcmp(serial, context->serial == NULL ? "" : context->serial) != 0);
 
 	if (restart) {
+		/*
+		 * The decoder is only safe to retune while the receive thread
+		 * is stopped, and the reconnect is what brings the config
+		 * message that opens it again.
+		 */
 		source_stop(context);
 		bfree(context->serial);
 		context->serial = bstrdup(serial);
 		context->port = port;
+		context->hardware_decode = hardware_decode;
+		mobcam_decoder_set_hardware(context->decoder, hardware_decode);
 	}
 
 	context->disconnect_when_hidden = disconnect_when_hidden;
@@ -535,6 +546,7 @@ static void mobcam_source_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_string(settings, SETTING_DEVICE, "");
 	obs_data_set_default_int(settings, SETTING_PORT, DEFAULT_PORT);
+	obs_data_set_default_bool(settings, SETTING_HARDWARE_DECODE, false);
 	obs_data_set_default_bool(settings, SETTING_BUFFERING, false);
 	obs_data_set_default_bool(settings, SETTING_CLEAR_ON_DISCONNECT, true);
 	obs_data_set_default_bool(settings, SETTING_DISCONNECT_WHEN_HIDDEN, false);
@@ -607,6 +619,7 @@ static obs_properties_t *mobcam_source_properties(void *data)
 
 	obs_properties_add_button2(props, "refresh", obs_module_text("RefreshDevices"), refresh_devices_clicked, NULL);
 	obs_properties_add_int(props, SETTING_PORT, obs_module_text("Port"), 1, 65535, 1);
+	obs_properties_add_bool(props, SETTING_HARDWARE_DECODE, obs_module_text("HardwareDecode"));
 	obs_properties_add_bool(props, SETTING_BUFFERING, obs_module_text("Buffering"));
 	obs_properties_add_bool(props, SETTING_CLEAR_ON_DISCONNECT, obs_module_text("ClearOnDisconnect"));
 	obs_properties_add_bool(props, SETTING_DISCONNECT_WHEN_HIDDEN, obs_module_text("DisconnectWhenHidden"));
