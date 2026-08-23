@@ -2,9 +2,6 @@
 
 pub mod sys;
 
-#[cfg(test)]
-mod stubs;
-
 pub mod data;
 mod log;
 pub mod media;
