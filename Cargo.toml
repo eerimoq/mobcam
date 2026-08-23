@@ -23,3 +23,7 @@ serde_json = "1"
 # would take OBS down with it. Every entry point catches instead, which needs
 # unwinding left on.
 panic = "unwind"
+
+[dependencies]
+# usbmuxd speaks XML property lists; the crate reads and writes them.
+plist = { version = "1.8.0", default-features = false }

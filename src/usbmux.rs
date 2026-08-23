@@ -5,7 +5,8 @@
 //! property list. Once a Connect request succeeds the same socket becomes the
 //! data tunnel, which is why the stream is handed back to the caller.
 
-use crate::plist::{self, Value, Writer};
+use plist::{Dictionary, Value};
+
 use crate::socket::{self, Abort, Io, Stream};
 
 const HEADER_SIZE: usize = 16;
@@ -13,6 +14,11 @@ const VERSION_PLIST: u32 = 1;
 const TYPE_PLIST: u32 = 8;
 /// usbmuxd replies are small; anything larger means the stream is out of sync.
 const MAX_REPLY_SIZE: u32 = 4 * 1024 * 1024;
+/// How many dictionaries and arrays one reply may open. usbmuxd opens two per
+/// device and one for the list around them; the limit is here because a value
+/// is dropped recursively, so a deeply nested reply would otherwise run the
+/// thread out of stack once the parser had happily built it.
+const MAX_COLLECTIONS: usize = 1024;
 const CLIENT_NAME: &str = "obs-mobcam";
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -60,8 +66,10 @@ impl Session {
     }
 
     /// Sends a request body and returns the reply it was answered with.
-    fn request(&mut self, body: &str, abort: &dyn Abort) -> Result<Value, Error> {
+    fn request(&mut self, body: Dictionary, abort: &dyn Abort) -> Result<Value, Error> {
         self.tag += 1;
+
+        let body = encode(body)?;
 
         let total = HEADER_SIZE
             .checked_add(body.len())
@@ -75,7 +83,7 @@ impl Session {
         header[8..12].copy_from_slice(&TYPE_PLIST.to_le_bytes());
         header[12..16].copy_from_slice(&self.tag.to_le_bytes());
 
-        if !socket::write_all(&mut self.stream, &header) || !socket::write_all(&mut self.stream, body.as_bytes()) {
+        if !socket::write_all(&mut self.stream, &header) || !socket::write_all(&mut self.stream, &body) {
             return Err(Error::Failed);
         }
 
@@ -91,7 +99,7 @@ impl Session {
 
         socket::read_exact(&mut self.stream, &mut payload, abort).map_err(Self::io_error)?;
 
-        plist::parse(&payload).ok_or(Error::Failed)
+        decode(&payload)
     }
 
     fn io_error(error: Io) -> Error {
@@ -102,14 +110,52 @@ impl Session {
     }
 }
 
-/// Starts a request body with the keys usbmuxd expects from every client.
-fn request_begin(message_type: &str) -> Writer {
-    let mut body = Writer::new();
+/// Writes a request body out as the XML property list usbmuxd reads.
+fn encode(body: Dictionary) -> Result<Vec<u8>, Error> {
+    let mut xml = Vec::new();
 
-    body.string("ClientVersionString", CLIENT_NAME);
-    body.string("ProgName", CLIENT_NAME);
-    body.integer("kLibUSBMuxVersion", 3);
-    body.string("MessageType", message_type);
+    Value::Dictionary(body)
+        .to_writer_xml(&mut xml)
+        .map_err(|_| Error::Failed)?;
+
+    Ok(xml)
+}
+
+/// Reads a reply, refusing one that nests deeper than it has any reason to.
+fn decode(payload: &[u8]) -> Result<Value, Error> {
+    if collections(payload) > MAX_COLLECTIONS {
+        return Err(Error::Failed);
+    }
+
+    Value::from_reader_xml(payload).map_err(|_| Error::Failed)
+}
+
+/// Counts the dictionaries and arrays a reply opens. Nothing in it can nest
+/// deeper than that, so the count bounds the depth without parsing anything.
+fn collections(payload: &[u8]) -> usize {
+    (0..payload.len())
+        .filter(|index| {
+            let rest = &payload[*index..];
+
+            rest.starts_with(b"<dict") || rest.starts_with(b"<array")
+        })
+        .count()
+}
+
+/// Looks one key up in a reply. Anything that is not a dictionary has no keys,
+/// which keeps callers from having to check the kind first.
+fn get<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
+    value.as_dictionary()?.get(key)
+}
+
+/// Starts a request body with the keys usbmuxd expects from every client.
+fn request_begin(message_type: &str) -> Dictionary {
+    let mut body = Dictionary::new();
+
+    body.insert("ClientVersionString".into(), CLIENT_NAME.into());
+    body.insert("ProgName".into(), CLIENT_NAME.into());
+    body.insert("kLibUSBMuxVersion".into(), 3.into());
+    body.insert("MessageType".into(), message_type.into());
 
     body
 }
@@ -119,18 +165,17 @@ fn request_begin(message_type: &str) -> Writer {
 /// Wi-Fi paired devices show up in it too and cannot carry this stream, so only
 /// the ones attached over USB are kept.
 fn devices_from_reply(reply: &Value) -> Vec<Device> {
-    let Some(list) = reply.get("DeviceList") else {
+    let Some(list) = get(reply, "DeviceList").and_then(Value::as_array) else {
         return Vec::new();
     };
 
-    list.array()
-        .iter()
+    list.iter()
         .filter_map(|device| {
-            let properties = device.get("Properties")?;
-            let serial = properties.get_string("SerialNumber")?;
-            let device_id = device.get_integer("DeviceID")?;
+            let properties = get(device, "Properties")?;
+            let serial = get(properties, "SerialNumber")?.as_string()?;
+            let device_id = get(device, "DeviceID")?.as_signed_integer()?;
 
-            match properties.get_string("ConnectionType") {
+            match get(properties, "ConnectionType").and_then(Value::as_string) {
                 Some(connection) if connection != "USB" => return None,
                 _ => {}
             }
@@ -146,7 +191,7 @@ fn devices_from_reply(reply: &Value) -> Vec<Device> {
 /// Lists the devices attached over USB.
 pub fn list_devices(abort: &dyn Abort) -> Result<Vec<Device>, Error> {
     let mut session = Session::open()?;
-    let reply = session.request(&request_begin("ListDevices").finish(), abort)?;
+    let reply = session.request(request_begin("ListDevices"), abort)?;
     let devices = devices_from_reply(&reply);
 
     if devices.is_empty() {
@@ -171,16 +216,16 @@ pub fn connect(serial: &str, port: u16, abort: &dyn Abort) -> Result<(Stream, St
     let mut session = Session::open()?;
     let mut body = request_begin("Connect");
 
-    body.integer("DeviceID", i64::from(chosen.device_id));
+    body.insert("DeviceID".into(), chosen.device_id.into());
     // usbmuxd wants the port in network byte order, as an integer.
-    body.integer("PortNumber", i64::from(port.to_be()));
+    body.insert("PortNumber".into(), port.to_be().into());
 
-    let reply = session.request(&body.finish(), abort)?;
+    let reply = session.request(body, abort)?;
 
     // Number 3 is a refused connection, which is what a device that is not
     // streaming replies. Everything else is a real failure, but neither is
     // worth a distinct message here.
-    if reply.get_integer("Number") != Some(0) {
+    if get(&reply, "Number").and_then(Value::as_signed_integer) != Some(0) {
         return Err(Error::Refused);
     }
 
@@ -191,7 +236,8 @@ pub fn connect(serial: &str, port: u16, abort: &dyn Abort) -> Result<(Stream, St
 mod tests {
     use super::*;
 
-    const LIST: &str = r#"<plist version="1.0"><dict>
+    const LIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+    <plist version="1.0"><dict>
       <key>DeviceList</key>
       <array>
         <dict>
@@ -213,10 +259,25 @@ mod tests {
       </array>
     </dict></plist>"#;
 
+    fn parse(xml: &str) -> Value {
+        decode(xml.as_bytes()).expect("parses")
+    }
+
+    /// Wraps `depth` nested arrays in a plist, the shape a reply takes when it
+    /// is out to overflow a stack rather than to list devices.
+    fn nested(depth: usize) -> String {
+        let mut xml = String::from(r#"<plist version="1.0">"#);
+
+        xml.push_str(&"<array>".repeat(depth));
+        xml.push_str(&"</array>".repeat(depth));
+        xml.push_str("</plist>");
+
+        xml
+    }
+
     #[test]
     fn keeps_usb_devices_and_drops_wifi_paired_ones() {
-        let reply = plist::parse(LIST.as_bytes()).expect("parses");
-        let devices = devices_from_reply(&reply);
+        let devices = devices_from_reply(&parse(LIST));
 
         assert_eq!(
             devices,
@@ -229,7 +290,7 @@ mod tests {
 
     #[test]
     fn a_reply_without_a_device_list_yields_nothing() {
-        let reply = plist::parse(b"<plist version=\"1.0\"><dict></dict></plist>").expect("parses");
+        let reply = parse(r#"<plist version="1.0"><dict></dict></plist>"#);
 
         assert!(devices_from_reply(&reply).is_empty());
     }
@@ -238,25 +299,34 @@ mod tests {
     /// taken with a zero id or an empty serial.
     #[test]
     fn incomplete_devices_are_skipped() {
-        let xml = r#"<plist version="1.0"><dict><key>DeviceList</key><array>
+        let reply = parse(
+            r#"<plist version="1.0"><dict><key>DeviceList</key><array>
           <dict><key>DeviceID</key><integer>1</integer></dict>
           <dict><key>Properties</key><dict><key>SerialNumber</key><string>x</string></dict></dict>
-        </array></dict></plist>"#;
-
-        let reply = plist::parse(xml.as_bytes()).expect("parses");
+        </array></dict></plist>"#,
+        );
 
         assert!(devices_from_reply(&reply).is_empty());
     }
 
     #[test]
     fn every_request_carries_the_keys_usbmuxd_expects() {
-        let body = request_begin("ListDevices").finish();
-        let parsed = plist::parse(body.as_bytes()).expect("parses");
+        let body = encode(request_begin("ListDevices")).expect("a request is written");
+        let parsed = Value::from_reader_xml(body.as_slice()).expect("its own output parses");
 
-        assert_eq!(parsed.get_string("ClientVersionString"), Some(CLIENT_NAME));
-        assert_eq!(parsed.get_string("ProgName"), Some(CLIENT_NAME));
-        assert_eq!(parsed.get_integer("kLibUSBMuxVersion"), Some(3));
-        assert_eq!(parsed.get_string("MessageType"), Some("ListDevices"));
+        assert_eq!(
+            get(&parsed, "ClientVersionString").and_then(Value::as_string),
+            Some(CLIENT_NAME)
+        );
+        assert_eq!(get(&parsed, "ProgName").and_then(Value::as_string), Some(CLIENT_NAME));
+        assert_eq!(
+            get(&parsed, "kLibUSBMuxVersion").and_then(Value::as_signed_integer),
+            Some(3)
+        );
+        assert_eq!(
+            get(&parsed, "MessageType").and_then(Value::as_string),
+            Some("ListDevices")
+        );
     }
 
     /// usbmuxd reads the port as a byte swapped integer, so 7790 has to go out
@@ -265,10 +335,38 @@ mod tests {
     fn the_port_is_sent_in_network_byte_order() {
         let mut body = request_begin("Connect");
 
-        body.integer("PortNumber", i64::from(7790u16.to_be()));
+        body.insert("PortNumber".into(), 7790u16.to_be().into());
 
-        let parsed = plist::parse(body.finish().as_bytes()).expect("parses");
+        let parsed = Value::from_reader_xml(encode(body).expect("a request is written").as_slice()).expect("parses");
 
-        assert_eq!(parsed.get_integer("PortNumber"), Some(0x6E1E));
+        assert_eq!(
+            get(&parsed, "PortNumber").and_then(Value::as_signed_integer),
+            Some(0x6E1E)
+        );
+    }
+
+    /// The daemon is local but its replies are still input.
+    #[test]
+    fn a_malformed_reply_is_rejected() {
+        assert_eq!(decode(b""), Err(Error::Failed));
+        assert_eq!(decode(br#"<plist version="1.0"><dict>"#), Err(Error::Failed));
+        assert_eq!(
+            decode(br#"<plist version="1.0"><dict><key>a</key>"#),
+            Err(Error::Failed)
+        );
+    }
+
+    /// A value is dropped recursively, so one nested past the limit has to be
+    /// turned away before it is built. The reply at the limit is parsed here
+    /// too, to show that what is allowed through is what a thread can carry.
+    #[test]
+    fn a_reply_nested_past_the_limit_is_rejected() {
+        assert!(decode(nested(MAX_COLLECTIONS).as_bytes()).is_ok());
+        assert_eq!(decode(nested(MAX_COLLECTIONS + 1).as_bytes()), Err(Error::Failed));
+    }
+
+    #[test]
+    fn a_device_list_is_nowhere_near_the_limit() {
+        assert!(collections(LIST.as_bytes()) < MAX_COLLECTIONS);
     }
 }

@@ -8,7 +8,6 @@ pub mod decoder;
 pub mod ffmpeg;
 pub mod obs;
 pub mod panic;
-pub mod plist;
 pub mod protocol;
 pub mod socket;
 pub mod source;
