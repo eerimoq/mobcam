@@ -1,15 +1,15 @@
-# OBS Plugin Template
+# OBS MobCam Plugin
 
 ## Build
 
 1. `cmake --preset macos`
-2. `open build_macos/plugintemplate-for-obs.xcodeproj`
+2. `open build_macos/mobcam.xcodeproj`
 3. Build release mode in Xcode.
 4. `cmake --install build_macos --prefix foo`
 
 ## Introduction
 
-The plugin template is meant to be used as a starting point for OBS Studio plugin development. It includes:
+MobCam is an OBS Studio plugin. The project is based on the OBS plugin template, and includes:
 
 * Boilerplate plugin source code
 * A CMake project file
