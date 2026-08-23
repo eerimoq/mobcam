@@ -4,7 +4,7 @@
 //! dropped and reported rather than converted, which is what keeps the latency
 //! down and libswscale out of the plugin.
 
-use crate::ffmpeg::sys as av;
+use crate::ffmpeg::{self, sys as av};
 
 use super::sys;
 
@@ -32,11 +32,11 @@ pub fn video_format(format: av::AVPixelFormat) -> Option<(sys::video_format, boo
     Some((format, false))
 }
 
-pub fn colorspace(frame: &av::AVFrame) -> sys::video_colorspace {
-    match frame.colorspace {
+pub fn colorspace(frame: &ffmpeg::Frame) -> sys::video_colorspace {
+    match frame.colorspace() {
         av::AVCOL_SPC_BT470BG | av::AVCOL_SPC_SMPTE170M => sys::VIDEO_CS_601,
         av::AVCOL_SPC_BT2020_NCL => {
-            if frame.color_trc == av::AVCOL_TRC_ARIB_STD_B67 {
+            if frame.color_trc() == av::AVCOL_TRC_ARIB_STD_B67 {
                 sys::VIDEO_CS_2100_HLG
             } else {
                 sys::VIDEO_CS_2100_PQ
@@ -46,8 +46,8 @@ pub fn colorspace(frame: &av::AVFrame) -> sys::video_colorspace {
     }
 }
 
-pub fn transfer(frame: &av::AVFrame) -> u8 {
-    let trc = match frame.color_trc {
+pub fn transfer(frame: &ffmpeg::Frame) -> u8 {
+    let trc = match frame.color_trc() {
         av::AVCOL_TRC_SMPTE2084 => sys::VIDEO_TRC_PQ,
         av::AVCOL_TRC_ARIB_STD_B67 => sys::VIDEO_TRC_HLG,
         _ => sys::VIDEO_TRC_DEFAULT,

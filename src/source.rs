@@ -78,7 +78,7 @@ impl Clock {
         if !self.anchored || distance > PTS_DISCONTINUITY_US {
             self.anchored = true;
             self.first_pts_us = pts_us;
-            self.anchor_ns = now_ns();
+            self.anchor_ns = obs::now_ns();
         } else if pts_us < self.first_pts_us {
             // The stream that anchored the timeline had started a little later
             // than the other one. Move the origin back rather than anchor
@@ -93,17 +93,10 @@ impl Clock {
     }
 }
 
-/// OBS compares frame timestamps against its own clock, so they have to be
-/// taken from it rather than from a Rust Instant.
-fn now_ns() -> u64 {
-    // SAFETY: no arguments and no failure mode.
-    unsafe { sys::os_gettime_ns() }
-}
-
 /// What the worker thread and the OBS thread share while the thread runs.
 /// Everything else is latched and only touched with the thread stopped.
 struct Shared {
-    source: SourcePointer,
+    source: obs::Source,
     stopping: AtomicBool,
     clear_on_disconnect: AtomicBool,
     width: AtomicU32,
@@ -112,24 +105,13 @@ struct Shared {
     wakeup: (Mutex<bool>, Condvar),
 }
 
-/// The `obs_source_t` the worker outputs to. OBS keeps it alive for as long as
-/// the source exists, which outlives the thread.
-struct SourcePointer(*mut sys::obs_source_t);
-
-// SAFETY: obs_source_output_video and obs_source_output_audio are the only
-// things the worker does with it, and both are documented to be callable from
-// any thread.
-unsafe impl Send for SourcePointer {}
-unsafe impl Sync for SourcePointer {}
-
 impl Shared {
     fn clear_video(&self) {
         if !self.clear_on_disconnect.load(Ordering::Relaxed) {
             return;
         }
 
-        // SAFETY: the source outlives the worker; a null frame clears it.
-        unsafe { sys::obs_source_output_video(self.source.0, std::ptr::null()) };
+        self.source.clear_video();
 
         self.width.store(0, Ordering::Relaxed);
         self.height.store(0, Ordering::Relaxed);
@@ -155,16 +137,13 @@ impl Sink for Output {
         self.shared.width.store(frame.width, Ordering::Relaxed);
         self.shared.height.store(frame.height, Ordering::Relaxed);
 
-        // SAFETY: the frame borrows decoder memory that is valid until this
-        // returns, and OBS copies what it keeps.
-        unsafe { sys::obs_source_output_video(self.shared.source.0, frame) };
+        self.shared.source.output_video(frame);
     }
 
     fn audio(&mut self, audio: &mut Audio, pts_us: u64) {
         audio.timestamp = self.clock.timestamp(pts_us);
 
-        // SAFETY: as above.
-        unsafe { sys::obs_source_output_audio(self.shared.source.0, audio) };
+        self.shared.source.output_audio(audio);
     }
 }
 
@@ -356,10 +335,10 @@ struct Source {
 }
 
 impl Source {
-    fn new(source: *mut sys::obs_source_t) -> Self {
+    fn new(source: obs::Source) -> Self {
         Self {
             shared: Arc::new(Shared {
-                source: SourcePointer(source),
+                source,
                 stopping: AtomicBool::new(false),
                 clear_on_disconnect: AtomicBool::new(true),
                 width: AtomicU32::new(0),
@@ -437,8 +416,7 @@ impl Source {
             .clear_on_disconnect
             .store(settings.bool(SETTING_CLEAR_ON_DISCONNECT), Ordering::Relaxed);
 
-        // SAFETY: the source is live for the duration of the callback.
-        unsafe { sys::obs_source_set_async_unbuffered(self.shared.source.0, !buffering) };
+        self.shared.source.set_async_unbuffered(!buffering);
 
         let restart = port != self.port || hardware_decode != self.hardware_decode || serial != self.serial;
 
@@ -454,8 +432,7 @@ impl Source {
 
         self.disconnect_when_hidden = disconnect_when_hidden;
 
-        // SAFETY: as above.
-        let showing = unsafe { sys::obs_source_showing(self.shared.source.0) };
+        let showing = self.shared.source.showing();
 
         if !disconnect_when_hidden || showing {
             self.start();
@@ -509,7 +486,9 @@ extern "C" fn get_name(_type_data: *mut c_void) -> *const c_char {
 
 extern "C" fn create(settings: *mut sys::obs_data_t, source: *mut sys::obs_source_t) -> *mut c_void {
     crate::panic::guard("create", std::ptr::null_mut(), || {
-        let mut context = Box::new(Source::new(source));
+        // SAFETY: OBS keeps the source alive until it calls destroy(), which
+        // is what drops the value the handle is stored in.
+        let mut context = Box::new(Source::new(unsafe { obs::Source::from_raw(source) }));
 
         // SAFETY: OBS passes live settings for the duration of the call.
         context.update(&unsafe { Data::from_raw(settings) });

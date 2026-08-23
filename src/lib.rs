@@ -24,13 +24,7 @@ pub const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[no_mangle]
 pub extern "C" fn obs_module_load() -> bool {
     panic::guard("obs_module_load", false, || {
-        let info = source::info();
-
-        // SAFETY: the description is fully initialized and OBS copies it, which
-        // is why passing a pointer to a local is sound here.
-        unsafe {
-            obs::sys::obs_register_source_s(&info, std::mem::size_of::<obs::sys::obs_source_info>());
-        }
+        obs::register(&source::info());
 
         obs_log!(Level::Info, "plugin loaded successfully (version {PLUGIN_VERSION})");
 

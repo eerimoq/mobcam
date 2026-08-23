@@ -2,17 +2,21 @@
 
 pub mod sys;
 
+mod clock;
 pub mod data;
 mod log;
 pub mod media;
 mod module;
 pub mod properties;
+mod source;
 
+pub use clock::now_ns;
 pub use data::{Data, OwnedData};
 pub use log::{log, Level};
 pub use media::{Audio, Frame};
 pub use module::{text, Module};
 pub use properties::{Properties, Property};
+pub use source::{register, Source};
 
 /// The libobs version the plugin was built against, which is what
 /// `obs_module_ver` has to report. Taken from the headers CMake resolved, so an
