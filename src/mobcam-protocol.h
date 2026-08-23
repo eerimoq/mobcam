@@ -46,6 +46,10 @@ enum mobcam_video_codec {
 	MOBCAM_VIDEO_CODEC_HEVC = 1,
 };
 
+enum mobcam_audio_codec {
+	MOBCAM_AUDIO_CODEC_AAC_LC = 0,
+};
+
 struct mobcam_device_hello {
 	uint8_t version;
 	/* Owned by the caller, freed with bfree(). */
@@ -70,6 +74,22 @@ struct mobcam_video_frame {
 	size_t size;
 };
 
+struct mobcam_audio_config {
+	uint8_t codec;
+	uint32_t sample_rate;
+	uint8_t channels;
+	/* Points into the message payload: the AudioSpecificConfig. */
+	const uint8_t *record;
+	size_t record_size;
+};
+
+struct mobcam_audio_frame {
+	uint64_t pts_us;
+	/* Points into the message payload: one raw access unit. */
+	const uint8_t *data;
+	size_t size;
+};
+
 /* Writes the hello the host must send first. The buffer holds the whole message. */
 void mobcam_pack_host_hello(uint8_t buffer[MOBCAM_HOST_HELLO_SIZE]);
 
@@ -81,4 +101,8 @@ void mobcam_device_hello_free(struct mobcam_device_hello *hello);
 bool mobcam_parse_video_config(const uint8_t *payload, size_t size, struct mobcam_video_config *config);
 bool mobcam_parse_video_frame(const uint8_t *payload, size_t size, struct mobcam_video_frame *frame);
 
+bool mobcam_parse_audio_config(const uint8_t *payload, size_t size, struct mobcam_audio_config *config);
+bool mobcam_parse_audio_frame(const uint8_t *payload, size_t size, struct mobcam_audio_frame *frame);
+
 const char *mobcam_video_codec_name(uint8_t codec);
+const char *mobcam_audio_codec_name(uint8_t codec);

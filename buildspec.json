@@ -38,7 +38,7 @@
     },
     "name": "mobcam",
     "displayName": "MobCam",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "author": "Erik Moqvist",
     "website": "https://github.com/eerimoq/obs-mobcam-plugin",
     "email": "erik.moqvist@gmail.com"

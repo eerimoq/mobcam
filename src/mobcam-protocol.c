@@ -142,6 +142,44 @@ bool mobcam_parse_video_frame(const uint8_t *payload, size_t size, struct mobcam
 	return true;
 }
 
+bool mobcam_parse_audio_config(const uint8_t *payload, size_t size, struct mobcam_audio_config *config)
+{
+	memset(config, 0, sizeof(*config));
+
+	if (size < 10) {
+		return false;
+	}
+
+	uint32_t record_size = read_u32_be(payload + 6);
+
+	if (record_size > size - 10) {
+		return false;
+	}
+
+	config->codec = payload[0];
+	config->sample_rate = read_u32_be(payload + 1);
+	config->channels = payload[5];
+	config->record = payload + 10;
+	config->record_size = record_size;
+
+	return true;
+}
+
+bool mobcam_parse_audio_frame(const uint8_t *payload, size_t size, struct mobcam_audio_frame *frame)
+{
+	memset(frame, 0, sizeof(*frame));
+
+	if (size < 8) {
+		return false;
+	}
+
+	frame->pts_us = read_u64_be(payload);
+	frame->data = payload + 8;
+	frame->size = size - 8;
+
+	return true;
+}
+
 const char *mobcam_video_codec_name(uint8_t codec)
 {
 	switch (codec) {
@@ -149,6 +187,16 @@ const char *mobcam_video_codec_name(uint8_t codec)
 		return "H.264";
 	case MOBCAM_VIDEO_CODEC_HEVC:
 		return "HEVC";
+	default:
+		return "unknown";
+	}
+}
+
+const char *mobcam_audio_codec_name(uint8_t codec)
+{
+	switch (codec) {
+	case MOBCAM_AUDIO_CODEC_AAC_LC:
+		return "AAC-LC";
 	default:
 		return "unknown";
 	}

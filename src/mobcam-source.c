@@ -42,6 +42,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 /* A timestamp this far from the previous one starts a new timeline. */
 #define PTS_DISCONTINUITY_US (5 * 1000 * 1000)
 
+/*
+ * Device timestamps run on the phone's clock, which has an unrelated origin to
+ * this one, so the first message of every connection anchors a fresh timeline
+ * that everything after it is placed on.
+ */
+struct mobcam_clock {
+	bool has_anchor;
+	uint64_t first_pts_us;
+	uint64_t previous_pts_us;
+	uint64_t anchor_ns;
+};
+
 struct mobcam_source {
 	obs_source_t *source;
 
@@ -62,10 +74,8 @@ struct mobcam_source {
 	uint8_t *buffer;
 	size_t buffer_capacity;
 
-	bool has_anchor;
-	uint64_t first_pts_us;
-	uint64_t previous_pts_us;
-	uint64_t anchor_ns;
+	/* Video and audio share the device clock, so they share this timeline. */
+	struct mobcam_clock clock;
 
 	volatile long width;
 	volatile long height;
@@ -161,29 +171,50 @@ static void source_clear_video(struct mobcam_source *context)
 	}
 }
 
+/* Places one device timestamp on this connection's timeline. */
+static uint64_t clock_timestamp(struct mobcam_clock *clock, uint64_t pts_us)
+{
+	uint64_t distance = pts_us > clock->previous_pts_us ? pts_us - clock->previous_pts_us
+							    : clock->previous_pts_us - pts_us;
+
+	if (!clock->has_anchor || distance > PTS_DISCONTINUITY_US) {
+		clock->has_anchor = true;
+		clock->first_pts_us = pts_us;
+		clock->anchor_ns = os_gettime_ns();
+	} else if (pts_us < clock->first_pts_us) {
+		/*
+		 * The stream that anchored the timeline had started a little
+		 * later than the other one. Move the origin back rather than
+		 * anchor again, so what has already gone out stays where it is.
+		 */
+		clock->anchor_ns -= (clock->first_pts_us - pts_us) * 1000;
+		clock->first_pts_us = pts_us;
+	}
+
+	clock->previous_pts_us = pts_us;
+
+	return clock->anchor_ns + (pts_us - clock->first_pts_us) * 1000;
+}
+
 static void on_decoded_frame(void *param, struct obs_source_frame *frame, uint64_t pts_us)
 {
 	struct mobcam_source *context = param;
 
-	/*
-	 * Device timestamps run on the phone's clock, which has an unrelated
-	 * origin to this one, so the first frame of every connection anchors a
-	 * fresh timeline.
-	 */
-	if (!context->has_anchor || pts_us < context->previous_pts_us ||
-	    pts_us - context->previous_pts_us > PTS_DISCONTINUITY_US) {
-		context->has_anchor = true;
-		context->first_pts_us = pts_us;
-		context->anchor_ns = os_gettime_ns();
-	}
-
-	context->previous_pts_us = pts_us;
-	frame->timestamp = context->anchor_ns + (pts_us - context->first_pts_us) * 1000;
+	frame->timestamp = clock_timestamp(&context->clock, pts_us);
 
 	os_atomic_set_long(&context->width, (long)frame->width);
 	os_atomic_set_long(&context->height, (long)frame->height);
 
 	obs_source_output_video(context->source, frame);
+}
+
+static void on_decoded_audio(void *param, struct obs_source_audio *audio, uint64_t pts_us)
+{
+	struct mobcam_source *context = param;
+
+	audio->timestamp = clock_timestamp(&context->clock, pts_us);
+
+	obs_source_output_audio(context->source, audio);
 }
 
 static uint8_t *source_buffer(struct mobcam_source *context, size_t size)
@@ -226,7 +257,7 @@ static bool handle_message(struct mobcam_source *context, uint8_t type, const ui
 			return false;
 		}
 
-		return mobcam_decoder_configure(context->decoder, &config);
+		return mobcam_decoder_configure_video(context->decoder, &config);
 	}
 	case MOBCAM_MESSAGE_VIDEO_FRAME: {
 		struct mobcam_video_frame frame;
@@ -236,10 +267,35 @@ static bool handle_message(struct mobcam_source *context, uint8_t type, const ui
 			return false;
 		}
 
-		return mobcam_decoder_decode(context->decoder, &frame, on_decoded_frame, context);
+		return mobcam_decoder_decode_video(context->decoder, &frame, on_decoded_frame, context);
+	}
+	case MOBCAM_MESSAGE_AUDIO_CONFIG: {
+		struct mobcam_audio_config config;
+
+		if (!mobcam_parse_audio_config(payload, size, &config)) {
+			obs_log(LOG_WARNING, "malformed audio config");
+			return false;
+		}
+
+		/* Audio the decoder will not take is no reason to lose the video. */
+		mobcam_decoder_configure_audio(context->decoder, &config);
+
+		return true;
+	}
+	case MOBCAM_MESSAGE_AUDIO_FRAME: {
+		struct mobcam_audio_frame frame;
+
+		if (!mobcam_parse_audio_frame(payload, size, &frame)) {
+			obs_log(LOG_WARNING, "malformed audio frame");
+			return false;
+		}
+
+		mobcam_decoder_decode_audio(context->decoder, &frame, on_decoded_audio, context);
+
+		return true;
 	}
 	default:
-		/* Audio is not handled yet, and unknown messages are skipped. */
+		/* Unknown messages are skipped. */
 		return true;
 	}
 }
@@ -256,7 +312,7 @@ static void source_stream(struct mobcam_source *context, mobcam_socket_t sock, c
 		return;
 	}
 
-	context->has_anchor = false;
+	memset(&context->clock, 0, sizeof(context->clock));
 	mobcam_decoder_reset(context->decoder);
 
 	for (;;) {
@@ -561,7 +617,7 @@ static obs_properties_t *mobcam_source_properties(void *data)
 struct obs_source_info mobcam_source_info = {
 	.id = "mobcam_source",
 	.type = OBS_SOURCE_TYPE_INPUT,
-	.output_flags = OBS_SOURCE_ASYNC_VIDEO | OBS_SOURCE_DO_NOT_DUPLICATE,
+	.output_flags = OBS_SOURCE_ASYNC_VIDEO | OBS_SOURCE_AUDIO | OBS_SOURCE_DO_NOT_DUPLICATE,
 	.icon_type = OBS_ICON_TYPE_CAMERA,
 	.get_name = mobcam_source_get_name,
 	.create = mobcam_source_create,

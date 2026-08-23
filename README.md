@@ -3,18 +3,18 @@
 Use an iPhone or iPad running [Moblin](https://github.com/eerimoq/moblin) as a low
 latency camera in OBS Studio, over the USB cable.
 
-The phone encodes video and Moblin serves it on a port inside the device. This
-plugin reaches that port over usbmux, the same channel Xcode and `iproxy` use,
-decodes the stream and hands the frames to OBS as a source. Nothing goes over
-the network, and no separate application has to run alongside OBS.
-
-Audio is not supported yet. Moblin sends it, this plugin skips it.
+The phone encodes video and audio and Moblin serves them on a port inside the
+device. This plugin reaches that port over usbmux, the same channel Xcode and
+`iproxy` use, decodes the streams and hands them to OBS as a source. Nothing
+goes over the network, and no separate application has to run alongside OBS.
 
 ## Requirements
 
 - OBS Studio 32.2 or newer.
 - Moblin, with the stream URL set to `usb://localhost:7777` (the create stream
   wizard has a USB entry under Custom that fills this in).
+- Moblin's audio codec set to AAC. It is the only one this transport carries,
+  and Moblin sends video alone when it is set to anything else.
 - macOS ships usbmuxd, so nothing extra is needed there. Windows needs the Apple
   Devices app or iTunes, which installs the Apple Mobile Device Service. Linux
   needs the `usbmuxd` package.
@@ -26,7 +26,8 @@ Audio is not supported yet. Moblin sends it, this plugin skips it.
 1. Add a **MobCam** source to a scene.
 2. Pick the phone from the Device list, or leave it on automatic to take the
    first one attached over USB.
-3. Go live in Moblin. Video appears within about a second.
+3. Go live in Moblin. Video appears within about a second, and the source shows
+   up in the Audio Mixer with the phone's audio.
 
 The plugin keeps trying to connect once a second, so it does not matter whether
 OBS or Moblin starts first, and unplugging and replugging the cable recovers on
@@ -38,9 +39,16 @@ its own.
 |---|---|
 | Device | Which phone to connect to, by serial number. Automatic takes the first one attached. |
 | Port | The port Moblin listens on, from its stream URL. 7777 unless you changed it. |
-| Buffering | Off, the default, shows each frame as it arrives, for the lowest latency. On lets OBS buffer, which is smoother over an uneven feed. |
+| Buffering | Off, the default, shows each frame as it arrives, for the lowest latency. On lets OBS buffer, which is smoother over an uneven feed and lines audio up with video exactly. |
 | Show Nothing When Disconnected | Clears the source when the stream ends, instead of leaving the last frame on screen. |
 | Disconnect When Not Visible | Drops the connection while the source is hidden. Moblin only encodes while a computer is connected, so this saves phone battery at the cost of a reconnect when the source comes back. |
+
+Video and audio carry capture timestamps from the same clock on the phone, so
+they are already in sync when they arrive. With Buffering off OBS shows each
+video frame the moment it arrives and pulls the audio along with it, which can
+let lip sync wander slightly; turn Buffering on to have OBS line the two up from
+the timestamps instead. If the phone's audio is not wanted, mute the source in
+the Audio Mixer.
 
 Moblin accepts one computer at a time: a second connection takes over from the
 first. Pointing two MobCam sources at the same phone will make them fight over
