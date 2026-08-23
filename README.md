@@ -6,7 +6,7 @@ latency camera in OBS Studio, over the USB cable.
 ## Requirements
 
 - OBS Studio 32.2 or newer.
-- Moblin, with the stream URL set to `mobcam://localhost:7777`.
+- Moblin, with the stream URL set to `mobcam://localhost:7790`.
 - Moblin's audio codec set to AAC.
 - Windows needs the Apple Devices app or iTunes, which installs the Apple Mobile 
   Device Service. Linux needs the `usbmuxd` package.

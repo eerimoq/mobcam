@@ -38,7 +38,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #define SETTING_CLEAR_ON_DISCONNECT "clear_on_disconnect"
 #define SETTING_DISCONNECT_WHEN_HIDDEN "disconnect_when_hidden"
 
-#define DEFAULT_PORT 7777
+#define DEFAULT_PORT 7790
 #define RECONNECT_DELAY_MS 1000
 /* A timestamp this far from the previous one starts a new timeline. */
 #define PTS_DISCONTINUITY_US (5 * 1000 * 1000)
