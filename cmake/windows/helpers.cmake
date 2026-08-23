@@ -56,6 +56,14 @@ function(set_target_properties_plugin target)
 
   configure_file(cmake/windows/resources/resource.rc.in "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_PROJECT_NAME}.rc")
   target_sources(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_PROJECT_NAME}.rc")
+
+  # Packaging compiles this with Inno Setup to produce the installer. Inno Setup
+  # wants backslash-separated paths, so hand it a native one.
+  file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}" INSTALLER_SOURCE_DIR)
+  configure_file(
+    cmake/windows/resources/installer-Windows.iss.in
+    "${CMAKE_CURRENT_BINARY_DIR}/installer-Windows.generated.iss"
+  )
 endfunction()
 
 # Helper function to add resources into bundle

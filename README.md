@@ -54,6 +54,20 @@ Moblin accepts one computer at a time: a second connection takes over from the
 first. Pointing two MobCam sources at the same phone will make them fight over
 it.
 
+## Install on Windows
+
+Grab one of these from the
+[releases page](https://github.com/eerimoq/obs-mobcam-plugin/releases):
+
+- `mobcam-<version>-windows-x64-Installer.exe` copies the plugin into
+  `%ProgramData%\obs-studio\plugins` for all users and adds an entry to
+  Installed apps to remove it again. It asks for administrator rights, and
+  when upgrading offers to close OBS if it still has the plugin loaded.
+- `mobcam-<version>-windows-x64.zip` holds the same files, to unpack into
+  `%ProgramData%\obs-studio\plugins` by hand.
+
+Restart OBS afterwards, then add a **MobCam** source as above.
+
 ## Build and install on macOS
 
 ```shell
