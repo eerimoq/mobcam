@@ -1,0 +1,25 @@
+[package]
+name = "mobcam-rs"
+version = "0.4.0"
+edition = "2021"
+rust-version = "1.82"
+license = "GPL-2.0-or-later"
+publish = false
+
+# The plugin's own code, linked into the OBS module that CMake builds. CMake is
+# what drives cargo here, so nothing in this file decides where the artifact
+# lands; see the mobcam-rust target in CMakeLists.txt.
+[lib]
+name = "mobcam_rs"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[build-dependencies]
+bindgen = "0.72"
+serde_json = "1"
+
+[profile.release]
+# A panic must not unwind out of an extern "C" function into OBS, but aborting
+# would take OBS down with it. Every entry point catches instead, which needs
+# unwinding left on.
+panic = "unwind"

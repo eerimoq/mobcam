@@ -22,11 +22,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "mobcam-source.h"
 #include "socket-compat.h"
 
+/* Implemented in Rust, which the plugin is being ported to. */
+void mobcam_rust_init(void);
+
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
 bool obs_module_load(void)
 {
+	mobcam_rust_init();
 	mobcam_socket_startup();
 	mobcam_source_global_init();
 	obs_register_source(&mobcam_source_info);

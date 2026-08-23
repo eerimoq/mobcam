@@ -8,6 +8,11 @@
 !/data
 !/src
 !.clang-format
+!build.rs
+!Cargo.lock
+!Cargo.toml
+!rustfmt.toml
+!rust-toolchain.toml
 !.gersemirc
 !.gitignore
 !buildspec.json
@@ -24,3 +29,6 @@
 
 # Exclude CMake build number cache
 /cmake/.CMakeBuildNumber
+
+# Exclude the cargo build directory, for anyone running cargo outside CMake
+/target

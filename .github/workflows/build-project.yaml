@@ -120,6 +120,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ccache-
 
+      - name: Set Up Rust 🦀
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ${{ github.workspace }}/build_macos/rust-target
+          key: ${{ runner.os }}-macos-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-macos-cargo-
+
       - name: Set Up Codesigning 🔑
         uses: ./.github/actions/setup-macos-codesigning
         if: fromJSON(needs.check-event.outputs.codesign)
@@ -141,6 +156,22 @@ jobs:
           config: ${{ needs.check-event.outputs.config }}
           codesign: ${{ fromJSON(needs.check-event.outputs.codesign) }}
           codesignIdent: ${{ steps.codesign.outputs.codesignIdent }}
+
+      - name: Verify Universal Binary 🔍
+        shell: zsh --no-rcs --errexit --pipefail {0}
+        run: |
+          # A cargo build only ever produces one architecture, so a slip in the
+          # Rust half would ship an arm64 only plugin that Intel users cannot
+          # load. Nothing else in the build would notice.
+          binary=release/${{ needs.check-event.outputs.config }}/mobcam.plugin/Contents/MacOS/mobcam
+          archs="$(lipo -archs ${binary})"
+          print "mobcam architectures: ${archs}"
+          for arch (arm64 x86_64) {
+            if [[ ${archs} != *${arch}* ]] {
+              print "::error::mobcam is missing the ${arch} slice"
+              exit 2
+            }
+          }
 
       - name: Package Plugin 📀
         uses: ./.github/actions/package-plugin
@@ -211,6 +242,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.os }}-ccache-x86_64-
 
+      - name: Set Up Rust 🦀
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ${{ github.workspace }}/build_x86_64/rust-target
+          key: ${{ runner.os }}-ubuntu-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-ubuntu-cargo-
+
       - name: Build Plugin 🧱
         uses: ./.github/actions/build-plugin
         with:
@@ -276,6 +322,21 @@ jobs:
 
           "pluginName=${ProductName}" >> $env:GITHUB_OUTPUT
           "pluginVersion=${ProductVersion}" >> $env:GITHUB_OUTPUT
+
+      - name: Set Up Rust 🦀
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ${{ github.workspace }}/build_x64/rust-target
+          key: ${{ runner.os }}-windows-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-windows-cargo-
 
       - name: Build Plugin 🧱
         uses: ./.github/actions/build-plugin
