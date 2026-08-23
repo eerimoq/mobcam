@@ -50,15 +50,6 @@ else()
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ${AVCODEC_LIBRARY} ${AVUTIL_LIBRARY})
 endif()
 
-if(OS_WINDOWS)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32)
-
-  # libobs bundles the pthreads implementation this plugin's threading uses.
-  if(TARGET OBS::w32-pthreads)
-    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::w32-pthreads)
-  endif()
-endif()
-
 # MobCam's own code is Rust, built by cargo into a static library that is linked
 # into the module below. Everything around it - bundling, signing and packaging -
 # is left to set_target_properties_plugin(), so the CI scripts and the installers
@@ -196,13 +187,35 @@ endif()
 
 add_dependencies(${CMAKE_PROJECT_NAME} mobcam-rust)
 
+# Every source file is Rust, so the module has nothing of its own to compile and
+# CMake has no language to pick a linker from.
+set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES LINKER_LANGUAGE C)
+
 # A static library only contributes the object files that resolve an undefined
-# symbol, which would silently drop the module entry points once they live in
-# Rust and leave a plugin that loads but registers nothing. The archive is
-# therefore pulled in whole.
+# symbol. Nothing in the module references the entry points libobs looks up, so
+# without this the archive would contribute nothing and the plugin would load
+# but register no source. The archive is therefore pulled in whole.
 if(OS_WINDOWS)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "${MOBCAM_RUST_LIB}")
   target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "/WHOLEARCHIVE:${MOBCAM_RUST_LIB}")
+
+  # Being in the archive is not the same as being exported from the DLL, which a
+  # Rust #[no_mangle] does not arrange on its own. libobs finds these by name.
+  foreach(
+    _export
+    IN
+    ITEMS
+      obs_module_load
+      obs_module_unload
+      obs_module_set_pointer
+      obs_module_ver
+      obs_module_set_locale
+      obs_module_free_locale
+      obs_module_name
+      obs_module_description
+  )
+    target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "/EXPORT:${_export}")
+  endforeach()
 elseif(OS_MACOS)
   target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "-Wl,-force_load,${MOBCAM_RUST_LIB}")
 else()
@@ -222,23 +235,5 @@ elseif(OS_WINDOWS)
     PRIVATE advapi32 bcrypt userenv ntdll dbghelp ole32 oleaut32 shell32
   )
 endif()
-
-target_sources(
-  ${CMAKE_PROJECT_NAME}
-  PRIVATE
-    src/mobcam-decoder.c
-    src/mobcam-decoder.h
-    src/mobcam-protocol.c
-    src/mobcam-protocol.h
-    src/mobcam-source.c
-    src/mobcam-source.h
-    src/plist.c
-    src/plist.h
-    src/plugin-main.c
-    src/socket-compat.c
-    src/socket-compat.h
-    src/usbmux.c
-    src/usbmux.h
-)
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

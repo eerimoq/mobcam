@@ -41,6 +41,11 @@ fn builder(include_dirs: &[String]) -> bindgen::Builder {
         // value neither header knows about must not become an invalid Rust
         // enum, so they stay plain integer constants.
         .default_enum_style(bindgen::EnumVariation::Consts)
+        // Without this every constant is prefixed with the name of the enum it
+        // came from, so AV_PIX_FMT_NV12 would have to be spelled
+        // AVPixelFormat_AV_PIX_FMT_NV12. The C names are what the FFmpeg and
+        // OBS documentation uses, so they are what the code should use too.
+        .prepend_enum_name(false)
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
 
     for dir in include_dirs {

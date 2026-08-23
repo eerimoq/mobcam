@@ -2,9 +2,20 @@
 
 pub mod sys;
 
-mod log;
+#[cfg(test)]
+mod stubs;
 
+pub mod data;
+mod log;
+pub mod media;
+mod module;
+pub mod properties;
+
+pub use data::{Data, OwnedData};
 pub use log::{log, Level};
+pub use media::{Audio, Frame};
+pub use module::{text, Module};
+pub use properties::{Properties, Property};
 
 /// The libobs version the plugin was built against, which is what
 /// `obs_module_ver` has to report. Taken from the headers CMake resolved, so an

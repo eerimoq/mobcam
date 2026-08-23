@@ -2,18 +2,6 @@ name: Check Code Formatting 🛠️
 on:
   workflow_call:
 jobs:
-  clang-format:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: clang-format check 🐉
-        id: clang-format
-        uses: ./.github/actions/run-clang-format
-        with:
-          failCondition: error
-
   gersemi:
     runs-on: ubuntu-24.04
     steps:
@@ -38,3 +26,29 @@ jobs:
           components: rustfmt, clippy
       - name: rustfmt check 🦀
         run: cargo fmt --check
+
+  clippy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set Up Environment 🔧
+        run: |
+          sudo add-apt-repository --yes ppa:obsproject/obs-studio
+          sudo apt-get --quiet update
+          sudo apt-get --quiet --yes install libclang-dev libobs-dev libavcodec-dev libavutil-dev libsimde-dev pkg-config
+      - name: Set Up Rust 🦀
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: clippy check 🦀
+        # bindgen needs the same headers the build links against. pkg-config is
+        # where the Linux half of CMakeLists.txt gets them from too.
+        run: |
+          obs="$(pkg-config --cflags-only-I libobs | sed 's/-I//g' | xargs | tr ' ' '|')"
+          ffmpeg="$(pkg-config --cflags-only-I libavcodec libavutil | sed 's/-I//g' | xargs | tr ' ' '|')"
+          export MOBCAM_OBS_INCLUDE_DIRS="${obs}"
+          export MOBCAM_FFMPEG_INCLUDE_DIRS="${ffmpeg}"
+          # The C build treated warnings as errors, so the Rust one does too.
+          cargo clippy --all-targets -- --deny warnings
