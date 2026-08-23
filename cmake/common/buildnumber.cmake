@@ -12,19 +12,22 @@ set(
 
 # Read build number from cache file or manual override
 if(NOT DEFINED PLUGIN_BUILD_NUMBER)
+  set(PLUGIN_BUILD_NUMBER "")
+
   if(EXISTS "${_BUILD_NUMBER_CACHE}")
     file(READ "${_BUILD_NUMBER_CACHE}" PLUGIN_BUILD_NUMBER)
-    math(EXPR PLUGIN_BUILD_NUMBER "${PLUGIN_BUILD_NUMBER}+1")
-  else()
-    if("$ENV{CI}")
-      if("$ENV{GITHUB_RUN_ID}")
-        set(PLUGIN_BUILD_NUMBER "$ENV{GITHUB_RUN_ID}")
-      elseif("$ENV{GITLAB_RUN_ID}")
-        set(PLUGIN_BUILD_NUMBER "$ENV{GITLAB_RUN_ID}")
-      else()
-        set(PLUGIN_BUILD_NUMBER "1")
-      endif()
-    endif()
+    string(STRIP "${PLUGIN_BUILD_NUMBER}" PLUGIN_BUILD_NUMBER)
   endif()
+
+  if(PLUGIN_BUILD_NUMBER MATCHES "^[0-9]+$")
+    math(EXPR PLUGIN_BUILD_NUMBER "${PLUGIN_BUILD_NUMBER}+1")
+  elseif("$ENV{CI}" AND "$ENV{GITHUB_RUN_ID}")
+    set(PLUGIN_BUILD_NUMBER "$ENV{GITHUB_RUN_ID}")
+  elseif("$ENV{CI}" AND "$ENV{GITLAB_RUN_ID}")
+    set(PLUGIN_BUILD_NUMBER "$ENV{GITLAB_RUN_ID}")
+  else()
+    set(PLUGIN_BUILD_NUMBER "1")
+  endif()
+
   file(WRITE "${_BUILD_NUMBER_CACHE}" "${PLUGIN_BUILD_NUMBER}")
 endif()
