@@ -237,6 +237,7 @@ fn configure_linux() -> Vec<PathBuf> {
 fn builder(include_dirs: &[PathBuf]) -> bindgen::Builder {
     let mut builder = bindgen::Builder::default()
         .clang_arg(format!("--target={}", target()))
+        .clang_arg("-Wno-implicit-function-declaration")
         .derive_default(true)
         .generate_comments(false)
         .layout_tests(false)
