@@ -2,7 +2,6 @@
 
 import argparse
 import base64
-import hashlib
 import os
 import shutil
 import subprocess
@@ -44,7 +43,6 @@ VARIANTS = {
     "macos-universal": ["tar.xz", "pkg"],
     "ubuntu-24.04-x86_64": ["tar.xz", "deb"],
 }
-CHECKSUMS = "CHECKSUMS.txt"
 
 
 def output(name, value):
@@ -172,19 +170,12 @@ def build(arguments):
 
 def release(_):
     root = Path(os.environ["GITHUB_WORKSPACE"])
-    suffixes = {suffix for suffixes in VARIANTS.values() for suffix in suffixes}
     for variant, variant_suffixes in VARIANTS.items():
         for directory in sorted(root.glob(f"*-{variant}")):
             for suffix in variant_suffixes:
                 for path in sorted(directory.glob(f"*.{suffix}")):
                     print(f"    {path.relative_to(root)}")
                     shutil.move(path, root / path.name)
-    lines = ["### Checksums"]
-    for path in sorted(root.iterdir()):
-        if any(path.name.endswith(f".{suffix}") for suffix in suffixes):
-            lines.append(f"    {path.name}: {hashlib.sha256(path.read_bytes()).hexdigest()}")
-    (root / CHECKSUMS).write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print((root / CHECKSUMS).read_text(encoding="utf-8"))
     output("pluginName", DISPLAY_NAME)
 
 
