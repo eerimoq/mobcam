@@ -1,4 +1,5 @@
 use crate::decoder::{Decoder, INPUT_PADDING, Sink};
+use crate::devices::{Device, Devices};
 use crate::obs::{self, Audio, Data, Frame, Level, Properties, sys, text};
 use crate::obs_log;
 use crate::protocol;
@@ -6,7 +7,7 @@ use crate::socket::{self, Abort, Stream};
 use crate::usbmux;
 use std::ffi::{CStr, c_char, c_void};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 const SETTING_DEVICE: &CStr = c"device";
@@ -19,32 +20,6 @@ const DEFAULT_PORT: i64 = 7790;
 const RECONNECT_DELAY: Duration = Duration::from_millis(1000);
 const PTS_DISCONTINUITY_US: u64 = 5 * 1000 * 1000;
 const DEVICE_LIST_TIMEOUT: Duration = Duration::from_secs(2);
-
-fn name_cache() -> &'static Mutex<Vec<(String, String)>> {
-    static CACHE: OnceLock<Mutex<Vec<(String, String)>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(Vec::new()))
-}
-
-fn name_cache_set(serial: &str, name: &str) {
-    if serial.is_empty() || name.is_empty() {
-        return;
-    }
-    let Ok(mut cache) = name_cache().lock() else {
-        return;
-    };
-    match cache.iter_mut().find(|(known, _)| known == serial) {
-        Some((_, known)) => *known = name.to_string(),
-        None => cache.push((serial.to_string(), name.to_string())),
-    }
-}
-
-fn name_cache_get(serial: &str) -> Option<String> {
-    let cache = name_cache().lock().ok()?;
-    cache
-        .iter()
-        .find(|(known, _)| known == serial)
-        .map(|(_, name)| name.clone())
-}
 
 #[derive(Default)]
 struct Clock {
@@ -77,9 +52,16 @@ struct Shared {
     width: AtomicU32,
     height: AtomicU32,
     wakeup: (Mutex<bool>, Condvar),
+    devices: Mutex<Devices>,
 }
 
 impl Shared {
+    fn remember(&self, serial: &str, name: &str) {
+        if let Ok(mut devices) = self.devices.lock() {
+            devices.remember(serial, name);
+        }
+    }
+
     fn clear_video(&self) {
         if !self.clear_on_disconnect.load(Ordering::Relaxed) {
             return;
@@ -207,7 +189,7 @@ fn handle_message(decoder: &mut Decoder, output: &mut Output, kind: u8, payload:
                 hello.name,
                 hello.app_version
             );
-            name_cache_set(serial, &hello.name);
+            output.shared.remember(serial, &hello.name);
             true
         }
         protocol::MESSAGE_VIDEO_CONFIG => match protocol::parse_video_config(payload) {
@@ -269,6 +251,7 @@ impl Source {
                 width: AtomicU32::new(0),
                 height: AtomicU32::new(0),
                 wakeup: (Mutex::new(false), Condvar::new()),
+                devices: Mutex::new(Devices::default()),
             }),
             thread: None,
             serial: String::new(),
@@ -320,6 +303,18 @@ impl Source {
         self.shared.clear_video();
     }
 
+    fn load(&mut self, settings: &Data) {
+        if let Ok(mut devices) = self.shared.devices.lock() {
+            devices.load(settings);
+        }
+    }
+
+    fn save(&self, settings: &Data) {
+        if let Ok(devices) = self.shared.devices.lock() {
+            devices.save(settings);
+        }
+    }
+
     fn update(&mut self, settings: &Data) {
         let serial = settings.string(SETTING_DEVICE);
         let port = settings.int(SETTING_PORT) as u16;
@@ -353,25 +348,39 @@ impl Drop for Source {
     }
 }
 
-fn fill_device_list(list: &mut obs::Property) {
+fn fill_device_list(list: &mut obs::Property, shared: Option<&Shared>) {
     let deadline = std::time::Instant::now() + DEVICE_LIST_TIMEOUT;
     let expired = move || std::time::Instant::now() >= deadline;
     list.clear_list();
     list.add_translated_list_entry(text(c"Device.Automatic"), "");
-    let Ok(devices) = usbmux::list_devices(&expired) else {
-        return;
-    };
-    for device in devices {
-        let label = match name_cache_get(&device.serial) {
-            Some(name) => format!("{name} ({})", device.serial),
-            None => device.serial.clone(),
-        };
-        list.add_list_entry(&label, &device.serial);
+    let attached = usbmux::list_devices(&expired).unwrap_or_default();
+    let mut without_source = Devices::default();
+    let mut locked = shared.and_then(|shared| shared.devices.lock().ok());
+    let known = locked.as_deref_mut().unwrap_or(&mut without_source);
+    for device in &attached {
+        known.remember(&device.serial, "");
+    }
+    let connected = |device: &Device| attached.iter().any(|found| found.serial == device.serial);
+    for device in known.all().iter().filter(|device| connected(device)) {
+        list.add_list_entry(&device.label(), &device.serial);
+    }
+    let disconnected = text(c"Device.Disconnected").to_string_lossy();
+    for device in known.all().iter().filter(|device| !connected(device)) {
+        let label = format!("{} - {disconnected}", device.label());
+        let index = list.add_list_entry(&label, &device.serial);
+        list.disable_list_entry(index, true);
     }
 }
 
 unsafe fn source_of<'a>(data: *mut c_void) -> &'a mut Source {
     unsafe { &mut *(data as *mut Source) }
+}
+
+unsafe fn shared_of<'a>(data: *mut c_void) -> Option<&'a Shared> {
+    if data.is_null() {
+        return None;
+    }
+    Some(&unsafe { &*(data as *const Source) }.shared)
 }
 
 extern "C" fn get_name(_type_data: *mut c_void) -> *const c_char {
@@ -381,7 +390,9 @@ extern "C" fn get_name(_type_data: *mut c_void) -> *const c_char {
 extern "C" fn create(settings: *mut sys::obs_data_t, source: *mut sys::obs_source_t) -> *mut c_void {
     crate::panic::guard("create", std::ptr::null_mut(), || {
         let mut context = Box::new(Source::new(unsafe { obs::Source::from_raw(source) }));
-        context.update(&unsafe { Data::from_raw(settings) });
+        let settings = unsafe { Data::from_raw(settings) };
+        context.load(&settings);
+        context.update(&settings);
         Box::into_raw(context) as *mut c_void
     })
 }
@@ -395,6 +406,12 @@ extern "C" fn destroy(data: *mut c_void) {
 extern "C" fn update(data: *mut c_void, settings: *mut sys::obs_data_t) {
     crate::panic::guard("update", (), || {
         unsafe { source_of(data) }.update(&unsafe { Data::from_raw(settings) });
+    })
+}
+
+extern "C" fn save(data: *mut c_void, settings: *mut sys::obs_data_t) {
+    crate::panic::guard("save", (), || {
+        unsafe { source_of(data) }.save(&unsafe { Data::from_raw(settings) });
     })
 }
 
@@ -443,21 +460,21 @@ extern "C" fn get_defaults(settings: *mut sys::obs_data_t) {
 extern "C" fn refresh_devices_clicked(
     properties: *mut sys::obs_properties_t,
     _property: *mut sys::obs_property_t,
-    _data: *mut c_void,
+    data: *mut c_void,
 ) -> bool {
     crate::panic::guard("refresh_devices", false, || {
         let mut list = unsafe { obs::properties::get(properties, SETTING_DEVICE) };
-        fill_device_list(&mut list);
+        fill_device_list(&mut list, unsafe { shared_of(data) });
         true
     })
 }
 
-extern "C" fn get_properties(_data: *mut c_void) -> *mut sys::obs_properties_t {
+extern "C" fn get_properties(data: *mut c_void) -> *mut sys::obs_properties_t {
     crate::panic::guard("get_properties", std::ptr::null_mut(), || {
         let mut properties = Properties::new();
         let mut list = properties.add_string_list(SETTING_DEVICE, text(c"Device"));
-        fill_device_list(&mut list);
-        properties.add_button(c"refresh", text(c"RefreshDevices"), Some(refresh_devices_clicked));
+        fill_device_list(&mut list, unsafe { shared_of(data) });
+        unsafe { properties.add_button(c"refresh", text(c"RefreshDevices"), Some(refresh_devices_clicked), data) };
         properties.add_bool(SETTING_HARDWARE_DECODE, text(c"HardwareDecode"));
         properties.add_bool(SETTING_BUFFERING, text(c"Buffering"));
         properties.add_bool(SETTING_CLEAR_ON_DISCONNECT, text(c"ClearOnDisconnect"));
@@ -478,6 +495,7 @@ pub fn info() -> sys::obs_source_info {
         create: Some(create),
         destroy: Some(destroy),
         update: Some(update),
+        save: Some(save),
         show: Some(show),
         hide: Some(hide),
         get_width: Some(get_width),

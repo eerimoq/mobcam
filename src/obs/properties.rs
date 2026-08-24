@@ -1,6 +1,6 @@
 use super::module::c_string;
 use super::sys;
-use std::ffi::CStr;
+use std::ffi::{CStr, c_void};
 
 impl Default for Properties {
     fn default() -> Self {
@@ -28,21 +28,22 @@ impl Properties {
         Property(property)
     }
 
-    pub fn add_button(&mut self, name: &CStr, description: &CStr, callback: sys::obs_property_clicked_t) {
+    /// # Safety
+    /// `data` must outlive the property list.
+    pub unsafe fn add_button(
+        &mut self,
+        name: &CStr,
+        description: &CStr,
+        callback: sys::obs_property_clicked_t,
+        data: *mut c_void,
+    ) {
         unsafe {
-            sys::obs_properties_add_button2(
-                self.0,
-                name.as_ptr(),
-                description.as_ptr(),
-                callback,
-                std::ptr::null_mut(),
-            );
+            sys::obs_properties_add_button2(self.0, name.as_ptr(), description.as_ptr(), callback, data);
         }
     }
 
     pub fn add_int(&mut self, name: &CStr, description: &CStr, min: i32, max: i32) -> Property {
-        let property =
-            unsafe { sys::obs_properties_add_int(self.0, name.as_ptr(), description.as_ptr(), min, max, 1) };
+        let property = unsafe { sys::obs_properties_add_int(self.0, name.as_ptr(), description.as_ptr(), min, max, 1) };
         Property(property)
     }
 
@@ -84,15 +85,13 @@ impl Property {
         unsafe { sys::obs_property_set_long_description(self.0, description.as_ptr()) }
     }
 
-    pub fn add_list_entry(&mut self, label: &str, value: &str) {
+    pub fn add_list_entry(&mut self, label: &str, value: &str) -> usize {
         if self.is_null() {
-            return;
+            return 0;
         }
         let label = c_string(label);
         let value = c_string(value);
-        unsafe {
-            sys::obs_property_list_add_string(self.0, label.as_ptr(), value.as_ptr());
-        }
+        unsafe { sys::obs_property_list_add_string(self.0, label.as_ptr(), value.as_ptr()) }
     }
 
     pub fn add_translated_list_entry(&mut self, label: &CStr, value: &str) {

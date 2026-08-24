@@ -7,7 +7,7 @@ pub mod properties;
 mod source;
 pub mod sys;
 pub use clock::now_ns;
-pub use data::{Data, OwnedData};
+pub use data::{Data, DataArray, OwnedData};
 pub use log::{Level, log};
 pub use media::{Audio, Frame};
 pub use module::{Module, text};

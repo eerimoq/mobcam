@@ -1,4 +1,5 @@
 pub mod decoder;
+pub mod devices;
 pub mod ffmpeg;
 pub mod obs;
 pub mod panic;
