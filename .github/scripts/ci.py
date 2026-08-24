@@ -146,24 +146,20 @@ def build(args):
     platform = setup()
     if platform == "macos":
         import_certificate(args, os.urandom(16).hex())
-        build_arguments = [
+        build_py("build", "--codesign-application-identity", args.codesign_application_identity)
+        verify_universal_binary(NAME)
+        build_py(
+            "package",
+            "--installer",
             "--codesign-application-identity",
             args.codesign_application_identity,
-        ]
-        package_arguments = build_arguments
-        package_arguments += [
             "--codesign-installer-identity",
             args.codesign_installer_identity,
-        ]
-        package_arguments += [
             "--notarization-user",
             args.notarization_user,
             "--notarization-password",
             args.notarization_password,
-        ]
-        build_py("build", *build_arguments)
-        verify_universal_binary(NAME)
-        build_py("package", "--installer", *package_arguments)
+        )
     else:
         build_py("build")
         build_py("package", "--installer")
