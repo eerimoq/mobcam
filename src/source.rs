@@ -181,10 +181,6 @@ impl Worker {
                 break;
             }
             let (kind, length) = protocol::parse_message_header(&header);
-            if length > protocol::MAX_MESSAGE_LENGTH {
-                obs_log!(Level::Warning, "bad message length {length}");
-                break;
-            }
             let payload_size = length as usize;
             buffer.clear();
             buffer.resize(payload_size + INPUT_PADDING, 0);
