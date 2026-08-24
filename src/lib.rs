@@ -11,7 +11,7 @@ use obs::Level;
 pub const PLUGIN_NAME: &str = "mobcam";
 pub const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn obs_module_load() -> bool {
     panic::guard("obs_module_load", false, || {
         obs::register(&source::info());
@@ -20,7 +20,7 @@ pub extern "C" fn obs_module_load() -> bool {
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn obs_module_unload() {
     panic::guard("obs_module_unload", (), || {
         obs_log!(Level::Info, "plugin unloaded");

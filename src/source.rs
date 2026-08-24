@@ -1,10 +1,10 @@
-use crate::decoder::{Decoder, Sink, INPUT_PADDING};
-use crate::obs::{self, sys, text, Audio, Data, Frame, Level, Properties};
+use crate::decoder::{Decoder, INPUT_PADDING, Sink};
+use crate::obs::{self, Audio, Data, Frame, Level, Properties, sys, text};
 use crate::obs_log;
 use crate::protocol;
 use crate::socket::{self, Abort, Stream};
 use crate::usbmux;
-use std::ffi::{c_char, c_void, CStr};
+use std::ffi::{CStr, c_char, c_void};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::Duration;
@@ -371,7 +371,7 @@ fn fill_device_list(list: &mut obs::Property) {
 }
 
 unsafe fn source_of<'a>(data: *mut c_void) -> &'a mut Source {
-    &mut *(data as *mut Source)
+    unsafe { &mut *(data as *mut Source) }
 }
 
 extern "C" fn get_name(_type_data: *mut c_void) -> *const c_char {

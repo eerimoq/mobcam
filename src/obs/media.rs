@@ -112,9 +112,5 @@ fn is_planar(format: sys::audio_format) -> bool {
 }
 
 pub fn audio_planes(format: sys::audio_format, speakers: sys::speaker_layout) -> usize {
-    if is_planar(format) {
-        audio_channels(speakers)
-    } else {
-        1
-    }
+    if is_planar(format) { audio_channels(speakers) } else { 1 }
 }

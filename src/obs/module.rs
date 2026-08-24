@@ -26,22 +26,22 @@ pub fn text(key: &'static CStr) -> &'static CStr {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn obs_module_set_pointer(module: *mut sys::obs_module_t) {
     MODULE.store(module, Ordering::Release);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn obs_module_ver() -> u32 {
     super::API_VERSION
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn obs_current_module() -> *mut sys::obs_module_t {
     Module::current()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn obs_module_set_locale(locale: *const std::os::raw::c_char) {
     let default = c"en-US";
     let lookup = unsafe {
@@ -54,7 +54,7 @@ pub extern "C" fn obs_module_set_locale(locale: *const std::os::raw::c_char) {
     LOOKUP.store(lookup, Ordering::Release);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn obs_module_free_locale() {
     let previous = LOOKUP.swap(ptr::null_mut(), Ordering::AcqRel);
     if !previous.is_null() {
@@ -64,12 +64,12 @@ pub extern "C" fn obs_module_free_locale() {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn obs_module_name() -> *const std::os::raw::c_char {
     c"MobCam".as_ptr()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn obs_module_description() -> *const std::os::raw::c_char {
     c"Use an iPhone or iPad running Moblin as a camera, over the USB cable".as_ptr()
 }

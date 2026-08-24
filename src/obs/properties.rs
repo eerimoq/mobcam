@@ -102,5 +102,5 @@ impl Property {
 /// # Safety
 /// `properties` must be a live property list.
 pub unsafe fn get(properties: *mut sys::obs_properties_t, name: &CStr) -> Property {
-    Property(sys::obs_properties_get(properties, name.as_ptr()))
+    Property(unsafe { sys::obs_properties_get(properties, name.as_ptr()) })
 }

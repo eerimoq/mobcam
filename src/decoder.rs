@@ -1,9 +1,9 @@
-use crate::ffmpeg::{self, sys as av, Codec, Context, Device, Packet, Status};
-use crate::obs::{self, media, Audio, Frame, Level};
+use crate::ffmpeg::{self, Codec, Context, Device, Packet, Status, sys as av};
+use crate::obs::{self, Audio, Frame, Level, media};
 use crate::obs_log;
 use crate::protocol::{
-    audio_codec_name, video_codec_name, AudioConfig, AudioFrame, VideoConfig, VideoFrame, AUDIO_CODEC_AAC_LC,
-    VIDEO_CODEC_H264, VIDEO_CODEC_HEVC,
+    AUDIO_CODEC_AAC_LC, AudioConfig, AudioFrame, VIDEO_CODEC_H264, VIDEO_CODEC_HEVC, VideoConfig, VideoFrame,
+    audio_codec_name, video_codec_name,
 };
 
 pub const INPUT_PADDING: usize = 64;

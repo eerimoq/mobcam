@@ -80,11 +80,7 @@ impl Frame {
 
     pub fn audio_planes(&self) -> usize {
         let planar = unsafe { sys::av_sample_fmt_is_planar(self.sample_format()) } != 0;
-        if planar {
-            self.channels().max(0) as usize
-        } else {
-            1
-        }
+        if planar { self.channels().max(0) as usize } else { 1 }
     }
 
     pub fn audio_plane(&self, index: usize) -> *mut u8 {

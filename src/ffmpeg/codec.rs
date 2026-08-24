@@ -1,5 +1,5 @@
 use super::sys;
-use super::{Device, Frame, Packet, Status, INPUT_BUFFER_PADDING};
+use super::{Device, Frame, INPUT_BUFFER_PADDING, Packet, Status};
 use std::ptr;
 
 #[derive(Clone, Copy)]

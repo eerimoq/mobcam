@@ -1,5 +1,5 @@
-use super::sys;
 use super::Codec;
+use super::sys;
 use std::ptr;
 
 const TYPES: [sys::AVHWDeviceType; 7] = [
