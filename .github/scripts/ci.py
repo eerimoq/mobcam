@@ -15,12 +15,12 @@ sys.path.insert(0, str(ROOT))
 from build import (  # noqa: E402
     MACOS_TARGETS,
     Error,
-    buildspec,
     host_platform,
     macos_paths,
     run,
     NAME,
-    VERSION
+    VERSION,
+    DISPLAY_NAME
 )
 
 UBUNTU_PACKAGES = [
@@ -148,7 +148,6 @@ def lint():
 
 
 def build():
-    spec = buildspec()
     platform = setup()
     sign, notarize = codesigning() if platform == "macos" else (False, False)
     build_py("build", *(["--codesign"] if sign else []))
@@ -181,8 +180,7 @@ def release():
             lines.append(f"    {path.name}: {hashlib.sha256(path.read_bytes()).hexdigest()}")
     (root / CHECKSUMS).write_text("\n".join(lines) + "\n", encoding="utf-8")
     print((root / CHECKSUMS).read_text(encoding="utf-8"))
-    spec = buildspec()
-    output("pluginName", spec.get("displayName", NAME))
+    output("pluginName", DISPLAY_NAME)
 
 
 def main():
