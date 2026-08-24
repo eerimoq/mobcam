@@ -1,22 +1,11 @@
-//! Turning decoded FFmpeg frames into the video and audio OBS takes.
-//!
-//! No pixel or sample conversion happens here: a format OBS cannot take is
-//! dropped and reported rather than converted, which is what keeps the latency
-//! down and libswscale out of the plugin.
-
 use crate::ffmpeg::{self, sys as av};
 
 use super::sys;
 
-/// A video frame pointing at the decoder's memory. It borrows for exactly as
-/// long as the call that hands it to OBS.
 pub type Frame = sys::obs_source_frame;
 
-/// An audio buffer pointing at the decoder's memory, on the same terms.
 pub type Audio = sys::obs_source_audio;
 
-/// The OBS video format for a decoded pixel format, and whether that pixel
-/// format implies full range regardless of what the frame says.
 pub fn video_format(format: av::AVPixelFormat) -> Option<(sys::video_format, bool)> {
     let format = match format {
         av::AV_PIX_FMT_YUVJ420P => return Some((sys::VIDEO_FORMAT_I420, true)),
@@ -87,7 +76,6 @@ pub fn speakers(channels: i32) -> Option<sys::speaker_layout> {
     Some(speakers)
 }
 
-/// Fills in the colour matrix and range OBS needs to render the frame.
 pub fn set_color_parameters(frame: &mut Frame, colorspace: sys::video_colorspace, full_range: bool) {
     let range = if full_range {
         sys::VIDEO_RANGE_FULL
@@ -95,8 +83,6 @@ pub fn set_color_parameters(frame: &mut Frame, colorspace: sys::video_colorspace
         sys::VIDEO_RANGE_PARTIAL
     };
 
-    // SAFETY: the three arrays are fields of the frame and have the fixed sizes
-    // the function documents.
     unsafe {
         sys::video_format_get_parameters_for_format(
             colorspace,
@@ -109,11 +95,6 @@ pub fn set_color_parameters(frame: &mut Frame, colorspace: sys::video_colorspace
     }
 }
 
-/// How many channels a layout carries.
-///
-/// This and `audio_planes` below are `static inline` in the OBS headers, so
-/// there is no symbol for bindgen to bind; they are kept in step with
-/// media-io/audio-io.h by the tests at the bottom of this file.
 pub fn audio_channels(speakers: sys::speaker_layout) -> usize {
     match speakers {
         sys::SPEAKERS_MONO => 1,
@@ -137,8 +118,6 @@ fn is_planar(format: sys::audio_format) -> bool {
     )
 }
 
-/// How many of the plane pointers OBS will read for this layout. Interleaved
-/// audio lives in one plane however many channels it carries.
 pub fn audio_planes(format: sys::audio_format, speakers: sys::speaker_layout) -> usize {
     if is_planar(format) {
         audio_channels(speakers)

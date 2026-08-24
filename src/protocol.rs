@@ -1,10 +1,3 @@
-//! The Moblin USB stream protocol, as described in moblin/docs/usb-protocol.md.
-//!
-//! Every message is a big endian u32 length covering the type byte and the
-//! payload, then the type byte, then the payload. Everything here reads from a
-//! borrowed slice: the payloads are large and land in the receive buffer, and
-//! copying them again would be the plugin's largest cost per frame.
-
 use crate::obs::OwnedData;
 
 pub const MESSAGE_HEADER_SIZE: usize = 5;
@@ -52,7 +45,6 @@ pub struct VideoConfig<'a> {
     pub codec: u8,
     pub width: u16,
     pub height: u16,
-    /// The avcC or hvcC record.
     pub record: &'a [u8],
 }
 
@@ -60,7 +52,6 @@ pub struct VideoConfig<'a> {
 pub struct VideoFrame<'a> {
     pub pts_us: u64,
     pub keyframe: bool,
-    /// One access unit in AVCC form.
     pub data: &'a [u8],
 }
 
@@ -69,14 +60,12 @@ pub struct AudioConfig<'a> {
     pub codec: u8,
     pub sample_rate: u32,
     pub channels: u8,
-    /// The AudioSpecificConfig.
     pub record: &'a [u8],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioFrame<'a> {
     pub pts_us: u64,
-    /// One raw access unit.
     pub data: &'a [u8],
 }
 
@@ -92,11 +81,9 @@ fn u64_be(bytes: &[u8]) -> u64 {
     u64::from_be_bytes(bytes[..8].try_into().expect("eight bytes"))
 }
 
-/// Writes the hello the host must send first.
 pub fn pack_host_hello() -> [u8; HOST_HELLO_SIZE] {
     let mut buffer = [0u8; HOST_HELLO_SIZE];
 
-    // The length covers the type byte, "MOBL" and the version byte.
     buffer[0..4].copy_from_slice(&6u32.to_be_bytes());
     buffer[4] = MESSAGE_HOST_HELLO;
     buffer[5..9].copy_from_slice(b"MOBL");
@@ -109,8 +96,6 @@ pub fn parse_message_header(header: &[u8; MESSAGE_HEADER_SIZE]) -> (u32, u8) {
     (u32_be(header), header[4])
 }
 
-/// The device's name and app version arrive as JSON, read with the parser
-/// libobs already carries.
 pub fn parse_device_hello(payload: &[u8]) -> Option<DeviceHello> {
     if payload.len() < 5 {
         return None;
@@ -118,9 +103,6 @@ pub fn parse_device_hello(payload: &[u8]) -> Option<DeviceHello> {
 
     let json_size = u32_be(&payload[1..]) as usize;
     let json = payload.get(5..5usize.checked_add(json_size)?)?;
-
-    // A NUL inside the JSON would end it early, and it has to be NUL terminated
-    // to be handed to the C parser at all.
     let json = std::ffi::CString::new(json).ok()?;
     let data = OwnedData::from_json(&json)?;
 

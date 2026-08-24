@@ -1,24 +1,9 @@
-//! Generates the FFI to libobs and FFmpeg, and tells cargo how to link the
-//! plugin.
-//!
-//! The plugin is the whole of the module OBS loads, so cargo does the linking
-//! and this file is where the libraries and the headers are resolved. macOS and
-//! Windows take both from the `.deps` directory that `build.py deps` fills from
-//! buildspec.json; Linux takes them from pkg-config, where the distribution's
-//! obs and FFmpeg development packages put them.
-//!
-//! The headers bindgen reads are therefore the headers of the libraries the
-//! plugin is linked against, which is what keeps the generated FFmpeg bindings
-//! in step with the FFmpeg that OBS loads at runtime.
-
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
-/// The plugin is one architecture per cargo invocation, so the target is what
-/// decides which dependencies are looked for and how they are linked.
 enum Platform {
     Macos,
     Windows,
@@ -67,8 +52,6 @@ fn dependency_version(buildspec: &serde_json::Value, dependency: &str) -> String
         .to_string()
 }
 
-/// The directory `build.py deps` downloads and unpacks the prebuilt
-/// dependencies into.
 fn dependencies_dir() -> PathBuf {
     println!("cargo:rerun-if-env-changed=MOBCAM_DEPS_DIR");
 
@@ -88,9 +71,6 @@ fn require(path: PathBuf) -> PathBuf {
     path
 }
 
-/// obs-config.h includes obsconfig.h, which OBS' own build generates rather
-/// than ships. Only the two release state macros are read from it, and a
-/// released libobs is neither a beta nor a release candidate.
 fn obsconfig_dir() -> PathBuf {
     let dir = out_dir().join("obsconfig");
 
@@ -125,12 +105,6 @@ fn pkg_config(packages: &[&str], flags: &str) -> Vec<String> {
         .collect()
 }
 
-/// The libobs symbols are left to be resolved out of the OBS process the plugin
-/// is loaded into, which is where they come from at runtime in any case. That is
-/// what makes libobs itself unnecessary at link time, and with it the build of
-/// obs-studio the plugin would otherwise need just to link. FFmpeg is a real
-/// link: obs-deps ships the dylibs, and only the headers of the FFmpeg the
-/// plugin is built against can be trusted to describe it.
 fn configure_macos(buildspec: &serde_json::Value) -> Vec<PathBuf> {
     let dependencies = dependencies_dir();
     let obs = dependency_version(buildspec, "obs-studio");
@@ -139,9 +113,6 @@ fn configure_macos(buildspec: &serde_json::Value) -> Vec<PathBuf> {
     let obs_include = require(dependencies.join(format!("obs-studio-{obs}")).join("libobs"));
     let prebuilt_dir = require(dependencies.join(format!("obs-deps-{prebuilt}-universal")));
 
-    // FFmpeg is linked against the dylibs obs-deps ships, so the plugin records
-    // the same @rpath references OBS' own binaries do, and finds them in the
-    // Frameworks directory of the application bundle it is loaded from.
     println!("cargo:rustc-link-search=native={}", prebuilt_dir.join("lib").display());
     println!("cargo:rustc-link-lib=dylib=avcodec");
     println!("cargo:rustc-link-lib=dylib=avutil");
@@ -151,22 +122,11 @@ fn configure_macos(buildspec: &serde_json::Value) -> Vec<PathBuf> {
     vec![obs_include, prebuilt_dir.join("include"), obsconfig_dir()]
 }
 
-/// A Windows DLL cannot leave symbols to be resolved at load time the way a
-/// macOS bundle can, so libobs needs an import library. Building obs-studio to
-/// get one would mean a second build system, so it is generated instead: an
-/// import library is a list of names and the DLL they come from, and the names
-/// are the ones bindgen just declared.
-///
-/// cc is only depended on where lib.exe exists, so this half of the file only
-/// compiles there. Cross compiling the plugin to Windows was never possible in
-/// any case: it needs the Microsoft linker.
 #[cfg(windows)]
 fn write_import_library(bindings: &Path) {
     let source = fs::read_to_string(bindings).expect("the generated bindings are readable");
     let mut exports = String::from("LIBRARY obs\nEXPORTS\n");
     let mut inside = false;
-    // What the symbol is called in the DLL, where bindgen has said that it is
-    // not what the item is called in Rust.
     let mut link_name = None;
 
     for line in source.lines() {
@@ -180,8 +140,6 @@ fn write_import_library(bindings: &Path) {
             continue;
         } else if let Some(rest) = line.strip_prefix("#[link_name = \"") {
             let (name, _) = rest.split_once('"').expect("a link name is quoted");
-            // bindgen prefixes the name with a byte the compiler strips again,
-            // to keep it from being mangled any further.
             link_name = Some(name.trim_start_matches("\\u{1}").to_string());
         } else if let Some(rest) = line.strip_prefix("pub fn ") {
             let (name, _) = rest.split_once('(').expect("a function declaration has arguments");
@@ -193,8 +151,6 @@ fn write_import_library(bindings: &Path) {
         {
             let (name, _) = rest.split_once(':').expect("a variable declaration has a type");
             let name = link_name.take().unwrap_or_else(|| name.to_string());
-            // Without DATA the linker would generate a call to the address of
-            // the variable rather than a read of the variable itself.
             exports += &format!("    {name} DATA\n");
         }
     }
@@ -241,8 +197,6 @@ fn configure_windows(buildspec: &serde_json::Value) -> Vec<PathBuf> {
     vec![obs_include, prebuilt_dir.join("include"), obsconfig_dir()]
 }
 
-/// Linux has no prebuilt dependencies of its own: libobs and FFmpeg are the
-/// distribution's, which is what OBS itself is built against there.
 fn configure_linux() -> Vec<PathBuf> {
     let packages = ["libobs", "libavcodec", "libavutil"];
 
@@ -265,22 +219,12 @@ fn configure_linux() -> Vec<PathBuf> {
 }
 
 fn builder(include_dirs: &[PathBuf]) -> bindgen::Builder {
-    // cargo builds one triple at a time and bindgen does not infer it. Without
-    // this the x86_64 half of a macOS universal build would be generated with
-    // arm64 struct layouts, which links cleanly and then misreads every field.
     let mut builder = bindgen::Builder::default()
         .clang_arg(format!("--target={}", target()))
         .derive_default(true)
         .generate_comments(false)
         .layout_tests(false)
-        // Enum handling: OBS and FFmpeg both pass enums across the ABI, and a
-        // value neither header knows about must not become an invalid Rust
-        // enum, so they stay plain integer constants.
         .default_enum_style(bindgen::EnumVariation::Consts)
-        // Without this every constant is prefixed with the name of the enum it
-        // came from, so AV_PIX_FMT_NV12 would have to be spelled
-        // AVPixelFormat_AV_PIX_FMT_NV12. The C names are what the FFmpeg and
-        // OBS documentation uses, so they are what the code should use too.
         .prepend_enum_name(false)
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
 
@@ -325,8 +269,6 @@ fn generate_obs(include_dirs: &[PathBuf]) -> PathBuf {
         .allowlist_item("get_audio_planes")
         .allowlist_item("text_lookup_.*")
         .allowlist_item("lookup_t")
-        // Takes a va_list, which is awkward to build from Rust and unnecessary:
-        // logging goes through the variadic blog() with a preformatted "%s".
         .blocklist_function("blogva")
         .generate()
         .expect("failed to generate libobs bindings");
@@ -356,9 +298,6 @@ fn generate_ffmpeg(include_dirs: &[PathBuf]) {
     write(bindings, "ffmpeg.rs");
 }
 
-/// buildspec.json is the single source of truth for the plugin version; build.py
-/// reads it for the bundle and the installers. Cargo cannot, so the two are
-/// checked against each other here rather than left to drift.
 fn check_version(buildspec: &serde_json::Value) {
     let version = buildspec["version"]
         .as_str()
@@ -378,10 +317,6 @@ fn main() {
 
     let platform = Platform::current();
 
-    // Both sets of headers go to both generators. libobs' headers reach for
-    // simde, which obs-deps ships alongside FFmpeg rather than alongside
-    // libobs, and this is the same union of include paths OBS itself is built
-    // with.
     let include_dirs = match platform {
         Platform::Macos => configure_macos(&buildspec),
         Platform::Windows => configure_windows(&buildspec),

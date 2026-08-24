@@ -1,6 +1,3 @@
-//! The OBS source: its settings, its properties dialog, and the worker thread
-//! that keeps a connection to the phone open and feeds OBS what it decodes.
-
 use std::ffi::{c_char, c_void, CStr};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -22,13 +19,9 @@ const SETTING_DISCONNECT_WHEN_HIDDEN: &CStr = c"disconnect_when_hidden";
 
 const DEFAULT_PORT: i64 = 7790;
 const RECONNECT_DELAY: Duration = Duration::from_millis(1000);
-/// A timestamp this far from the previous one starts a new timeline.
 const PTS_DISCONTINUITY_US: u64 = 5 * 1000 * 1000;
-/// How long the properties dialog waits on a wedged usbmuxd before giving up.
 const DEVICE_LIST_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Devices only tell us their name once a stream is running, so the names seen
-/// so far are kept here to label the device list in the properties dialog.
 fn name_cache() -> &'static Mutex<Vec<(String, String)>> {
     static CACHE: OnceLock<Mutex<Vec<(String, String)>>> = OnceLock::new();
 
@@ -59,9 +52,6 @@ fn name_cache_get(serial: &str) -> Option<String> {
         .map(|(_, name)| name.clone())
 }
 
-/// Device timestamps run on the phone's clock, which has an unrelated origin to
-/// this one, so the first message of every connection anchors a fresh timeline
-/// that everything after it is placed on.
 #[derive(Default)]
 struct Clock {
     anchored: bool,
@@ -71,7 +61,6 @@ struct Clock {
 }
 
 impl Clock {
-    /// Places one device timestamp on this connection's timeline.
     fn timestamp(&mut self, pts_us: u64) -> u64 {
         let distance = pts_us.abs_diff(self.previous_pts_us);
 
@@ -80,9 +69,6 @@ impl Clock {
             self.first_pts_us = pts_us;
             self.anchor_ns = obs::now_ns();
         } else if pts_us < self.first_pts_us {
-            // The stream that anchored the timeline had started a little later
-            // than the other one. Move the origin back rather than anchor
-            // again, so what has already gone out stays where it is.
             self.anchor_ns -= (self.first_pts_us - pts_us) * 1000;
             self.first_pts_us = pts_us;
         }
@@ -93,15 +79,12 @@ impl Clock {
     }
 }
 
-/// What the worker thread and the OBS thread share while the thread runs.
-/// Everything else is latched and only touched with the thread stopped.
 struct Shared {
     source: obs::Source,
     stopping: AtomicBool,
     clear_on_disconnect: AtomicBool,
     width: AtomicU32,
     height: AtomicU32,
-    /// Signalled to cut the reconnect wait short when the source is stopping.
     wakeup: (Mutex<bool>, Condvar),
 }
 
@@ -124,7 +107,6 @@ impl Abort for Arc<Shared> {
     }
 }
 
-/// Puts decoded frames on the connection's timeline and hands them to OBS.
 struct Output {
     shared: Arc<Shared>,
     clock: Clock,
@@ -147,13 +129,11 @@ impl Sink for Output {
     }
 }
 
-/// The worker thread's own state, which never leaves it.
 struct Worker {
     shared: Arc<Shared>,
     decoder: Option<Decoder>,
     serial: String,
     port: u16,
-    /// Keeps a device that is not streaming from filling the log.
     reported_failure: Option<usbmux::Error>,
 }
 
@@ -184,9 +164,6 @@ impl Worker {
         let (stream, serial) = match usbmux::connect(&self.serial, self.port, &self.shared) {
             Ok(connected) => connected,
             Err(error) => {
-                // A phone that is attached but not streaming refuses the
-                // connection once a second, so each reason is only logged when
-                // it changes.
                 if error != usbmux::Error::Aborted && self.reported_failure != Some(error) {
                     self.reported_failure = Some(error);
                     obs_log!(Level::Info, "not connected: {}", error.message());
@@ -206,7 +183,6 @@ impl Worker {
         self.shared.clear_video();
     }
 
-    /// Reads messages until the connection ends or the source is stopped.
     fn stream(&mut self, mut stream: Stream, serial: &str) {
         if !socket::write_all(&mut stream, &protocol::pack_host_hello()) {
             obs_log!(Level::Warning, "failed to say hello to {serial}");
@@ -224,8 +200,6 @@ impl Worker {
             clock: Clock::default(),
         };
 
-        // One buffer for the whole connection, grown as needed and carrying the
-        // padding libavcodec wants past every access unit.
         let mut buffer: Vec<u8> = Vec::new();
 
         loop {
@@ -258,7 +232,6 @@ impl Worker {
     }
 }
 
-/// Acts on one message. Returning false ends the connection.
 fn handle_message(decoder: &mut Decoder, output: &mut Output, kind: u8, payload: &[u8], serial: &str) -> bool {
     match kind {
         protocol::MESSAGE_DEVICE_HELLO => {
@@ -295,7 +268,6 @@ fn handle_message(decoder: &mut Decoder, output: &mut Output, kind: u8, payload:
         protocol::MESSAGE_AUDIO_CONFIG => {
             match protocol::parse_audio_config(payload) {
                 Some(config) => {
-                    // Audio the decoder will not take is no reason to lose the video.
                     decoder.configure_audio(&config);
                 }
                 None => {
@@ -317,17 +289,13 @@ fn handle_message(decoder: &mut Decoder, output: &mut Output, kind: u8, payload:
 
             true
         }
-        // Unknown messages are skipped.
         _ => true,
     }
 }
 
-/// One instance of the source, owned by OBS through a raw pointer.
 struct Source {
     shared: Arc<Shared>,
     thread: Option<std::thread::JoinHandle<()>>,
-
-    /// Latched settings. Only touched while the worker thread is stopped.
     serial: String,
     port: u16,
     hardware_decode: bool,
@@ -421,9 +389,6 @@ impl Source {
         let restart = port != self.port || hardware_decode != self.hardware_decode || serial != self.serial;
 
         if restart {
-            // The decoder is only safe to retune while the receive thread is
-            // stopped, and the reconnect is what brings the config message that
-            // opens it again.
             self.stop();
             self.serial = serial;
             self.port = port;
@@ -448,11 +413,8 @@ impl Drop for Source {
     }
 }
 
-/// Fills the device combo box, labelling each device with the name it gave the
-/// last time it streamed.
 fn fill_device_list(list: &mut obs::Property) {
     let deadline = std::time::Instant::now() + DEVICE_LIST_TIMEOUT;
-    // Keeps a wedged usbmuxd from hanging the thread that asked it something.
     let expired = move || std::time::Instant::now() >= deadline;
 
     list.clear_list();
@@ -472,10 +434,6 @@ fn fill_device_list(list: &mut obs::Property) {
     }
 }
 
-// The callbacks below are what OBS calls. Each one turns the raw pointer it is
-// given back into the Source that create() leaked, and catches panics so that
-// none can unwind into OBS.
-
 unsafe fn source_of<'a>(data: *mut c_void) -> &'a mut Source {
     &mut *(data as *mut Source)
 }
@@ -486,34 +444,26 @@ extern "C" fn get_name(_type_data: *mut c_void) -> *const c_char {
 
 extern "C" fn create(settings: *mut sys::obs_data_t, source: *mut sys::obs_source_t) -> *mut c_void {
     crate::panic::guard("create", std::ptr::null_mut(), || {
-        // SAFETY: OBS keeps the source alive until it calls destroy(), which
-        // is what drops the value the handle is stored in.
         let mut context = Box::new(Source::new(unsafe { obs::Source::from_raw(source) }));
-
-        // SAFETY: OBS passes live settings for the duration of the call.
         context.update(&unsafe { Data::from_raw(settings) });
-
         Box::into_raw(context) as *mut c_void
     })
 }
 
 extern "C" fn destroy(data: *mut c_void) {
     crate::panic::guard("destroy", (), || {
-        // SAFETY: data came from create() and OBS calls destroy once.
         drop(unsafe { Box::from_raw(data as *mut Source) });
     })
 }
 
 extern "C" fn update(data: *mut c_void, settings: *mut sys::obs_data_t) {
     crate::panic::guard("update", (), || {
-        // SAFETY: as above; the settings are live for this call.
         unsafe { source_of(data) }.update(&unsafe { Data::from_raw(settings) });
     })
 }
 
 extern "C" fn show(data: *mut c_void) {
     crate::panic::guard("show", (), || {
-        // SAFETY: data came from create().
         let context = unsafe { source_of(data) };
 
         if context.disconnect_when_hidden {
@@ -524,7 +474,6 @@ extern "C" fn show(data: *mut c_void) {
 
 extern "C" fn hide(data: *mut c_void) {
     crate::panic::guard("hide", (), || {
-        // SAFETY: data came from create().
         let context = unsafe { source_of(data) };
 
         if context.disconnect_when_hidden {
@@ -535,21 +484,18 @@ extern "C" fn hide(data: *mut c_void) {
 
 extern "C" fn get_width(data: *mut c_void) -> u32 {
     crate::panic::guard("get_width", 0, || {
-        // SAFETY: data came from create().
         unsafe { source_of(data) }.shared.width.load(Ordering::Relaxed)
     })
 }
 
 extern "C" fn get_height(data: *mut c_void) -> u32 {
     crate::panic::guard("get_height", 0, || {
-        // SAFETY: data came from create().
         unsafe { source_of(data) }.shared.height.load(Ordering::Relaxed)
     })
 }
 
 extern "C" fn get_defaults(settings: *mut sys::obs_data_t) {
     crate::panic::guard("get_defaults", (), || {
-        // SAFETY: OBS passes live settings for the duration of the call.
         let settings = unsafe { Data::from_raw(settings) };
 
         settings.set_default_string(SETTING_DEVICE, c"");
@@ -567,7 +513,6 @@ extern "C" fn refresh_devices_clicked(
     _data: *mut c_void,
 ) -> bool {
     crate::panic::guard("refresh_devices", false, || {
-        // SAFETY: OBS passes the live property list this button belongs to.
         let mut list = unsafe { obs::properties::get(properties, SETTING_DEVICE) };
 
         fill_device_list(&mut list);
@@ -594,8 +539,6 @@ extern "C" fn get_properties(_data: *mut c_void) -> *mut sys::obs_properties_t {
     })
 }
 
-/// Describes the source to OBS. Built at load time rather than as a static,
-/// since the struct has more fields than the plugin fills in.
 pub fn info() -> sys::obs_source_info {
     sys::obs_source_info {
         id: c"mobcam_source".as_ptr(),

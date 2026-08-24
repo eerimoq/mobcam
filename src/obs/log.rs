@@ -1,6 +1,3 @@
-//! Logging into the OBS log, with the plugin name prefixed the way the C
-//! `obs_log()` did.
-
 use super::module::c_string;
 use super::sys;
 
@@ -23,22 +20,14 @@ impl Level {
     }
 }
 
-/// Writes one line to the OBS log.
-///
-/// The message is passed to the variadic `blog()` as the argument of a literal
-/// "%s" rather than as the format string itself, so a percent sign in a device
-/// name cannot be read as a conversion.
 pub fn log(level: Level, message: &str) {
     let line = c_string(&format!("[{}] {}", crate::PLUGIN_NAME, message));
 
-    // SAFETY: blog() is variadic; the format is a literal "%s" and its one
-    // argument is a valid NUL terminated string that outlives the call.
     unsafe {
         sys::blog(level.to_obs(), c"%s".as_ptr(), line.as_ptr());
     }
 }
 
-/// `obs_log(LOG_INFO, "...")`, spelled the way Rust code expects to spell it.
 #[macro_export]
 macro_rules! obs_log {
     ($level:expr, $($arg:tt)*) => {

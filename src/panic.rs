@@ -1,10 +1,3 @@
-//! Keeping panics on this side of the FFI boundary.
-//!
-//! Unwinding out of an `extern "C"` function is undefined behaviour, and
-//! aborting instead would take OBS down along with the plugin. Every entry
-//! point OBS calls therefore runs inside `guard`, which turns a panic into a
-//! logged message and a caller-supplied failure value.
-
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 pub fn guard<T>(name: &str, on_panic: T, body: impl FnOnce() -> T) -> T {
