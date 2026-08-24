@@ -38,12 +38,12 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-${{ steps.build.outputs.commitHash }}
+          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal
           path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal.*
       - name: Upload Debug Symbol Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-${{ steps.build.outputs.commitHash }}-dSYMs
+          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-dSYMs
           path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-dSYMs.*
   ubuntu-build:
     name: Build for Ubuntu
@@ -56,7 +56,7 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-ubuntu-24.04-x86_64-${{ steps.build.outputs.commitHash }}
+          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-ubuntu-24.04-x86_64
           path: |
             ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-x86_64*.*
             ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-source.*
@@ -72,7 +72,7 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-windows-x64-${{ steps.build.outputs.commitHash }}
+          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-windows-x64
           path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-windows-x64*.*
   create-release:
     name: Create Release

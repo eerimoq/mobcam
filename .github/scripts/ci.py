@@ -168,15 +168,13 @@ def build(arguments):
     build_py("package", "--installer", *package_arguments)
     output("pluginName", NAME)
     output("pluginVersion", VERSION)
-    output("commitHash", os.environ.get("GITHUB_SHA", "")[:9])
 
 
 def release(_):
     root = Path(os.environ["GITHUB_WORKSPACE"])
-    commit_hash = os.environ["GITHUB_SHA"][:9]
     suffixes = {suffix for suffixes in VARIANTS.values() for suffix in suffixes}
     for variant, variant_suffixes in VARIANTS.items():
-        for directory in sorted(root.glob(f"*-{variant}-{commit_hash}")):
+        for directory in sorted(root.glob(f"*-{variant}")):
             for suffix in variant_suffixes:
                 for path in sorted(directory.glob(f"*.{suffix}")):
                     print(f"    {path.relative_to(root)}")
