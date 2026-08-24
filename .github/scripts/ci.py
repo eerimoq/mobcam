@@ -37,13 +37,6 @@ TARGETS = {
     "linux": [],
 }
 ARCHITECTURES = sorted(MACOS_TARGETS)
-CREDENTIALS = [
-    ("MACOS_SIGNING_IDENTITY", "CODESIGN_IDENT"),
-    ("MACOS_SIGNING_INSTALLER_IDENTITY", "CODESIGN_IDENT_INSTALLER"),
-    ("MACOS_SIGNING_CERT", None),
-    ("MACOS_NOTARIZATION_USERNAME", "CODESIGN_IDENT_USER"),
-    ("MACOS_NOTARIZATION_PASSWORD", "CODESIGN_IDENT_PASS"),
-]
 KEYCHAIN_TIMEOUT = "21600"
 KEYCHAIN_TOOLS = ["/usr/bin/codesign", "/usr/bin/security", "/usr/bin/xcrun"]
 VARIANTS = {
@@ -82,10 +75,10 @@ def setup():
     return platform
 
 
-def import_certificate(password):
+def import_certificate(arguments, password):
     temporary = Path(os.environ["RUNNER_TEMP"])
     certificate = temporary / "build_certificate.p12"
-    certificate.write_bytes(base64.b64decode(os.environ["MACOS_SIGNING_CERT"]))
+    certificate.write_bytes(base64.b64decode(arguments.codesign_certificate))
     keychain = temporary / "app-signing.keychain-db"
     tools = [argument for tool in KEYCHAIN_TOOLS for argument in ("-T", tool)]
     run(["security", "create-keychain", "-p", password, keychain])
@@ -97,7 +90,7 @@ def import_certificate(password):
             "import",
             certificate,
             "-P",
-            os.environ.get("MACOS_SIGNING_CERT_PASSWORD", ""),
+            arguments.codesign_certificate_password,
             "-A",
             "-t",
             "cert",
@@ -117,15 +110,19 @@ def import_certificate(password):
     run(["security", "list-keychain", "-d", "user", "-s", keychain, "login-keychain"])
 
 
-def codesigning():
-    given = {name: os.environ.get(name, "") for name, _ in CREDENTIALS}
-    for name, variable in CREDENTIALS:
-        if variable:
-            os.environ[variable] = given[name]
-    sign = all(given[name] for name, _ in CREDENTIALS[:3])
-    notarize = sign and all(given[name] for name, _ in CREDENTIALS[3:])
+def codesigning(arguments):
+    sign = all(
+        [
+            arguments.codesign_identity,
+            arguments.codesign_installer_identity,
+            arguments.codesign_certificate,
+        ]
+    )
+    notarize = sign and all(
+        [arguments.notarization_user, arguments.notarization_password]
+    )
     if sign:
-        import_certificate(os.urandom(16).hex())
+        import_certificate(arguments, os.urandom(16).hex())
     else:
         print("    no signing credentials; building unsigned", flush=True)
     return sign, notarize
@@ -141,30 +138,40 @@ def verify_universal_binary(name):
         raise Error(f"{name} is missing the {' and '.join(missing)} slice")
 
 
-def lint():
+def lint(_):
     setup()
     run(["cargo", "clippy", "--all-targets", "--", "--deny", "warnings"])
     run(["cargo", "fmt", "--check"])
 
 
-def build():
+def build(arguments):
     platform = setup()
-    sign, notarize = codesigning() if platform == "macos" else (False, False)
-    build_py("build", *(["--codesign"] if sign else []))
+    sign, notarize = codesigning(arguments) if platform == "macos" else (False, False)
+    codesign_arguments = []
+    package_arguments = []
+    if sign:
+        codesign_arguments = ["--codesign-identity", arguments.codesign_identity]
+        package_arguments = codesign_arguments + [
+            "--codesign-installer-identity",
+            arguments.codesign_installer_identity,
+        ]
+    if notarize:
+        package_arguments += [
+            "--notarization-user",
+            arguments.notarization_user,
+            "--notarization-password",
+            arguments.notarization_password,
+        ]
+    build_py("build", *codesign_arguments)
     if platform == "macos":
         verify_universal_binary(NAME)
-    build_py(
-        "package",
-        "--installer",
-        *(["--codesign"] if sign else []),
-        *(["--notarize"] if notarize else []),
-    )
+    build_py("package", "--installer", *package_arguments)
     output("pluginName", NAME)
     output("pluginVersion", VERSION)
     output("commitHash", os.environ.get("GITHUB_SHA", "")[:9])
 
 
-def release():
+def release(_):
     root = Path(os.environ["GITHUB_WORKSPACE"])
     commit_hash = os.environ["GITHUB_SHA"][:9]
     suffixes = {suffix for suffixes in VARIANTS.values() for suffix in suffixes}
@@ -189,12 +196,42 @@ def main():
     subparser = subparsers.add_parser("lint")
     subparser.set_defaults(function=lint)
     subparser = subparsers.add_parser("build")
+    subparser.add_argument(
+        "--codesign-identity",
+        default="",
+        help="macOS application signing identity",
+    )
+    subparser.add_argument(
+        "--codesign-installer-identity",
+        default="",
+        help="macOS installer signing identity",
+    )
+    subparser.add_argument(
+        "--codesign-certificate",
+        default="",
+        help="base64 encoded pkcs12 signing certificate",
+    )
+    subparser.add_argument(
+        "--codesign-certificate-password",
+        default="",
+        help="password for --codesign-certificate",
+    )
+    subparser.add_argument(
+        "--notarization-user",
+        default="",
+        help="Apple ID to notarize the installer with",
+    )
+    subparser.add_argument(
+        "--notarization-password",
+        default="",
+        help="app-specific password for --notarization-user",
+    )
     subparser.set_defaults(function=build)
     subparser = subparsers.add_parser("release")
     subparser.set_defaults(function=release)
     arguments = parser.parse_args()
     try:
-        arguments.function()
+        arguments.function(arguments)
     except Error as error:
         print(f"::error::{error}", flush=True)
         sys.exit(2)

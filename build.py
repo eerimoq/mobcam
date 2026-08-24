@@ -184,7 +184,6 @@ def extract(archive, destination):
 
 
 def extract_stripped(archive, destination):
-    """Unpack an archive that keeps everything in a directory of its own."""
     staging = destination.with_name(destination.name + ".part")
     remove(staging)
     extract(archive, staging)
@@ -281,8 +280,8 @@ def copy_data(destination):
     shutil.copytree(DATA_DIR, destination, dirs_exist_ok=True)
 
 
-def codesign(path, identity=None, entitlements=None):
-    identity = identity or os.environ.get("CODESIGN_IDENT") or "-"
+def codesign(path, identity, entitlements=None):
+    identity = identity or "-"
     command = ["codesign", "--force", "--sign", identity, "--options", "runtime"]
     if identity != "-":
         command.append("--timestamp")
@@ -297,7 +296,7 @@ def macos_paths(name):
     return bundle, bundle / "Contents" / "MacOS" / name, INSTALL_DIR / f"{name}.plugin.dSYM"
 
 
-def build_macos(debug):
+def build_macos(debug, identity):
     bundle, binary, symbols = macos_paths(NAME)
     libraries = cargo_build("macos", NAME, debug, sorted(MACOS_TARGETS.values()))
     remove(bundle)
@@ -317,7 +316,7 @@ def build_macos(debug):
         run(["dsymutil", binary, "-o", symbols])
         run(["strip", "-x", binary])
     log("Signing the plugin")
-    codesign(bundle, entitlements=entitlements_file())
+    codesign(bundle, identity, entitlements=entitlements_file())
     return bundle
 
 
@@ -353,12 +352,10 @@ def build_windows(debug):
 
 def build(arguments):
     dependencies()
-    if arguments.codesign and not os.environ.get("CODESIGN_IDENT"):
-        raise Error("--codesign needs a signing identity in CODESIGN_IDENT")
     target_platform = host_platform()
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     if target_platform == "macos":
-        artifact = build_macos(arguments.debug)
+        artifact = build_macos(arguments.debug, arguments.codesign_identity)
     elif target_platform == "windows":
         artifact = build_windows(arguments.debug)
     else:
@@ -425,28 +422,33 @@ def package_macos_installer(arguments, base):
         ]
     )
     remove(package)
-    installer_identity = os.environ.get("CODESIGN_IDENT_INSTALLER")
-    if arguments.codesign:
-        if not installer_identity:
-            raise Error("--codesign needs an installer identity in CODESIGN_IDENT_INSTALLER")
+    if arguments.codesign_installer_identity:
         log("Signing the installer package")
-        run(["productsign", "--sign", installer_identity, unsigned, package])
+        run(
+            [
+                "productsign",
+                "--sign",
+                arguments.codesign_installer_identity,
+                unsigned,
+                package,
+            ]
+        )
     else:
         unsigned.replace(package)
     remove(staging)
-    if arguments.notarize:
-        notarize(package, name)
+    if arguments.notarization_user or arguments.notarization_password:
+        notarize(package, name, arguments)
 
 
-def notarize(package, name):
-    user = os.environ.get("CODESIGN_IDENT_USER")
-    password = os.environ.get("CODESIGN_IDENT_PASS")
-    team = os.environ.get("CODESIGN_TEAM")
-    if not team:
-        identity = os.environ.get("CODESIGN_IDENT", "")
-        team = identity.rpartition("(")[2].rstrip(")")
+def notarize(package, name, arguments):
+    user = arguments.notarization_user
+    password = arguments.notarization_password
+    team = arguments.codesign_identity.rpartition("(")[2].rstrip(")")
     if not (user and password and team):
-        raise Error("notarization needs CODESIGN_IDENT_USER, CODESIGN_IDENT_PASS and a team")
+        raise Error(
+            "notarization needs --notarization-user, --notarization-password "
+            "and a team in --codesign-identity"
+        )
     profile = f"{name}-Codesign-Password"
     log("Notarizing the installer package")
     run(
@@ -621,12 +623,34 @@ def main():
     deps_parser.set_defaults(function=lambda arguments: dependencies())
     build_parser = subparsers.add_parser("build")
     build_parser.add_argument("--debug", action="store_true")
-    build_parser.add_argument("--codesign", action="store_true")
+    build_parser.add_argument(
+        "--codesign-identity",
+        default="",
+        help="macOS application signing identity; ad-hoc signed when omitted",
+    )
     build_parser.set_defaults(function=build)
     package_parser = subparsers.add_parser("package")
     package_parser.add_argument("--installer", action="store_true")
-    package_parser.add_argument("--codesign", action="store_true")
-    package_parser.add_argument("--notarize", action="store_true")
+    package_parser.add_argument(
+        "--codesign-identity",
+        default="",
+        help="macOS application signing identity; the notarization team id is taken from it",
+    )
+    package_parser.add_argument(
+        "--codesign-installer-identity",
+        default="",
+        help="macOS installer signing identity; the installer is unsigned when omitted",
+    )
+    package_parser.add_argument(
+        "--notarization-user",
+        default="",
+        help="Apple ID to notarize the installer with; not notarized when omitted",
+    )
+    package_parser.add_argument(
+        "--notarization-password",
+        default="",
+        help="app-specific password for --notarization-user",
+    )
     package_parser.set_defaults(function=package)
     install_parser = subparsers.add_parser("install")
     install_parser.set_defaults(function=install)
