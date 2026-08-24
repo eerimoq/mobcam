@@ -199,36 +199,12 @@ def main():
     subparser = subparsers.add_parser("lint")
     subparser.set_defaults(function=lint)
     subparser = subparsers.add_parser("build")
-    subparser.add_argument(
-        "--codesign-application-identity",
-        default="",
-        help="macOS application signing identity",
-    )
-    subparser.add_argument(
-        "--codesign-installer-identity",
-        default="",
-        help="macOS installer signing identity",
-    )
-    subparser.add_argument(
-        "--codesign-certificate",
-        default="",
-        help="base64 encoded pkcs12 signing certificate",
-    )
-    subparser.add_argument(
-        "--codesign-certificate-password",
-        default="",
-        help="password for --codesign-certificate",
-    )
-    subparser.add_argument(
-        "--notarization-user",
-        default="",
-        help="Apple ID to notarize the installer with",
-    )
-    subparser.add_argument(
-        "--notarization-password",
-        default="",
-        help="app-specific password for --notarization-user",
-    )
+    subparser.add_argument("--codesign-application-identity", required=True)
+    subparser.add_argument("--codesign-installer-identity", required=True)
+    subparser.add_argument("--codesign-certificate", required=True)
+    subparser.add_argument("--codesign-certificate-password", required=True)
+    subparser.add_argument("--notarization-user", required=True)
+    subparser.add_argument("--notarization-password", required=True)
     subparser.set_defaults(function=build)
     subparser = subparsers.add_parser("release")
     subparser.set_defaults(function=release)
