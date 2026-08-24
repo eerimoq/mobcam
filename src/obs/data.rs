@@ -5,9 +5,7 @@ use std::ffi::CStr;
 pub struct Data(*mut sys::obs_data_t);
 
 impl Data {
-    /// # Safety
-    /// `raw` must be a settings object that outlives the returned value.
-    pub unsafe fn from_raw(raw: *mut sys::obs_data_t) -> Self {
+    pub fn from_raw(raw: *mut sys::obs_data_t) -> Self {
         Self(raw)
     }
 

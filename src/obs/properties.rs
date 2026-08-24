@@ -61,9 +61,7 @@ impl Properties {
 pub struct Property(*mut sys::obs_property_t);
 
 impl Property {
-    /// # Safety
-    /// `raw` must belong to a property list that outlives the returned value.
-    pub unsafe fn from_raw(raw: *mut sys::obs_property_t) -> Self {
+    pub fn from_raw(raw: *mut sys::obs_property_t) -> Self {
         Self(raw)
     }
 
@@ -115,7 +113,6 @@ impl Property {
 }
 
 /// # Safety
-/// `properties` must be a live property list.
 pub unsafe fn get(properties: *mut sys::obs_properties_t, name: &CStr) -> Property {
     Property(unsafe { sys::obs_properties_get(properties, name.as_ptr()) })
 }

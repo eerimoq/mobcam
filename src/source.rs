@@ -389,8 +389,8 @@ extern "C" fn get_name(_type_data: *mut c_void) -> *const c_char {
 
 extern "C" fn create(settings: *mut sys::obs_data_t, source: *mut sys::obs_source_t) -> *mut c_void {
     crate::panic::guard("create", std::ptr::null_mut(), || {
-        let mut context = Box::new(Source::new(unsafe { obs::Source::from_raw(source) }));
-        let settings = unsafe { Data::from_raw(settings) };
+        let mut context = Box::new(Source::new(obs::Source::from_raw(source)));
+        let settings = Data::from_raw(settings);
         context.load(&settings);
         context.update(&settings);
         Box::into_raw(context) as *mut c_void
@@ -405,13 +405,13 @@ extern "C" fn destroy(data: *mut c_void) {
 
 extern "C" fn update(data: *mut c_void, settings: *mut sys::obs_data_t) {
     crate::panic::guard("update", (), || {
-        source_of(data).update(&unsafe { Data::from_raw(settings) });
+        source_of(data).update(&Data::from_raw(settings));
     })
 }
 
 extern "C" fn save(data: *mut c_void, settings: *mut sys::obs_data_t) {
     crate::panic::guard("save", (), || {
-        source_of(data).save(&unsafe { Data::from_raw(settings) });
+        source_of(data).save(&Data::from_raw(settings));
     })
 }
 
@@ -445,7 +445,7 @@ extern "C" fn get_height(data: *mut c_void) -> u32 {
 
 extern "C" fn get_defaults(settings: *mut sys::obs_data_t) {
     crate::panic::guard("get_defaults", (), || {
-        let settings = unsafe { Data::from_raw(settings) };
+        let settings = Data::from_raw(settings);
         settings.set_default_string(SETTING_DEVICE, c"");
         settings.set_default_int(SETTING_PORT, DEFAULT_PORT);
         settings.set_default_bool(SETTING_HARDWARE_DECODE, true);

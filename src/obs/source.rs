@@ -1,15 +1,15 @@
 use super::media::{Audio, Frame};
 use super::sys;
 use std::ptr;
-#[derive(Clone, Copy)]
+
 pub struct Source(*mut sys::obs_source_t);
+
 unsafe impl Send for Source {}
+
 unsafe impl Sync for Source {}
 
 impl Source {
-    /// # Safety
-    /// `raw` must be a source that outlives the returned value.
-    pub unsafe fn from_raw(raw: *mut sys::obs_source_t) -> Self {
+    pub fn from_raw(raw: *mut sys::obs_source_t) -> Self {
         Self(raw)
     }
 
