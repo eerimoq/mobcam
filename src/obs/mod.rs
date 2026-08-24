@@ -1,5 +1,3 @@
-pub mod sys;
-
 mod clock;
 pub mod data;
 mod log;
@@ -7,7 +5,7 @@ pub mod media;
 mod module;
 pub mod properties;
 mod source;
-
+pub mod sys;
 pub use clock::now_ns;
 pub use data::{Data, OwnedData};
 pub use log::{log, Level};

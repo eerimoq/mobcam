@@ -1,6 +1,5 @@
-use std::ffi::CStr;
-
 use super::sys;
+use std::ffi::CStr;
 
 pub struct Data(*mut sys::obs_data_t);
 
@@ -13,11 +12,9 @@ impl Data {
 
     pub fn string(&self, key: &CStr) -> String {
         let value = unsafe { sys::obs_data_get_string(self.0, key.as_ptr()) };
-
         if value.is_null() {
             return String::new();
         }
-
         unsafe { CStr::from_ptr(value) }.to_string_lossy().into_owned()
     }
 
@@ -47,7 +44,6 @@ pub struct OwnedData(*mut sys::obs_data_t);
 impl OwnedData {
     pub fn from_json(json: &CStr) -> Option<Self> {
         let data = unsafe { sys::obs_data_create_from_json(json.as_ptr()) };
-
         (!data.is_null()).then_some(Self(data))
     }
 

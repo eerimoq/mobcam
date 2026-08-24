@@ -1,7 +1,6 @@
-use std::ffi::CStr;
-
 use super::module::c_string;
 use super::sys;
+use std::ffi::CStr;
 
 impl Default for Properties {
     fn default() -> Self {
@@ -26,7 +25,6 @@ impl Properties {
                 sys::OBS_COMBO_FORMAT_STRING,
             )
         };
-
         Property(property)
     }
 
@@ -76,7 +74,6 @@ impl Property {
         if self.is_null() {
             return;
         }
-
         unsafe { sys::obs_property_list_clear(self.0) }
     }
 
@@ -84,10 +81,8 @@ impl Property {
         if self.is_null() {
             return;
         }
-
         let label = c_string(label);
         let value = c_string(value);
-
         unsafe {
             sys::obs_property_list_add_string(self.0, label.as_ptr(), value.as_ptr());
         }
@@ -97,9 +92,7 @@ impl Property {
         if self.is_null() {
             return;
         }
-
         let value = c_string(value);
-
         unsafe {
             sys::obs_property_list_add_string(self.0, label.as_ptr(), value.as_ptr());
         }

@@ -1,22 +1,17 @@
 use std::io::{ErrorKind, Read, Write};
-use std::time::Duration;
-
 #[cfg(windows)]
 use std::net::TcpStream;
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
+use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
-
 #[cfg(unix)]
 const USBMUXD_PATH: &str = "/var/run/usbmuxd";
-
 #[cfg(windows)]
 const USBMUXD_ADDRESS: &str = "127.0.0.1:27015";
-
 #[cfg(unix)]
 pub type Stream = UnixStream;
-
 #[cfg(windows)]
 pub type Stream = TcpStream;
 
@@ -40,16 +35,13 @@ impl<F: Fn() -> bool> Abort for F {
 pub fn connect_usbmuxd() -> Option<Stream> {
     #[cfg(unix)]
     let stream = UnixStream::connect(USBMUXD_PATH).ok()?;
-
     #[cfg(windows)]
     let stream = {
         let stream = TcpStream::connect(USBMUXD_ADDRESS).ok()?;
         let _ = stream.set_nodelay(true);
         stream
     };
-
     stream.set_read_timeout(Some(POLL_INTERVAL)).ok()?;
-
     Some(stream)
 }
 
@@ -59,12 +51,10 @@ pub fn write_all(stream: &mut Stream, data: &[u8]) -> bool {
 
 pub fn read_exact(stream: &mut Stream, buffer: &mut [u8], abort: &dyn Abort) -> Result<(), Io> {
     let mut filled = 0;
-
     while filled < buffer.len() {
         if abort.aborted() {
             return Err(Io::Aborted);
         }
-
         match stream.read(&mut buffer[filled..]) {
             Ok(0) => return Err(Io::Closed),
             Ok(read) => filled += read,
@@ -75,6 +65,5 @@ pub fn read_exact(stream: &mut Stream, buffer: &mut [u8], abort: &dyn Abort) -> 
             },
         }
     }
-
     Ok(())
 }

@@ -1,7 +1,6 @@
-use std::ptr;
-
 use super::sys;
 use super::{Device, Frame, Packet, Status, INPUT_BUFFER_PADDING};
+use std::ptr;
 
 #[derive(Clone, Copy)]
 pub struct Codec(*const sys::AVCodec);
@@ -9,7 +8,6 @@ pub struct Codec(*const sys::AVCodec);
 impl Codec {
     pub fn find(id: sys::AVCodecID) -> Option<Self> {
         let codec = unsafe { sys::avcodec_find_decoder(id) };
-
         (!codec.is_null()).then_some(Self(codec))
     }
 
@@ -20,13 +18,10 @@ impl Codec {
     pub(super) fn hardware_pixel_format(self, kind: sys::AVHWDeviceType) -> Option<sys::AVPixelFormat> {
         for index in 0.. {
             let config = unsafe { sys::avcodec_get_hw_config(self.0, index) };
-
             if config.is_null() {
                 return None;
             }
-
             let config = unsafe { &*config };
-
             if (config.methods & sys::AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX as i32) != 0 && config.device_type == kind
             {
                 return Some(config.pix_fmt);
@@ -45,7 +40,6 @@ pub struct Context {
 impl Context {
     pub fn new(codec: Codec) -> Option<Self> {
         let raw = unsafe { sys::avcodec_alloc_context3(codec.as_ptr()) };
-
         (!raw.is_null()).then_some(Self { raw, open: false })
     }
 
@@ -57,20 +51,15 @@ impl Context {
         if record.is_empty() {
             return true;
         }
-
         let extradata = unsafe { sys::av_mallocz(record.len() + INPUT_BUFFER_PADDING) } as *mut u8;
-
         if extradata.is_null() {
             return false;
         }
-
         unsafe {
             ptr::copy_nonoverlapping(record.as_ptr(), extradata, record.len());
-
             (*self.raw).extradata = extradata;
             (*self.raw).extradata_size = record.len() as i32;
         }
-
         true
     }
 
@@ -101,7 +90,6 @@ impl Context {
 
     pub fn open(&mut self, codec: Codec) -> bool {
         let result = unsafe { sys::avcodec_open2(self.raw, codec.as_ptr(), ptr::null_mut()) };
-
         self.open = result >= 0;
         self.open
     }
@@ -110,17 +98,13 @@ impl Context {
         if !self.open {
             return;
         }
-
         unsafe { sys::avcodec_flush_buffers(self.raw) }
     }
 
     pub fn send(&mut self, packet: &mut Packet, data: &[u8], pts: i64, keyframe: bool) -> Status {
         packet.set(data, pts, keyframe);
-
         let result = unsafe { sys::avcodec_send_packet(self.raw, packet.as_ptr()) };
-
         packet.clear();
-
         Status::of(result)
     }
 

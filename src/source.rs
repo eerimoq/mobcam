@@ -1,14 +1,13 @@
-use std::ffi::{c_char, c_void, CStr};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
-use std::time::Duration;
-
 use crate::decoder::{Decoder, Sink, INPUT_PADDING};
 use crate::obs::{self, sys, text, Audio, Data, Frame, Level, Properties};
 use crate::obs_log;
 use crate::protocol;
 use crate::socket::{self, Abort, Stream};
 use crate::usbmux;
+use std::ffi::{c_char, c_void, CStr};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::time::Duration;
 
 const SETTING_DEVICE: &CStr = c"device";
 const SETTING_PORT: &CStr = c"port";
@@ -16,7 +15,6 @@ const SETTING_HARDWARE_DECODE: &CStr = c"hardware_decode";
 const SETTING_BUFFERING: &CStr = c"buffering";
 const SETTING_CLEAR_ON_DISCONNECT: &CStr = c"clear_on_disconnect";
 const SETTING_DISCONNECT_WHEN_HIDDEN: &CStr = c"disconnect_when_hidden";
-
 const DEFAULT_PORT: i64 = 7790;
 const RECONNECT_DELAY: Duration = Duration::from_millis(1000);
 const PTS_DISCONTINUITY_US: u64 = 5 * 1000 * 1000;
@@ -24,7 +22,6 @@ const DEVICE_LIST_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn name_cache() -> &'static Mutex<Vec<(String, String)>> {
     static CACHE: OnceLock<Mutex<Vec<(String, String)>>> = OnceLock::new();
-
     CACHE.get_or_init(|| Mutex::new(Vec::new()))
 }
 
@@ -32,11 +29,9 @@ fn name_cache_set(serial: &str, name: &str) {
     if serial.is_empty() || name.is_empty() {
         return;
     }
-
     let Ok(mut cache) = name_cache().lock() else {
         return;
     };
-
     match cache.iter_mut().find(|(known, _)| known == serial) {
         Some((_, known)) => *known = name.to_string(),
         None => cache.push((serial.to_string(), name.to_string())),
@@ -45,7 +40,6 @@ fn name_cache_set(serial: &str, name: &str) {
 
 fn name_cache_get(serial: &str) -> Option<String> {
     let cache = name_cache().lock().ok()?;
-
     cache
         .iter()
         .find(|(known, _)| known == serial)
@@ -63,7 +57,6 @@ struct Clock {
 impl Clock {
     fn timestamp(&mut self, pts_us: u64) -> u64 {
         let distance = pts_us.abs_diff(self.previous_pts_us);
-
         if !self.anchored || distance > PTS_DISCONTINUITY_US {
             self.anchored = true;
             self.first_pts_us = pts_us;
@@ -72,9 +65,7 @@ impl Clock {
             self.anchor_ns -= (self.first_pts_us - pts_us) * 1000;
             self.first_pts_us = pts_us;
         }
-
         self.previous_pts_us = pts_us;
-
         self.anchor_ns + (pts_us - self.first_pts_us) * 1000
     }
 }
@@ -93,9 +84,7 @@ impl Shared {
         if !self.clear_on_disconnect.load(Ordering::Relaxed) {
             return;
         }
-
         self.source.clear_video();
-
         self.width.store(0, Ordering::Relaxed);
         self.height.store(0, Ordering::Relaxed);
     }
@@ -115,16 +104,13 @@ struct Output {
 impl Sink for Output {
     fn video(&mut self, frame: &mut Frame, pts_us: u64) {
         frame.timestamp = self.clock.timestamp(pts_us);
-
         self.shared.width.store(frame.width, Ordering::Relaxed);
         self.shared.height.store(frame.height, Ordering::Relaxed);
-
         self.shared.source.output_video(frame);
     }
 
     fn audio(&mut self, audio: &mut Audio, pts_us: u64) {
         audio.timestamp = self.clock.timestamp(pts_us);
-
         self.shared.source.output_audio(audio);
     }
 }
@@ -141,22 +127,18 @@ impl Worker {
     fn run(mut self) {
         while !self.shared.stopping.load(Ordering::Relaxed) {
             self.connect();
-
             if self.shared.stopping.load(Ordering::Relaxed) {
                 break;
             }
-
             self.wait_before_reconnecting();
         }
     }
 
     fn wait_before_reconnecting(&self) {
         let (lock, condvar) = &self.shared.wakeup;
-
         let Ok(signalled) = lock.lock() else {
             return;
         };
-
         let _ = condvar.wait_timeout_while(signalled, RECONNECT_DELAY, |signalled| !*signalled);
     }
 
@@ -168,18 +150,14 @@ impl Worker {
                     self.reported_failure = Some(error);
                     obs_log!(Level::Info, "not connected: {}", error.message());
                 }
-
                 return;
             }
         };
-
         self.reported_failure = None;
         self.stream(stream, &serial);
-
         if !self.shared.stopping.load(Ordering::Relaxed) {
             obs_log!(Level::Info, "disconnected from {serial}");
         }
-
         self.shared.clear_video();
     }
 
@@ -188,43 +166,31 @@ impl Worker {
             obs_log!(Level::Warning, "failed to say hello to {serial}");
             return;
         }
-
         let Some(decoder) = self.decoder.as_mut() else {
             return;
         };
-
         decoder.reset();
-
         let mut output = Output {
             shared: Arc::clone(&self.shared),
             clock: Clock::default(),
         };
-
         let mut buffer: Vec<u8> = Vec::new();
-
         loop {
             let mut header = [0u8; protocol::MESSAGE_HEADER_SIZE];
-
             if socket::read_exact(&mut stream, &mut header, &self.shared).is_err() {
                 break;
             }
-
             let (length, kind) = protocol::parse_message_header(&header);
-
             if !(1..=protocol::MAX_MESSAGE_LENGTH).contains(&length) {
                 obs_log!(Level::Warning, "bad message length {length}");
                 break;
             }
-
             let payload_size = length as usize - 1;
-
             buffer.clear();
             buffer.resize(payload_size + INPUT_PADDING, 0);
-
             if socket::read_exact(&mut stream, &mut buffer[..payload_size], &self.shared).is_err() {
                 break;
             }
-
             if !handle_message(decoder, &mut output, kind, &buffer[..payload_size], serial) {
                 break;
             }
@@ -239,16 +205,13 @@ fn handle_message(decoder: &mut Decoder, output: &mut Output, kind: u8, payload:
                 obs_log!(Level::Warning, "malformed device hello");
                 return false;
             };
-
             obs_log!(
                 Level::Info,
                 "connected to {} (Moblin {}) on {serial}",
                 hello.name,
                 hello.app_version
             );
-
             name_cache_set(serial, &hello.name);
-
             true
         }
         protocol::MESSAGE_VIDEO_CONFIG => match protocol::parse_video_config(payload) {
@@ -275,7 +238,6 @@ fn handle_message(decoder: &mut Decoder, output: &mut Output, kind: u8, payload:
                     return false;
                 }
             }
-
             true
         }
         protocol::MESSAGE_AUDIO_FRAME => {
@@ -286,7 +248,6 @@ fn handle_message(decoder: &mut Decoder, output: &mut Output, kind: u8, payload:
                     return false;
                 }
             }
-
             true
         }
         _ => true,
@@ -325,20 +286,15 @@ impl Source {
         if self.thread.is_some() {
             return;
         }
-
         let Some(mut decoder) = Decoder::new() else {
             obs_log!(Level::Error, "failed to create the decoder");
             return;
         };
-
         decoder.set_hardware(self.hardware_decode);
-
         self.shared.stopping.store(false, Ordering::Relaxed);
-
         if let Ok(mut signalled) = self.shared.wakeup.0.lock() {
             *signalled = false;
         }
-
         let worker = Worker {
             shared: Arc::clone(&self.shared),
             decoder: Some(decoder),
@@ -346,7 +302,6 @@ impl Source {
             port: self.port,
             reported_failure: None,
         };
-
         match std::thread::Builder::new()
             .name(String::from("mobcam"))
             .spawn(|| worker.run())
@@ -360,16 +315,12 @@ impl Source {
         let Some(thread) = self.thread.take() else {
             return;
         };
-
         self.shared.stopping.store(true, Ordering::Relaxed);
-
         if let Ok(mut signalled) = self.shared.wakeup.0.lock() {
             *signalled = true;
             self.shared.wakeup.1.notify_all();
         }
-
         let _ = thread.join();
-
         self.shared.clear_video();
     }
 
@@ -379,26 +330,19 @@ impl Source {
         let hardware_decode = settings.bool(SETTING_HARDWARE_DECODE);
         let buffering = settings.bool(SETTING_BUFFERING);
         let disconnect_when_hidden = settings.bool(SETTING_DISCONNECT_WHEN_HIDDEN);
-
         self.shared
             .clear_on_disconnect
             .store(settings.bool(SETTING_CLEAR_ON_DISCONNECT), Ordering::Relaxed);
-
         self.shared.source.set_async_unbuffered(!buffering);
-
         let restart = port != self.port || hardware_decode != self.hardware_decode || serial != self.serial;
-
         if restart {
             self.stop();
             self.serial = serial;
             self.port = port;
             self.hardware_decode = hardware_decode;
         }
-
         self.disconnect_when_hidden = disconnect_when_hidden;
-
         let showing = self.shared.source.showing();
-
         if !disconnect_when_hidden || showing {
             self.start();
         } else {
@@ -416,20 +360,16 @@ impl Drop for Source {
 fn fill_device_list(list: &mut obs::Property) {
     let deadline = std::time::Instant::now() + DEVICE_LIST_TIMEOUT;
     let expired = move || std::time::Instant::now() >= deadline;
-
     list.clear_list();
     list.add_translated_entry(text(c"Device.Automatic"), "");
-
     let Ok(devices) = usbmux::list_devices(&expired) else {
         return;
     };
-
     for device in devices {
         let label = match name_cache_get(&device.serial) {
             Some(name) => format!("{name} ({})", device.serial),
             None => device.serial.clone(),
         };
-
         list.add_list_entry(&label, &device.serial);
     }
 }
@@ -465,7 +405,6 @@ extern "C" fn update(data: *mut c_void, settings: *mut sys::obs_data_t) {
 extern "C" fn show(data: *mut c_void) {
     crate::panic::guard("show", (), || {
         let context = unsafe { source_of(data) };
-
         if context.disconnect_when_hidden {
             context.start();
         }
@@ -475,7 +414,6 @@ extern "C" fn show(data: *mut c_void) {
 extern "C" fn hide(data: *mut c_void) {
     crate::panic::guard("hide", (), || {
         let context = unsafe { source_of(data) };
-
         if context.disconnect_when_hidden {
             context.stop();
         }
@@ -497,7 +435,6 @@ extern "C" fn get_height(data: *mut c_void) -> u32 {
 extern "C" fn get_defaults(settings: *mut sys::obs_data_t) {
     crate::panic::guard("get_defaults", (), || {
         let settings = unsafe { Data::from_raw(settings) };
-
         settings.set_default_string(SETTING_DEVICE, c"");
         settings.set_default_int(SETTING_PORT, DEFAULT_PORT);
         settings.set_default_bool(SETTING_HARDWARE_DECODE, false);
@@ -514,9 +451,7 @@ extern "C" fn refresh_devices_clicked(
 ) -> bool {
     crate::panic::guard("refresh_devices", false, || {
         let mut list = unsafe { obs::properties::get(properties, SETTING_DEVICE) };
-
         fill_device_list(&mut list);
-
         true
     })
 }
@@ -525,16 +460,13 @@ extern "C" fn get_properties(_data: *mut c_void) -> *mut sys::obs_properties_t {
     crate::panic::guard("get_properties", std::ptr::null_mut(), || {
         let mut properties = Properties::new();
         let mut list = properties.add_string_list(SETTING_DEVICE, text(c"Device"));
-
         fill_device_list(&mut list);
-
         properties.add_button(c"refresh", text(c"RefreshDevices"), Some(refresh_devices_clicked));
         properties.add_int(SETTING_PORT, text(c"Port"), 1, 65535);
         properties.add_bool(SETTING_HARDWARE_DECODE, text(c"HardwareDecode"));
         properties.add_bool(SETTING_BUFFERING, text(c"Buffering"));
         properties.add_bool(SETTING_CLEAR_ON_DISCONNECT, text(c"ClearOnDisconnect"));
         properties.add_bool(SETTING_DISCONNECT_WHEN_HIDDEN, text(c"DisconnectWhenHidden"));
-
         properties.into_raw()
     })
 }

@@ -1,19 +1,16 @@
-pub mod sys;
-
 mod codec;
 mod format;
 mod frame;
 mod hardware;
 mod packet;
-
-use std::ffi::CStr;
-use std::os::raw::c_char;
-
+pub mod sys;
 pub use codec::{Codec, Context};
 pub use format::{pixel_format_name, sample_format_name};
 pub use frame::Frame;
 pub use hardware::Device;
 pub use packet::Packet;
+use std::ffi::CStr;
+use std::os::raw::c_char;
 
 pub const INPUT_BUFFER_PADDING: usize = sys::AV_INPUT_BUFFER_PADDING_SIZE as usize;
 

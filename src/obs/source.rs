@@ -1,11 +1,8 @@
-use std::ptr;
-
 use super::media::{Audio, Frame};
 use super::sys;
-
+use std::ptr;
 #[derive(Clone, Copy)]
 pub struct Source(*mut sys::obs_source_t);
-
 unsafe impl Send for Source {}
 unsafe impl Sync for Source {}
 

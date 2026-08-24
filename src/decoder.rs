@@ -82,7 +82,6 @@ impl Stream {
         if !context.set_extradata(record) {
             return None;
         }
-
         Some(self.context.insert(context))
     }
 
@@ -90,16 +89,13 @@ impl Stream {
         let Some(context) = self.context.as_mut() else {
             return false;
         };
-
         if !context.open(codec) {
             self.close();
             return false;
         }
-
         self.codec = wire_codec;
         self.hardware_requested = hardware;
         self.record = record.to_vec();
-
         true
     }
 
@@ -107,15 +103,12 @@ impl Stream {
         let Some(context) = self.context.as_mut() else {
             return;
         };
-
         let Some(device) = Device::open(codec) else {
             return;
         };
-
         let Some(frame) = ffmpeg::Frame::new() else {
             return;
         };
-
         context.set_hardware_device(&device);
         self.hardware = Some(Hardware { device, frame });
     }
@@ -124,7 +117,6 @@ impl Stream {
         let Some(context) = self.context.as_mut() else {
             return false;
         };
-
         context.send(&mut self.packet, data, pts, keyframe).is_ok()
     }
 
@@ -132,34 +124,27 @@ impl Stream {
         let Some(context) = self.context.as_mut() else {
             return Received::Drained;
         };
-
         let status = match self.hardware.as_mut() {
             Some(hardware) => context.receive(&mut hardware.frame),
             None => context.receive(&mut self.frame),
         };
-
         match status {
             Status::Again | Status::Eof => return Received::Drained,
             Status::Error(_) => return Received::Failed,
             Status::Ok => (),
         }
-
         let Some(hardware) = self.hardware.as_ref() else {
             self.decoded = Decoded::Own;
             return Received::Frame;
         };
-
         if hardware.frame.pixel_format() != hardware.device.format() {
             self.decoded = Decoded::Hardware;
             return Received::Frame;
         }
-
         if !self.frame.download(&hardware.frame) {
             return Received::NotTransferred;
         }
-
         self.decoded = Decoded::Own;
-
         Received::Frame
     }
 
@@ -174,7 +159,6 @@ impl Stream {
         if let Some(hardware) = self.hardware.as_mut() {
             hardware.frame.unref();
         }
-
         self.frame.unref();
     }
 }
@@ -230,30 +214,23 @@ impl Decoder {
                 return false;
             }
         };
-
         if self.video.configured(config.codec, self.hardware, config.record) {
             return true;
         }
-
         self.video.close();
         self.got_keyframe = false;
-
         let Some(codec) = Codec::find(codec_id) else {
             obs_log!(Level::Error, "no {} decoder available", video_codec_name(config.codec));
             return false;
         };
-
         let Some(context) = self.video.begin(codec, config.record) else {
             return false;
         };
-
         context.set_size(i32::from(config.width), i32::from(config.height));
         context.set_low_latency();
-
         if self.hardware {
             self.video.attach_hardware(codec);
         }
-
         if !self.video.open(codec, config.codec, self.hardware, config.record) {
             obs_log!(
                 Level::Error,
@@ -262,15 +239,12 @@ impl Decoder {
             );
             return false;
         }
-
         self.logged_pixel_format = None;
         self.logged_transfer_failure = false;
-
         let where_ = match self.video.hardware.as_ref() {
             Some(hardware) => hardware.device.name(),
             None => String::from("software"),
         };
-
         obs_log!(
             Level::Info,
             "decoding {} {}x{} in {where_}",
@@ -278,7 +252,6 @@ impl Decoder {
             config.width,
             config.height
         );
-
         true
     }
 
@@ -290,24 +263,18 @@ impl Decoder {
                 return false;
             }
         };
-
         if self.audio.configured(config.codec, false, config.record) {
             return true;
         }
-
         self.audio.close();
-
         let Some(codec) = Codec::find(codec_id) else {
             obs_log!(Level::Error, "no {} decoder available", audio_codec_name(config.codec));
             return false;
         };
-
         let Some(context) = self.audio.begin(codec, config.record) else {
             return false;
         };
-
         context.set_audio(config.sample_rate as i32, i32::from(config.channels));
-
         if !self.audio.open(codec, config.codec, false, config.record) {
             obs_log!(
                 Level::Error,
@@ -316,10 +283,8 @@ impl Decoder {
             );
             return false;
         }
-
         self.logged_sample_format = None;
         self.logged_channels = None;
-
         obs_log!(
             Level::Info,
             "decoding {} {} Hz {} channel",
@@ -327,7 +292,6 @@ impl Decoder {
             config.sample_rate,
             config.channels
         );
-
         true
     }
 
@@ -335,22 +299,18 @@ impl Decoder {
         if !self.video.is_open() {
             return true;
         }
-
         if !self.got_keyframe {
             if !frame.keyframe {
                 return true;
             }
-
             self.got_keyframe = true;
         }
-
         if !self.video.send(frame.data, frame.pts_us as i64, frame.keyframe) {
             obs_log!(Level::Warning, "failed to decode a frame, flushing the decoder");
             self.video.flush();
             self.got_keyframe = false;
             return true;
         }
-
         loop {
             match self.video.receive() {
                 Received::Drained => break,
@@ -363,10 +323,8 @@ impl Decoder {
                 }
                 Received::Frame => self.emit_video(sink),
             }
-
             self.video.release();
         }
-
         true
     }
 
@@ -374,13 +332,11 @@ impl Decoder {
         if !self.audio.is_open() {
             return;
         }
-
         if !self.audio.send(frame.data, frame.pts_us as i64, true) {
             obs_log!(Level::Warning, "failed to decode audio, flushing the decoder");
             self.audio.flush();
             return;
         }
-
         loop {
             match self.audio.receive() {
                 Received::Drained => break,
@@ -391,14 +347,12 @@ impl Decoder {
                 }
                 Received::Frame => self.emit_audio(sink),
             }
-
             self.audio.release();
         }
     }
 
     fn emit_video(&mut self, sink: &mut dyn Sink) {
         let source = self.video.decoded();
-
         let Some((format, format_is_full_range)) = media::video_format(source.pixel_format()) else {
             if self.logged_pixel_format != Some(source.pixel_format()) {
                 self.logged_pixel_format = Some(source.pixel_format());
@@ -408,12 +362,9 @@ impl Decoder {
                     ffmpeg::pixel_format_name(source.pixel_format())
                 );
             }
-
             return;
         };
-
         let full_range = format_is_full_range || source.is_full_range();
-
         let mut frame = Frame {
             format,
             width: source.width() as u32,
@@ -422,24 +373,18 @@ impl Decoder {
             trc: media::transfer(source),
             ..Default::default()
         };
-
         for plane in 0..(obs::sys::MAX_AV_PLANES as usize).min(ffmpeg::Frame::PLANES) {
             let (data, linesize) = source.plane(plane);
-
             frame.data[plane] = data;
             frame.linesize[plane] = linesize as u32;
         }
-
         media::set_color_parameters(&mut frame, media::colorspace(source), full_range);
-
         let pts = source.pts();
-
         sink.video(&mut frame, pts as u64);
     }
 
     fn emit_audio(&mut self, sink: &mut dyn Sink) {
         let source = self.audio.decoded();
-
         let Some(format) = media::audio_format(source.sample_format()) else {
             if self.logged_sample_format != Some(source.sample_format()) {
                 self.logged_sample_format = Some(source.sample_format());
@@ -449,21 +394,16 @@ impl Decoder {
                     ffmpeg::sample_format_name(source.sample_format())
                 );
             }
-
             return;
         };
-
         let channels = source.channels();
-
         let Some(speakers) = media::speakers(channels) else {
             if self.logged_channels != Some(channels) {
                 self.logged_channels = Some(channels);
                 obs_log!(Level::Warning, "unsupported channel count {channels}");
             }
-
             return;
         };
-
         let mut audio = Audio {
             format,
             speakers,
@@ -471,15 +411,11 @@ impl Decoder {
             samples_per_sec: source.sample_rate() as u32,
             ..Default::default()
         };
-
         let planes = media::audio_planes(format, speakers).min(obs::sys::MAX_AV_PLANES as usize);
-
         for plane in 0..planes {
             audio.data[plane] = source.audio_plane(plane);
         }
-
         let pts = source.pts();
-
         sink.audio(&mut audio, pts as u64);
     }
 }

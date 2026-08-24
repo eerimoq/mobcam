@@ -7,7 +7,6 @@ impl Frame {
 
     pub fn new() -> Option<Self> {
         let frame = unsafe { sys::av_frame_alloc() };
-
         (!frame.is_null()).then_some(Self(frame))
     }
 
@@ -26,7 +25,6 @@ impl Frame {
     pub fn download(&mut self, source: &Frame) -> bool {
         unsafe {
             sys::av_frame_unref(self.0);
-
             sys::av_hwframe_transfer_data(self.0, source.0, 0) >= 0 && sys::av_frame_copy_props(self.0, source.0) >= 0
         }
     }
@@ -65,7 +63,6 @@ impl Frame {
 
     pub fn plane(&self, index: usize) -> (*mut u8, i32) {
         let frame = self.get();
-
         (frame.data[index], frame.linesize[index])
     }
 
@@ -83,7 +80,6 @@ impl Frame {
 
     pub fn audio_planes(&self) -> usize {
         let planar = unsafe { sys::av_sample_fmt_is_planar(self.sample_format()) } != 0;
-
         if planar {
             self.channels().max(0) as usize
         } else {
@@ -95,7 +91,6 @@ impl Frame {
         if index >= self.audio_planes() {
             return std::ptr::null_mut();
         }
-
         unsafe { *self.get().extended_data.add(index) }
     }
 }

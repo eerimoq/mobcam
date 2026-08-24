@@ -1,7 +1,6 @@
-use std::ptr;
-
 use super::sys;
 use super::Codec;
+use std::ptr;
 
 const TYPES: [sys::AVHWDeviceType; 7] = [
     sys::AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
@@ -27,9 +26,7 @@ impl Device {
     fn open_kind(codec: Codec, kind: sys::AVHWDeviceType) -> Option<Self> {
         let format = codec.hardware_pixel_format(kind)?;
         let mut raw = ptr::null_mut();
-
         let created = unsafe { sys::av_hwdevice_ctx_create(&mut raw, kind, ptr::null(), ptr::null_mut(), 0) };
-
         (created >= 0).then_some(Self { raw, kind, format })
     }
 

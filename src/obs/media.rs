@@ -1,9 +1,6 @@
-use crate::ffmpeg::{self, sys as av};
-
 use super::sys;
-
+use crate::ffmpeg::{self, sys as av};
 pub type Frame = sys::obs_source_frame;
-
 pub type Audio = sys::obs_source_audio;
 
 pub fn video_format(format: av::AVPixelFormat) -> Option<(sys::video_format, bool)> {
@@ -41,7 +38,6 @@ pub fn transfer(frame: &ffmpeg::Frame) -> u8 {
         av::AVCOL_TRC_ARIB_STD_B67 => sys::VIDEO_TRC_HLG,
         _ => sys::VIDEO_TRC_DEFAULT,
     };
-
     trc as u8
 }
 
@@ -57,7 +53,6 @@ pub fn audio_format(format: av::AVSampleFormat) -> Option<sys::audio_format> {
         av::AV_SAMPLE_FMT_FLTP => sys::AUDIO_FORMAT_FLOAT_PLANAR,
         _ => return None,
     };
-
     Some(format)
 }
 
@@ -72,7 +67,6 @@ pub fn speakers(channels: i32) -> Option<sys::speaker_layout> {
         8 => sys::SPEAKERS_7POINT1,
         _ => return None,
     };
-
     Some(speakers)
 }
 
@@ -82,7 +76,6 @@ pub fn set_color_parameters(frame: &mut Frame, colorspace: sys::video_colorspace
     } else {
         sys::VIDEO_RANGE_PARTIAL
     };
-
     unsafe {
         sys::video_format_get_parameters_for_format(
             colorspace,

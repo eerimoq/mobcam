@@ -15,14 +15,12 @@ impl Level {
             Level::Warning => sys::LOG_WARNING,
             Level::Info => sys::LOG_INFO,
         };
-
         level as i32
     }
 }
 
 pub fn log(level: Level, message: &str) {
     let line = c_string(&format!("[{}] {}", crate::PLUGIN_NAME, message));
-
     unsafe {
         sys::blog(level.to_obs(), c"%s".as_ptr(), line.as_ptr());
     }
