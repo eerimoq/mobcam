@@ -43,9 +43,12 @@ def log(message):
     print(f"==> {message}", flush=True)
 
 
-def run(command, **kwargs):
+def run(command, quiet=False, **kwargs):
     command = [str(argument) for argument in command]
-    print(f"    {' '.join(command)}", flush=True)
+    if quiet:
+        print(f"    {' '.join(command[:2])} ...", flush=True)
+    else:
+        print(f"    {' '.join(command)}", flush=True)
     try:
         return subprocess.run(command, check=True, **kwargs)
     except FileNotFoundError:
@@ -249,11 +252,16 @@ def codesign(path, identity=None, entitlements=None):
     run(command + [path])
 
 
+def macos_paths(name):
+    """The staged bundle, the binary inside it and the separated debug symbols."""
+    bundle = INSTALL_DIR / f"{name}.plugin"
+    return bundle, bundle / "Contents" / "MacOS" / name, INSTALL_DIR / f"{name}.plugin.dSYM"
+
+
 def build_macos(spec, debug):
     values = plugin(spec)
     name = values["NAME"]
-    bundle = INSTALL_DIR / f"{name}.plugin"
-    binary = bundle / "Contents" / "MacOS" / name
+    bundle, binary, symbols = macos_paths(name)
     libraries = cargo_build("macos", name, debug, sorted(MACOS_TARGETS.values()))
     remove(bundle)
     binary.parent.mkdir(parents=True)
@@ -266,7 +274,6 @@ def build_macos(spec, debug):
         **values,
     )
     copy_data(bundle / "Contents" / "Resources")
-    symbols = INSTALL_DIR / f"{name}.plugin.dSYM"
     remove(symbols)
     if not debug:
         log("Separating the debug symbols")
@@ -338,8 +345,7 @@ def package_macos(spec, arguments):
     values = plugin(spec)
     name = values["NAME"]
     base = output_name(spec, "macos")
-    bundle = INSTALL_DIR / f"{name}.plugin"
-    symbols = INSTALL_DIR / f"{name}.plugin.dSYM"
+    bundle, _, symbols = macos_paths(name)
     if not bundle.is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
     if arguments.installer:
@@ -355,13 +361,10 @@ def package_macos_installer(spec, arguments, base):
     name = values["NAME"]
     staging = RELEASE_DIR / "installer"
     root = staging / "root" / "Library" / "Application Support" / "obs-studio" / "plugins"
+    bundle, _, _ = macos_paths(name)
     remove(staging)
     root.mkdir(parents=True)
-    shutil.copytree(
-        INSTALL_DIR / f"{name}.plugin",
-        root / f"{name}.plugin",
-        symlinks=True,
-    )
+    shutil.copytree(bundle, root / bundle.name, symlinks=True)
     log("Building the installer package")
     run(
         [
@@ -558,7 +561,7 @@ def install(arguments):
     target_platform = host_platform()
     if target_platform == "macos":
         destination = Path.home() / "Library/Application Support/obs-studio/plugins"
-        source = INSTALL_DIR / f"{name}.plugin"
+        source, _, _ = macos_paths(name)
         destination.mkdir(parents=True, exist_ok=True)
         remove(destination / source.name)
         shutil.copytree(source, destination / source.name, symlinks=True)

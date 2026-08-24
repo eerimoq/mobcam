@@ -3,7 +3,6 @@
 import argparse
 import base64
 import hashlib
-import json
 import os
 import shutil
 import subprocess
@@ -11,6 +10,17 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+from build import (  # noqa: E402
+    MACOS_TARGETS,
+    Error,
+    buildspec,
+    host_platform,
+    macos_paths,
+    run,
+)
+
 XCODE = "/Applications/Xcode_26.6.app/Contents/Developer"
 UBUNTU_PACKAGES = [
     "libclang-dev",
@@ -21,11 +31,11 @@ UBUNTU_PACKAGES = [
     "pkg-config",
 ]
 TARGETS = {
-    "macos": ["aarch64-apple-darwin", "x86_64-apple-darwin"],
+    "macos": sorted(MACOS_TARGETS.values()),
     "windows": ["x86_64-pc-windows-msvc"],
     "linux": [],
 }
-ARCHITECTURES = ["arm64", "x86_64"]
+ARCHITECTURES = sorted(MACOS_TARGETS)
 CREDENTIALS = [
     ("MACOS_SIGNING_IDENTITY", "CODESIGN_IDENT"),
     ("MACOS_SIGNING_INSTALLER_IDENTITY", "CODESIGN_IDENT_INSTALLER"),
@@ -43,10 +53,6 @@ VARIANTS = {
 CHECKSUMS = "CHECKSUMS.txt"
 
 
-class Error(Exception):
-    pass
-
-
 def output(name, value):
     path = os.environ.get("GITHUB_OUTPUT")
     if path is None:
@@ -56,38 +62,8 @@ def output(name, value):
         fout.write(f"{name}={value}\n")
 
 
-def run(command, quiet=False, **kwargs):
-    command = [str(argument) for argument in command]
-    if quiet:
-        print(f"    {' '.join(command[:2])} ...", flush=True)
-    else:
-        print(f"    {' '.join(command)}", flush=True)
-    try:
-        return subprocess.run(command, check=True, **kwargs)
-    except FileNotFoundError:
-        raise Error(f"{command[0]} not found")
-    except subprocess.CalledProcessError as error:
-        raise Error(f"{command[0]} failed with exit code {error.returncode}")
-
-
 def build_py(*arguments):
     return run([sys.executable, ROOT / "build.py", *arguments])
-
-
-def host_platform():
-    if sys.platform == "darwin":
-        return "macos"
-    elif sys.platform == "win32":
-        return "windows"
-    elif sys.platform.startswith("linux"):
-        return "linux"
-    else:
-        raise Error(f"unsupported platform {sys.platform}")
-
-
-def buildspec():
-    with open(ROOT / "buildspec.json", encoding="utf-8") as fin:
-        return json.load(fin)
 
 
 def setup():
@@ -159,7 +135,7 @@ def codesigning():
 
 
 def verify_universal_binary(name):
-    binary = ROOT / "release" / "install" / f"{name}.plugin" / "Contents" / "MacOS" / name
+    _, binary, _ = macos_paths(name)
     result = run(["lipo", "-archs", binary], stdout=subprocess.PIPE, text=True)
     archs = result.stdout.split()
     print(f"    {name} architectures: {' '.join(archs)}")
