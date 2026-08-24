@@ -57,15 +57,6 @@ def output(name, value):
         fout.write(f"{name}={value}\n")
 
 
-@contextlib.contextmanager
-def group(title):
-    print(f"::group::{title}", flush=True)
-    try:
-        yield
-    finally:
-        print("::endgroup::", flush=True)
-
-
 def run(command, quiet=False, **kwargs):
     command = [str(argument) for argument in command]
     if quiet:
@@ -102,19 +93,18 @@ def buildspec():
 
 def setup():
     platform = host_platform()
-    with group("Setting up the environment"):
-        if platform == "macos":
-            run(["sudo", "xcode-select", "--switch", XCODE])
-        elif platform == "linux":
-            run(["sudo", "add-apt-repository", "--yes", "ppa:obsproject/obs-studio"])
-            run(["sudo", "apt-get", "--quiet", "update"])
-            run(
-                ["sudo", "apt-get", "--quiet", "--yes", "--no-install-recommends", "install"]
-                + UBUNTU_PACKAGES
-            )
-        run(["rustup", "show", "active-toolchain"])
-        if TARGETS[platform]:
-            run(["rustup", "target", "add"] + TARGETS[platform])
+    if platform == "macos":
+        run(["sudo", "xcode-select", "--switch", XCODE])
+    elif platform == "linux":
+        run(["sudo", "add-apt-repository", "--yes", "ppa:obsproject/obs-studio"])
+        run(["sudo", "apt-get", "--quiet", "update"])
+        run(
+            ["sudo", "apt-get", "--quiet", "--yes", "--no-install-recommends", "install"]
+            + UBUNTU_PACKAGES
+        )
+    run(["rustup", "show", "active-toolchain"])
+    if TARGETS[platform]:
+        run(["rustup", "target", "add"] + TARGETS[platform])
     return platform
 
 
@@ -162,47 +152,42 @@ def codesigning():
             os.environ[variable] = given[name]
     sign = all(given[name] for name, _ in CREDENTIALS[:3])
     notarize = sign and all(given[name] for name, _ in CREDENTIALS[3:])
-    with group("Setting up codesigning"):
-        if sign:
-            import_certificate(os.urandom(16).hex())
-        else:
-            print("    no signing credentials; building unsigned", flush=True)
+    if sign:
+        import_certificate(os.urandom(16).hex())
+    else:
+        print("    no signing credentials; building unsigned", flush=True)
     return sign, notarize
 
 
 def verify_universal_binary(name):
     binary = ROOT / "release" / "install" / f"{name}.plugin" / "Contents" / "MacOS" / name
-    with group("Verifying the universal binary"):
-        result = run(["lipo", "-archs", binary], stdout=subprocess.PIPE, text=True)
-        archs = result.stdout.split()
-        print(f"    {name} architectures: {' '.join(archs)}")
-        missing = [arch for arch in ARCHITECTURES if arch not in archs]
-        if missing:
-            raise Error(f"{name} is missing the {' and '.join(missing)} slice")
+    result = run(["lipo", "-archs", binary], stdout=subprocess.PIPE, text=True)
+    archs = result.stdout.split()
+    print(f"    {name} architectures: {' '.join(archs)}")
+    missing = [arch for arch in ARCHITECTURES if arch not in archs]
+    if missing:
+        raise Error(f"{name} is missing the {' and '.join(missing)} slice")
 
 
 def lint():
     setup()
-    with group("Checking the sources"):
-        run(["cargo", "clippy", "--all-targets", "--", "--deny", "warnings"])
-        run(["cargo", "fmt", "--check"])
+    run(["cargo", "clippy", "--all-targets", "--", "--deny", "warnings"])
+    run(["cargo", "fmt", "--check"])
 
 
 def build():
     spec = buildspec()
     platform = setup()
     sign, notarize = codesigning() if platform == "macos" else (False, False)
-    with group("Building the plugin"):
-        build_py("build", *(["--codesign"] if sign else []))
+    build_py("build", *(["--codesign"] if sign else []))
     if platform == "macos":
         verify_universal_binary(spec["name"])
-    with group("Packaging the plugin"):
-        build_py(
-            "package",
-            "--installer",
-            *(["--codesign"] if sign else []),
-            *(["--notarize"] if notarize else []),
-        )
+    build_py(
+        "package",
+        "--installer",
+        *(["--codesign"] if sign else []),
+        *(["--notarize"] if notarize else []),
+    )
     output("pluginName", spec["name"])
     output("pluginVersion", spec["version"])
     output("commitHash", os.environ.get("GITHUB_SHA", "")[:9])
@@ -212,13 +197,12 @@ def release():
     root = Path(os.environ["GITHUB_WORKSPACE"])
     commit_hash = os.environ["GITHUB_SHA"][:9]
     suffixes = {suffix for suffixes in VARIANTS.values() for suffix in suffixes}
-    with group("Collecting the release assets"):
-        for variant, variant_suffixes in VARIANTS.items():
-            for directory in sorted(root.glob(f"*-{variant}-{commit_hash}")):
-                for suffix in variant_suffixes:
-                    for path in sorted(directory.glob(f"*.{suffix}")):
-                        print(f"    {path.relative_to(root)}")
-                        shutil.move(path, root / path.name)
+    for variant, variant_suffixes in VARIANTS.items():
+        for directory in sorted(root.glob(f"*-{variant}-{commit_hash}")):
+            for suffix in variant_suffixes:
+                for path in sorted(directory.glob(f"*.{suffix}")):
+                    print(f"    {path.relative_to(root)}")
+                    shutil.move(path, root / path.name)
     lines = ["### Checksums"]
     for path in sorted(root.iterdir()):
         if any(path.name.endswith(f".{suffix}") for suffix in suffixes):
