@@ -9,6 +9,9 @@
 #define MyAppPublisher "@AUTHOR@"
 #define MyAppURL "@WEBSITE@"
 
+; The directory the 0.7.0 and older installers installed into.
+#define MyLegacyDir "{commonappdata}\obs-studio\plugins\@NAME@"
+
 #ifndef ReleaseDir
   #define ReleaseDir "@INSTALL_DIR@"
 #endif
@@ -27,19 +30,27 @@ AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 LicenseFile=@SOURCE_DIR@\LICENSE
 
-; OBS loads plugins from %ProgramData%\obs-studio\plugins, which is where the
-; zip archive is meant to be unpacked too. Installing there needs no knowledge
-; of where OBS itself was installed.
-DefaultDirName={commonappdata}\obs-studio\plugins\{#MyPluginName}
-DisableDirPage=yes
+; The plugin goes into the OBS Studio installation, so the directory page asks
+; for the folder OBS Studio itself is installed in. ObsInstallDir() suggests
+; one and NextButtonClick() warns when the picked folder does not look like an
+; OBS Studio installation. That folder already exists and is not named after
+; the plugin, so neither the "directory already exists" warning nor the
+; appended application name apply. UsePreviousAppDir is off because the
+; directory the 0.7.0 and older installers remembered is a plugin directory
+; rather than an OBS Studio one; ObsInstallDir() remembers it instead.
+DefaultDirName={code:ObsInstallDir}
+AppendDefaultDirName=no
+DirExistsWarning=no
+UsePreviousAppDir=no
 DisableProgramGroupPage=yes
 Uninstallable=yes
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 
-; Writing under %ProgramData% and registering an uninstall entry both need
-; elevation. No architecture directives: the plugin goes to an architecture
-; independent directory, and x64 OBS runs on ARM64 Windows too.
+; Writing into the OBS Studio installation directory and registering an
+; uninstall entry both need elevation. The plugin is x64, and x64 OBS Studio
+; runs on ARM64 Windows too, so install in 64 bit mode on both.
 PrivilegesRequired=admin
+ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 
 OutputDir=@OUTPUT_DIR@
@@ -51,12 +62,60 @@ WizardStyle=modern
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
-[Files]
-Source: "{#ReleaseDir}\{#MyPluginName}\bin\64bit\*"; DestDir: "{app}\bin\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#ReleaseDir}\{#MyPluginName}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
+[Messages]
+WizardSelectDir=Select OBS Studio Location
+SelectDirDesc=Where is OBS Studio installed?
+SelectDirLabel3=Setup will install [name] into the OBS Studio installation folder below. It is the folder holding bin\64bit\obs64.exe.
+SelectDirBrowseLabel=To continue, click Next. If you would like to select a different folder, click Browse.
 
+[Files]
+Source: "{#ReleaseDir}\{#MyPluginName}\bin\64bit\*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ReleaseDir}\{#MyPluginName}\data\*"; DestDir: "{app}\data\obs-plugins\{#MyPluginName}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; An older installation, or a hand unpacked archive, in the plugin directory
+; would be loaded by OBS Studio as a second copy of the plugin.
+[InstallDelete]
+Type: filesandordirs; Name: "{#MyLegacyDir}"
+
+; Only the plugin's own data directory is removed. Everything else under {app}
+; belongs to OBS Studio.
 [UninstallDelete]
-Type: dirifempty; Name: "{app}\bin\64bit"
-Type: dirifempty; Name: "{app}\bin"
-Type: dirifempty; Name: "{app}\data"
-Type: dirifempty; Name: "{app}"
+Type: dirifempty; Name: "{app}\data\obs-plugins\{#MyPluginName}"
+
+[Code]
+const
+  PreviousDirName = 'OBS Studio Directory';
+
+// The directory this installer last installed into, then the one OBS Studio's
+// own installer recorded, and finally the one it installs into by default.
+// Installations made by 0.7.0 and older have no remembered directory, so an
+// upgrade from those starts at the OBS Studio installation instead of at the
+// plugin directory they used.
+function ObsInstallDir(Param: String): String;
+var
+  Path: String;
+begin
+  Result := RemoveBackslash(GetPreviousData(PreviousDirName, ''));
+  if (Result = '') and RegQueryStringValue(HKLM, 'Software\OBS Studio', '', Path) then
+    Result := RemoveBackslash(Path);
+  if Result = '' then
+    Result := ExpandConstant('{autopf}\obs-studio');
+end;
+
+procedure RegisterPreviousData(PreviousDataKey: Integer);
+begin
+  SetPreviousData(PreviousDataKey, PreviousDirName, ExpandConstant('{app}'));
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if CurPageID = wpSelectDir then
+    if not FileExists(AddBackslash(WizardDirValue) + 'bin\64bit\obs64.exe') then
+      Result := MsgBox('OBS Studio was not found in' + #13#10#13#10 +
+                       WizardDirValue + #13#10#13#10 +
+                       'The plugin is only loaded if it is installed into the folder ' +
+                       'OBS Studio is installed in.' + #13#10#13#10 +
+                       'Install it there anyway?',
+                       mbConfirmation, MB_YESNO) = IDYES;
+end;

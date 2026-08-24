@@ -28,9 +28,13 @@ either one. Connect the device once, unlock it and tap Trust.
 Then install the plugin:
 
 1. Download `mobcam-<version>-windows-x64-Installer.exe`.
-2. Run it and accept the elevation prompt by clicking "More Info" and then "Run Anyway". It 
-   installs the plugin into `C:\ProgramData\obs-studio\plugins\mobcam`, where OBS Studio 
-   finds it no matter where OBS Studio itself is installed.
+2. Run it and accept the elevation prompt by clicking "More Info" and then "Run
+   Anyway".
+3. Select the folder OBS Studio is installed in, normally
+   `C:\Program Files\obs-studio`. The installer suggests the folder it finds and
+   warns if the selected one does not hold `bin\64bit\obs64.exe`. The plugin is
+   installed into `obs-plugins\64bit` and `data\obs-plugins\mobcam` in that
+   folder.
 
 To install by hand instead, download `mobcam-<version>-windows-x64.zip` and
 unpack it into `C:\ProgramData\obs-studio\plugins`, so that the plugin ends up
