@@ -462,7 +462,8 @@ extern "C" fn get_properties(_data: *mut c_void) -> *mut sys::obs_properties_t {
         properties.add_bool(SETTING_BUFFERING, text(c"Buffering"));
         properties.add_bool(SETTING_CLEAR_ON_DISCONNECT, text(c"ClearOnDisconnect"));
         properties.add_bool(SETTING_DISCONNECT_WHEN_HIDDEN, text(c"DisconnectWhenHidden"));
-        properties.add_int(SETTING_PORT, text(c"Port"), 1, 65535);
+        let mut port = properties.add_int(SETTING_PORT, text(c"Port"), 1, 65535);
+        port.set_long_description(text(c"Port.Description"));
         properties.into_raw()
     })
 }

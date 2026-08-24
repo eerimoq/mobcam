@@ -40,10 +40,10 @@ impl Properties {
         }
     }
 
-    pub fn add_int(&mut self, name: &CStr, description: &CStr, min: i32, max: i32) {
-        unsafe {
-            sys::obs_properties_add_int(self.0, name.as_ptr(), description.as_ptr(), min, max, 1);
-        }
+    pub fn add_int(&mut self, name: &CStr, description: &CStr, min: i32, max: i32) -> Property {
+        let property =
+            unsafe { sys::obs_properties_add_int(self.0, name.as_ptr(), description.as_ptr(), min, max, 1) };
+        Property(property)
     }
 
     pub fn add_bool(&mut self, name: &CStr, description: &CStr) {
@@ -75,6 +75,13 @@ impl Property {
             return;
         }
         unsafe { sys::obs_property_list_clear(self.0) }
+    }
+
+    pub fn set_long_description(&mut self, description: &CStr) {
+        if self.is_null() {
+            return;
+        }
+        unsafe { sys::obs_property_set_long_description(self.0, description.as_ptr()) }
     }
 
     pub fn add_list_entry(&mut self, label: &str, value: &str) {
