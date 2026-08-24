@@ -11,16 +11,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from build import (  # noqa: E402
-    MACOS_TARGETS,
-    Error,
-    host_platform,
-    macos_paths,
-    run,
-    NAME,
-    VERSION,
-    DISPLAY_NAME
-)
+from build import DISPLAY_NAME
+from build import MACOS_TARGETS
+from build import NAME
+from build import VERSION
+from build import Error
+from build import host_platform
+from build import macos_paths
+from build import run
 
 UBUNTU_PACKAGES = [
     "libclang-dev",
@@ -64,7 +62,14 @@ def setup():
         run(["sudo", "add-apt-repository", "--yes", "ppa:obsproject/obs-studio"])
         run(["sudo", "apt-get", "--quiet", "update"])
         run(
-            ["sudo", "apt-get", "--quiet", "--yes", "--no-install-recommends", "install"]
+            [
+                "sudo",
+                "apt-get",
+                "--quiet",
+                "--yes",
+                "--no-install-recommends",
+                "install",
+            ]
             + UBUNTU_PACKAGES
         )
     run(["rustup", "show", "active-toolchain"])
@@ -100,8 +105,15 @@ def import_certificate(arguments, password):
         + tools,
     )
     run(
-        ["security", "set-key-partition-list", "-S", "apple-tool:,apple:",
-         "-k", password, keychain],
+        [
+            "security",
+            "set-key-partition-list",
+            "-S",
+            "apple-tool:,apple:",
+            "-k",
+            password,
+            keychain,
+        ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -116,9 +128,7 @@ def codesigning(arguments):
             arguments.codesign_certificate,
         ]
     )
-    notarize = sign and all(
-        [arguments.notarization_user, arguments.notarization_password]
-    )
+    notarize = sign and all([arguments.notarization_user, arguments.notarization_password])
     if sign:
         import_certificate(arguments, os.urandom(16).hex())
     else:
@@ -138,8 +148,9 @@ def verify_universal_binary(name):
 
 def lint(_):
     setup()
-    run(["cargo", "clippy", "--all-targets", "--", "--deny", "warnings"])
-    run(["cargo", "fmt", "--check"])
+    run([sys.executable, "-m", "pip", "install", "--requirement", ROOT / "requirements.txt"])
+    for target in ["style-check", "lint", "spell-check"]:
+        run(["make", "--directory", ROOT, target])
 
 
 def build(arguments):
@@ -148,7 +159,10 @@ def build(arguments):
     codesign_arguments = []
     package_arguments = []
     if sign:
-        codesign_arguments = ["--codesign-application-identity", arguments.codesign_application_identity]
+        codesign_arguments = [
+            "--codesign-application-identity",
+            arguments.codesign_application_identity,
+        ]
         package_arguments = codesign_arguments + [
             "--codesign-installer-identity",
             arguments.codesign_installer_identity,

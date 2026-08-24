@@ -1,0 +1,5 @@
+codespell
+ruff
+pylint
+isort
+mypy

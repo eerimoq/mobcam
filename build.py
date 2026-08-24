@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import argparse
 import hashlib
 import lzma
@@ -53,10 +51,7 @@ DEPENDENCIES = {
             "label": "Pre-Built obs-deps",
             "version": PREBUILT_VERSION,
             "directory": "prebuilt",
-            "url": (
-                f"{PREBUILT_URL}/{PREBUILT_VERSION}"
-                f"/macos-deps-{PREBUILT_VERSION}-universal.tar.xz"
-            ),
+            "url": (f"{PREBUILT_URL}/{PREBUILT_VERSION}/macos-deps-{PREBUILT_VERSION}-universal.tar.xz"),
             "sha256": "4ecb4c598dfa853168df6c2a0c4e0ffec8495a81fbd1ba051ef88ecd5e0f7e53",
             "strip_root": False,
         },
@@ -74,10 +69,7 @@ DEPENDENCIES = {
             "label": "Pre-Built obs-deps",
             "version": PREBUILT_VERSION,
             "directory": "prebuilt",
-            "url": (
-                f"{PREBUILT_URL}/{PREBUILT_VERSION}"
-                f"/windows-deps-{PREBUILT_VERSION}-x64.zip"
-            ),
+            "url": (f"{PREBUILT_URL}/{PREBUILT_VERSION}/windows-deps-{PREBUILT_VERSION}-x64.zip"),
             "sha256": "6f90e9598fa10cff5ad23cdcfae49b87868c07bf896b02cd464582b4ce2f2ba9",
             "strip_root": False,
         },
@@ -293,7 +285,11 @@ def codesign(path, identity, entitlements=None):
 def macos_paths(name):
     """The staged bundle, the binary inside it and the separated debug symbols."""
     bundle = INSTALL_DIR / f"{name}.plugin"
-    return bundle, bundle / "Contents" / "MacOS" / name, INSTALL_DIR / f"{name}.plugin.dSYM"
+    return (
+        bundle,
+        bundle / "Contents" / "MacOS" / name,
+        INSTALL_DIR / f"{name}.plugin.dSYM",
+    )
 
 
 def build_macos(debug, identity):
