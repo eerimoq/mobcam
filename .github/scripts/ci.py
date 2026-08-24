@@ -121,19 +121,8 @@ def import_certificate(args, password):
 
 
 def codesigning(args):
-    sign = all(
-        [
-            args.codesign_application_identity,
-            args.codesign_installer_identity,
-            args.codesign_certificate,
-        ]
-    )
-    notarize = sign and all([args.notarization_user, args.notarization_password])
-    if sign:
-        import_certificate(args, os.urandom(16).hex())
-    else:
-        print("    no signing credentials; building unsigned", flush=True)
-    return sign, notarize
+    import_certificate(args, os.urandom(16).hex())
+    return True
 
 
 def verify_universal_binary(name):
@@ -155,26 +144,26 @@ def lint(_):
 
 def build(args):
     platform = setup()
-    sign, notarize = codesigning(args) if platform == "macos" else (False, False)
-    codesign_arguments = []
+    build_arguments = []
     package_arguments = []
-    if sign:
-        codesign_arguments = [
+    if platform == "macos":
+        import_certificate(args, os.urandom(16).hex())
+        build_arguments = [
             "--codesign-application-identity",
             args.codesign_application_identity,
         ]
-        package_arguments = codesign_arguments + [
+        package_arguments += build_arguments
+        package_arguments += [
             "--codesign-installer-identity",
             args.codesign_installer_identity,
         ]
-    if notarize:
         package_arguments += [
             "--notarization-user",
             args.notarization_user,
             "--notarization-password",
             args.notarization_password,
         ]
-    build_py("build", *codesign_arguments)
+    build_py("build", *build_arguments)
     if platform == "macos":
         verify_universal_binary(NAME)
     build_py("package", "--installer", *package_arguments)
