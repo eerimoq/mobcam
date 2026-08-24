@@ -27,6 +27,7 @@ def read_cargo_package():
 CARGO_PACKAGE = read_cargo_package()
 NAME = CARGO_PACKAGE["name"]
 VERSION = CARGO_PACKAGE["version"]
+BUNDLE_ID = "com.eerimoq.mobcam"
 DEPS_DIR = ROOT / ".deps"
 RELEASE_DIR = ROOT / "release"
 INSTALL_DIR = RELEASE_DIR / "install"
@@ -79,15 +80,15 @@ def buildspec():
         return json.load(fin)
 
 
-def plugin(spec):
+def plugin():
     return {
         "NAME": NAME,
-        "DISPLAY_NAME": spec.get("displayName", NAME),
+        "DISPLAY_NAME": "MobCam",
         "VERSION": VERSION,
         "AUTHOR": "Erik Moqvist",
         "EMAIL": "erik.moqvist@gmail.com",
         "WEBSITE": "https://github.com/eerimoq/obs-mobcam-plugin",
-        "BUNDLE_ID": "com.eerimoq.mobcam",
+        "BUNDLE_ID": BUNDLE_ID,
         "DEPLOYMENT_TARGET": MACOS_DEPLOYMENT_TARGET,
         "YEAR": time.strftime("%Y"),
     }
@@ -108,7 +109,7 @@ def remove(path):
         path.unlink()
 
 
-def output_name(spec, target_platform):
+def output_name(target_platform):
     if target_platform == "macos":
         return f"{NAME}-{VERSION}-macos-universal"
     elif target_platform == "windows":
@@ -259,8 +260,7 @@ def macos_paths(name):
     return bundle, bundle / "Contents" / "MacOS" / name, INSTALL_DIR / f"{name}.plugin.dSYM"
 
 
-def build_macos(spec, debug):
-    values = plugin(spec)
+def build_macos(debug):
     bundle, binary, symbols = macos_paths(NAME)
     libraries = cargo_build("macos", NAME, debug, sorted(MACOS_TARGETS.values()))
     remove(bundle)
@@ -271,7 +271,7 @@ def build_macos(spec, debug):
     render(
         PACKAGING_DIR / "macos" / "Info.plist.in",
         bundle / "Contents" / "Info.plist",
-        **values,
+        **plugin(),
     )
     copy_data(bundle / "Contents" / "Resources")
     remove(symbols)
@@ -289,7 +289,7 @@ def entitlements_file():
     return entitlements if entitlements.is_file() else None
 
 
-def build_linux(spec, debug):
+def build_linux(debug):
     (library,) = cargo_build("linux", NAME, debug, [None])
     library_dir = INSTALL_DIR / "lib" / f"{platform.machine()}-linux-gnu" / "obs-plugins"
     remove(INSTALL_DIR / "lib")
@@ -300,7 +300,7 @@ def build_linux(spec, debug):
     return library_dir / f"{NAME}.so"
 
 
-def build_windows(spec, debug):
+def build_windows(debug):
     (library,) = cargo_build("windows", NAME, debug, [None])
     root = INSTALL_DIR / NAME
     binary_dir = root / "bin" / "64bit"
@@ -318,15 +318,14 @@ def build(arguments):
     dependencies()
     if arguments.codesign and not os.environ.get("CODESIGN_IDENT"):
         raise Error("--codesign needs a signing identity in CODESIGN_IDENT")
-    spec = buildspec()
     target_platform = host_platform()
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     if target_platform == "macos":
-        artifact = build_macos(spec, arguments.debug)
+        artifact = build_macos(arguments.debug)
     elif target_platform == "windows":
-        artifact = build_windows(spec, arguments.debug)
+        artifact = build_windows(arguments.debug)
     else:
-        artifact = build_linux(spec, arguments.debug)
+        artifact = build_linux(arguments.debug)
     log(f"Built {artifact}")
 
 
@@ -339,22 +338,21 @@ def tar_xz(archive, directory, members):
             tar_file.add(directory / member, arcname=member)
 
 
-def package_macos(spec, arguments):
-    values = plugin(spec)
-    base = output_name(spec, "macos")
+def package_macos(arguments):
+    base = output_name("macos")
     bundle, _, symbols = macos_paths(NAME)
     if not bundle.is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
     if arguments.installer:
-        package_macos_installer(spec, arguments, base)
+        package_macos_installer(arguments, base)
     else:
         tar_xz(RELEASE_DIR / f"{base}.tar.xz", INSTALL_DIR, [bundle.name])
     if symbols.is_dir():
         tar_xz(RELEASE_DIR / f"{base}-dSYMs.tar.xz", INSTALL_DIR, [symbols.name])
 
 
-def package_macos_installer(spec, arguments, base):
-    values = plugin(spec)
+def package_macos_installer(arguments, base):
+    values = plugin()
     name = values["NAME"]
     staging = RELEASE_DIR / "installer"
     root = staging / "root" / "Library" / "Application Support" / "obs-studio" / "plugins"
@@ -367,9 +365,9 @@ def package_macos_installer(spec, arguments, base):
         [
             "pkgbuild",
             "--identifier",
-            values["BUNDLE_ID"],
+            BUNDLE_ID,
             "--version",
-            values["VERSION"],
+            VERSION,
             "--root",
             staging / "root",
             staging / f"{name}.pkg",
@@ -442,18 +440,18 @@ def notarize(package, name):
     run(["xcrun", "stapler", "staple", package])
 
 
-def package_linux(spec, arguments):
-    base = output_name(spec, "linux")
+def package_linux(arguments):
+    base = output_name("linux")
     if not (INSTALL_DIR / "lib").is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
     tar_xz(RELEASE_DIR / f"{base}.tar.xz", INSTALL_DIR, ["lib", "share"])
-    source_tarball(spec)
+    source_tarball()
     if arguments.installer:
-        package_deb(spec, base, NAME)
+        package_deb(base, NAME)
 
 
-def package_deb(spec, base, name):
-    values = plugin(spec)
+def package_deb(base, name):
+    values = plugin()
     staging = RELEASE_DIR / "deb"
     remove(staging)
     shutil.copytree(INSTALL_DIR, staging / "usr", symlinks=True)
@@ -476,8 +474,8 @@ def package_deb(spec, base, name):
     remove(staging)
 
 
-def source_tarball(spec):
-    values = plugin(spec)
+def source_tarball():
+    values = plugin()
     base = f"{values['NAME']}-{values['VERSION']}-source"
     archive = RELEASE_DIR / f"{base}.tar.xz"
     log(f"Creating {archive.name}")
@@ -492,8 +490,8 @@ def source_tarball(spec):
         fout.write(sources)
 
 
-def package_windows(spec, arguments):
-    base = output_name(spec, "windows")
+def package_windows(arguments):
+    base = output_name("windows")
     if not (INSTALL_DIR / NAME).is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
     archive = RELEASE_DIR / f"{base}.zip"
@@ -505,7 +503,7 @@ def package_windows(spec, arguments):
             if path.is_file():
                 zip_file.write(path, path.relative_to(INSTALL_DIR))
     if arguments.installer:
-        package_windows_installer(spec, base)
+        package_windows_installer(base)
 
 
 def find_inno_setup():
@@ -522,8 +520,8 @@ def find_inno_setup():
     raise Error("Inno Setup (ISCC.exe) not found; install it from https://jrsoftware.org/isinfo.php")
 
 
-def package_windows_installer(spec, base):
-    values = plugin(spec)
+def package_windows_installer(base):
+    values = plugin()
     script = RELEASE_DIR / "installer.iss"
     render(
         PACKAGING_DIR / "windows" / "installer.iss.in",
@@ -540,18 +538,16 @@ def package_windows_installer(spec, base):
 
 
 def package(arguments):
-    spec = buildspec()
     target_platform = host_platform()
     if target_platform == "macos":
-        package_macos(spec, arguments)
+        package_macos(arguments)
     elif target_platform == "windows":
-        package_windows(spec, arguments)
+        package_windows(arguments)
     else:
-        package_linux(spec, arguments)
+        package_linux(arguments)
 
 
-def install(arguments):
-    spec = buildspec()
+def install(_):
     target_platform = host_platform()
     if target_platform == "macos":
         destination = Path.home() / "Library/Application Support/obs-studio/plugins"
