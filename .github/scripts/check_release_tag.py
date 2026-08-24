@@ -12,22 +12,16 @@ import re
 import gha
 
 RELEASE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
-PRERELEASE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+-(beta|rc)[0-9]*")
 
 
 def check_release_tag():
     tag = os.environ["GITHUB_REF_NAME"]
 
-    if RELEASE.fullmatch(tag):
-        prerelease = False
-    elif PRERELEASE.fullmatch(tag):
-        prerelease = True
-    else:
+    if not RELEASE.fullmatch(tag):
         gha.output("validTag", "false")
         return
 
     gha.output("validTag", "true")
-    gha.output("prerelease", gha.boolean(prerelease))
     gha.output("version", tag)
 
 

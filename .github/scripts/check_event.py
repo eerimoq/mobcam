@@ -15,7 +15,7 @@ import subprocess
 import gha
 
 # What a tag has to look like for the build it produces to be notarized.
-VERSION_TAG = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(-(rc|beta).+)?")
+VERSION_TAG = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 
 # The label that turns a pull request into something people can install.
 SEEKING_TESTERS = "Seeking Testers"
