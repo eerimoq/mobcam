@@ -44,12 +44,12 @@ pub extern "C" fn obs_current_module() -> *mut sys::obs_module_t {
 #[unsafe(no_mangle)]
 pub extern "C" fn obs_module_set_locale(locale: *const std::os::raw::c_char) {
     let default = c"en-US";
-    let lookup = unsafe {
+    let lookup = {
         let previous = LOOKUP.swap(ptr::null_mut(), Ordering::AcqRel);
         if !previous.is_null() {
-            sys::text_lookup_destroy(previous);
+            unsafe { sys::text_lookup_destroy(previous) };
         }
-        sys::obs_module_load_locale(Module::current(), default.as_ptr(), locale)
+        unsafe { sys::obs_module_load_locale(Module::current(), default.as_ptr(), locale) }
     };
     LOOKUP.store(lookup, Ordering::Release);
 }
@@ -71,7 +71,7 @@ pub extern "C" fn obs_module_name() -> *const std::os::raw::c_char {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn obs_module_description() -> *const std::os::raw::c_char {
-    c"Use an iPhone or iPad running Moblin as a camera, over the USB cable".as_ptr()
+    c"Use an iPhone or iPad running Moblin as a camera over a USB cable".as_ptr()
 }
 
 pub fn c_string(value: &str) -> CString {

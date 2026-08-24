@@ -1,7 +1,7 @@
 use super::module::c_string;
 use super::sys;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy)]
 pub enum Level {
     Error,
     Warning,

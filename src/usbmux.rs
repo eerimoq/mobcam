@@ -8,7 +8,7 @@ const MAX_REPLY_SIZE: u32 = 4 * 1024 * 1024;
 const MAX_COLLECTIONS: usize = 1024;
 const CLIENT_NAME: &str = "obs-mobcam";
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Error {
     NoDaemon,
     NoDevice,
@@ -29,7 +29,6 @@ impl Error {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Device {
     pub device_id: u32,
     pub serial: String,
