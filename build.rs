@@ -71,15 +71,22 @@ fn require(path: PathBuf) -> PathBuf {
     path
 }
 
+fn write_if_changed(path: &Path, contents: &str) {
+    if fs::read_to_string(path).is_ok_and(|old| old == contents) {
+        return;
+    }
+
+    fs::write(path, contents).unwrap_or_else(|error| panic!("failed to write {}: {error}", path.display()));
+}
+
 fn obsconfig_dir() -> PathBuf {
     let dir = out_dir().join("obsconfig");
 
     fs::create_dir_all(&dir).expect("failed to create the obsconfig directory");
-    fs::write(
-        dir.join("obsconfig.h"),
+    write_if_changed(
+        &dir.join("obsconfig.h"),
         "#pragma once\n\n#define OBS_RELEASE_CANDIDATE 0\n#define OBS_BETA 0\n",
-    )
-    .expect("failed to write obsconfig.h");
+    );
 
     dir
 }
@@ -123,7 +130,18 @@ fn configure_macos(buildspec: &serde_json::Value) -> Vec<PathBuf> {
 }
 
 #[cfg(windows)]
+fn modified(path: &Path) -> Option<std::time::SystemTime> {
+    fs::metadata(path).ok()?.modified().ok()
+}
+
+#[cfg(windows)]
 fn write_import_library(bindings: &Path) {
+    let library = out_dir().join("obs.lib");
+
+    if modified(&library) >= modified(bindings) {
+        return;
+    }
+
     let source = fs::read_to_string(bindings).expect("the generated bindings are readable");
     let mut exports = String::from("LIBRARY obs\nEXPORTS\n");
     let mut inside = false;
@@ -155,9 +173,7 @@ fn write_import_library(bindings: &Path) {
         }
     }
 
-    let out = out_dir();
-    let definition = out.join("obs.def");
-    let library = out.join("obs.lib");
+    let definition = out_dir().join("obs.def");
 
     fs::write(&definition, exports).expect("failed to write obs.def");
 
@@ -225,8 +241,7 @@ fn builder(include_dirs: &[PathBuf]) -> bindgen::Builder {
         .generate_comments(false)
         .layout_tests(false)
         .default_enum_style(bindgen::EnumVariation::Consts)
-        .prepend_enum_name(false)
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
+        .prepend_enum_name(false);
 
     for dir in include_dirs {
         builder = builder.clang_arg(format!("-I{}", dir.display()));
@@ -235,22 +250,29 @@ fn builder(include_dirs: &[PathBuf]) -> bindgen::Builder {
     builder
 }
 
-fn write(bindings: bindgen::Bindings, name: &str) -> PathBuf {
-    let path = out_dir().join(name);
+fn generate(name: &str, header: &str, builder: bindgen::Builder) -> PathBuf {
+    let path = out_dir().join(format!("{name}.rs"));
+    let stamp_path = out_dir().join(format!("{name}.stamp"));
+    let stamp = format!("{}\n{header}", builder.command_line_flags().join(" "));
 
-    bindings
+    if path.exists() && fs::read_to_string(&stamp_path).is_ok_and(|old| old == stamp) {
+        return path;
+    }
+
+    builder
+        .header_contents(&format!("{name}.h"), header)
+        .generate()
+        .unwrap_or_else(|error| panic!("failed to generate {name} bindings: {error}"))
         .write_to_file(&path)
-        .unwrap_or_else(|error| panic!("failed to write {name}: {error}"));
+        .unwrap_or_else(|error| panic!("failed to write {name}.rs: {error}"));
+
+    write_if_changed(&stamp_path, &stamp);
 
     path
 }
 
 fn generate_obs(include_dirs: &[PathBuf]) -> PathBuf {
-    let bindings = builder(include_dirs)
-        .header_contents(
-            "obs.h",
-            "#include <obs-module.h>\n#include <util/dstr.h>\n#include <util/platform.h>\n",
-        )
+    let builder = builder(include_dirs)
         .allowlist_item("obs_.*")
         .allowlist_item("OBS_.*")
         .allowlist_item("blog")
@@ -269,33 +291,33 @@ fn generate_obs(include_dirs: &[PathBuf]) -> PathBuf {
         .allowlist_item("get_audio_planes")
         .allowlist_item("text_lookup_.*")
         .allowlist_item("lookup_t")
-        .blocklist_function("blogva")
-        .generate()
-        .expect("failed to generate libobs bindings");
+        .blocklist_function("blogva");
 
-    write(bindings, "obs.rs")
+    generate(
+        "obs",
+        "#include <obs-module.h>\n#include <util/dstr.h>\n#include <util/platform.h>\n",
+        builder,
+    )
 }
 
 fn generate_ffmpeg(include_dirs: &[PathBuf]) {
-    let bindings = builder(include_dirs)
-        .header_contents(
-            "ffmpeg.h",
-            "#include <libavcodec/avcodec.h>\n\
-             #include <libavutil/channel_layout.h>\n\
-             #include <libavutil/hwcontext.h>\n\
-             #include <libavutil/pixdesc.h>\n\
-             #include <libavutil/samplefmt.h>\n",
-        )
+    let builder = builder(include_dirs)
         .allowlist_item("av_.*")
         .allowlist_item("avcodec_.*")
         .allowlist_item("AV_.*")
         .allowlist_item("AV(Codec|Packet|Frame|Buffer|Pixel|Sample|HWDevice|Rational|Channel|Dictionary|Class|Color|Media|Profile|Discard|Field|Chroma|Audio).*")
         .allowlist_item("AVERROR.*")
-        .allowlist_item("FF_.*")
-        .generate()
-        .expect("failed to generate FFmpeg bindings");
+        .allowlist_item("FF_.*");
 
-    write(bindings, "ffmpeg.rs");
+    generate(
+        "ffmpeg",
+        "#include <libavcodec/avcodec.h>\n\
+         #include <libavutil/channel_layout.h>\n\
+         #include <libavutil/hwcontext.h>\n\
+         #include <libavutil/pixdesc.h>\n\
+         #include <libavutil/samplefmt.h>\n",
+        builder,
+    );
 }
 
 fn check_version(buildspec: &serde_json::Value) {

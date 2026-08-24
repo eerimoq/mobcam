@@ -106,8 +106,6 @@ impl Property {
     }
 }
 
-/// Looks a property up by name in a list OBS handed back to a callback.
-///
 /// # Safety
 /// `properties` must be a live property list.
 pub unsafe fn get(properties: *mut sys::obs_properties_t, name: &CStr) -> Property {
