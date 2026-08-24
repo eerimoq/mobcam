@@ -33,7 +33,7 @@ python3 build.py build
 python3 build.py install
 ```
 
-`build.py build` downloads what buildspec.json names into `.deps` on macOS and
+`build.py build` downloads the dependencies it names into `.deps` on macOS and
 Windows, builds the plugin and stages it under `release/install`. `build.py
 install` copies it into the OBS plugin directory of the current user. The
 archives and the installers the releases are made of come from `build.py

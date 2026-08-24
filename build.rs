@@ -36,20 +36,6 @@ fn target() -> String {
     env::var("TARGET").expect("TARGET is set by cargo")
 }
 
-fn buildspec() -> serde_json::Value {
-    println!("cargo:rerun-if-changed=buildspec.json");
-    let buildspec = manifest_dir().join("buildspec.json");
-    let buildspec = fs::read_to_string(buildspec).expect("buildspec.json is next to Cargo.toml");
-    serde_json::from_str(&buildspec).expect("buildspec.json is valid JSON")
-}
-
-fn dependency_version(buildspec: &serde_json::Value, dependency: &str) -> String {
-    buildspec["dependencies"][dependency]["version"]
-        .as_str()
-        .unwrap_or_else(|| panic!("buildspec.json has a version for {dependency}"))
-        .to_string()
-}
-
 fn dependencies_dir() -> PathBuf {
     manifest_dir().join(".deps")
 }
@@ -99,12 +85,10 @@ fn pkg_config(packages: &[&str], flags: &str) -> Vec<String> {
         .collect()
 }
 
-fn configure_macos(buildspec: &serde_json::Value) -> Vec<PathBuf> {
+fn configure_macos() -> Vec<PathBuf> {
     let dependencies = dependencies_dir();
-    let obs = dependency_version(buildspec, "obs-studio");
-    let prebuilt = dependency_version(buildspec, "prebuilt");
-    let obs_include = require(dependencies.join(format!("obs-studio-{obs}")).join("libobs"));
-    let prebuilt_dir = require(dependencies.join(format!("obs-deps-{prebuilt}-universal")));
+    let obs_include = require(dependencies.join("obs-studio").join("libobs"));
+    let prebuilt_dir = require(dependencies.join("prebuilt"));
     println!("cargo:rustc-link-search=native={}", prebuilt_dir.join("lib").display());
     println!("cargo:rustc-link-lib=dylib=avcodec");
     println!("cargo:rustc-link-lib=dylib=avutil");
@@ -171,12 +155,10 @@ fn write_import_library(_bindings: &Path) {
     panic!("the Windows plugin can only be built on Windows, where lib.exe is");
 }
 
-fn configure_windows(buildspec: &serde_json::Value) -> Vec<PathBuf> {
+fn configure_windows() -> Vec<PathBuf> {
     let dependencies = dependencies_dir();
-    let obs = dependency_version(buildspec, "obs-studio");
-    let prebuilt = dependency_version(buildspec, "prebuilt");
-    let obs_include = require(dependencies.join(format!("obs-studio-{obs}")).join("libobs"));
-    let prebuilt_dir = require(dependencies.join(format!("obs-deps-{prebuilt}-x64")));
+    let obs_include = require(dependencies.join("obs-studio").join("libobs"));
+    let prebuilt_dir = require(dependencies.join("prebuilt"));
     println!("cargo:rustc-link-search=native={}", prebuilt_dir.join("lib").display());
     println!("cargo:rustc-link-lib=dylib=avcodec");
     println!("cargo:rustc-link-lib=dylib=avutil");
@@ -281,11 +263,10 @@ fn generate_ffmpeg(include_dirs: &[PathBuf]) {
 }
 
 fn main() {
-    let buildspec = buildspec();
     let platform = Platform::current();
     let include_dirs = match platform {
-        Platform::Macos => configure_macos(&buildspec),
-        Platform::Windows => configure_windows(&buildspec),
+        Platform::Macos => configure_macos(),
+        Platform::Windows => configure_windows(),
         Platform::Linux => configure_linux(),
     };
     let obs_bindings = generate_obs(&include_dirs);

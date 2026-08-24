@@ -13,7 +13,6 @@
 !rustfmt.toml
 !rust-toolchain.toml
 !.gitignore
-!buildspec.json
 !LICENSE
 !README.md
 

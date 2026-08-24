@@ -2,7 +2,6 @@
 
 import argparse
 import hashlib
-import json
 import lzma
 import os
 import platform
@@ -36,15 +35,53 @@ PACKAGING_DIR = ROOT / "packaging"
 DATA_DIR = ROOT / "data"
 MACOS_DEPLOYMENT_TARGET = "12.0"
 MACOS_TARGETS = {"arm64": "aarch64-apple-darwin", "x86_64": "x86_64-apple-darwin"}
+OBS_STUDIO_VERSION = "32.2.2"
+OBS_STUDIO_URL = "https://github.com/obsproject/obs-studio/archive/refs/tags"
+PREBUILT_VERSION = "2026-07-15"
+PREBUILT_URL = "https://github.com/obsproject/obs-deps/releases/download"
 DEPENDENCIES = {
-    "macos": {
-        "prebuilt": ("macos-deps-{version}-universal.tar.xz", "obs-deps-{version}-universal"),
-        "obs-studio": ("{version}.tar.gz", "obs-studio-{version}"),
-    },
-    "windows": {
-        "prebuilt": ("windows-deps-{version}-x64.zip", "obs-deps-{version}-x64"),
-        "obs-studio": ("{version}.zip", "obs-studio-{version}"),
-    },
+    "macos": [
+        {
+            "label": "OBS sources",
+            "version": OBS_STUDIO_VERSION,
+            "directory": "obs-studio",
+            "url": f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.tar.gz",
+            "sha256": "35d3cd0979d65664fada7119fdb612eca7c34b61a1623a330caec74bf72626c4",
+            "strip_root": True,
+        },
+        {
+            "label": "Pre-Built obs-deps",
+            "version": PREBUILT_VERSION,
+            "directory": "prebuilt",
+            "url": (
+                f"{PREBUILT_URL}/{PREBUILT_VERSION}"
+                f"/macos-deps-{PREBUILT_VERSION}-universal.tar.xz"
+            ),
+            "sha256": "4ecb4c598dfa853168df6c2a0c4e0ffec8495a81fbd1ba051ef88ecd5e0f7e53",
+            "strip_root": False,
+        },
+    ],
+    "windows": [
+        {
+            "label": "OBS sources",
+            "version": OBS_STUDIO_VERSION,
+            "directory": "obs-studio",
+            "url": f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.zip",
+            "sha256": "f15f001f1fa526405318835f44f9910046502f496ebc3a30d5296a5018b831aa",
+            "strip_root": True,
+        },
+        {
+            "label": "Pre-Built obs-deps",
+            "version": PREBUILT_VERSION,
+            "directory": "prebuilt",
+            "url": (
+                f"{PREBUILT_URL}/{PREBUILT_VERSION}"
+                f"/windows-deps-{PREBUILT_VERSION}-x64.zip"
+            ),
+            "sha256": "6f90e9598fa10cff5ad23cdcfae49b87868c07bf896b02cd464582b4ce2f2ba9",
+            "strip_root": False,
+        },
+    ],
 }
 
 
@@ -74,11 +111,6 @@ def host_platform():
         return "linux"
     else:
         raise Error(f"unsupported platform {sys.platform}")
-
-
-def buildspec():
-    with open(ROOT / "buildspec.json", encoding="utf-8") as fin:
-        return json.load(fin)
 
 
 def plugin():
@@ -131,7 +163,7 @@ def download(url, path, sha256):
     if digest.hexdigest() != sha256:
         temporary.unlink()
         raise Error(
-            f"{url} does not have the hash buildspec.json expects:\n"
+            f"{url} does not have the hash DEPENDENCIES expects:\n"
             f"  expected {sha256}\n"
             f"  actual   {digest.hexdigest()}"
         )
@@ -151,33 +183,37 @@ def extract(archive, destination):
                 tar_file.extractall(destination)
 
 
+def extract_stripped(archive, destination):
+    """Unpack an archive that keeps everything in a directory of its own."""
+    staging = destination.with_name(destination.name + ".part")
+    remove(staging)
+    extract(archive, staging)
+    (root,) = staging.iterdir()
+    root.replace(destination)
+    remove(staging)
+
+
 def dependencies(target_platform=None):
     target_platform = target_platform or host_platform()
     if target_platform == "linux":
         log("Linux uses the distribution's libobs and FFmpeg; nothing to download")
         return
-    spec = buildspec()
-    hash_key = "macos" if target_platform == "macos" else "windows-x64"
-    for dependency, (archive_name, directory_name) in DEPENDENCIES[target_platform].items():
-        data = spec["dependencies"][dependency]
-        version = data["version"]
-        sha256 = data["hashes"][hash_key]
-        archive = DEPS_DIR / archive_name.format(version=version)
-        directory = DEPS_DIR / directory_name.format(version=version)
-        marker = DEPS_DIR / f".dependency_{dependency}.sha256"
+    for dependency in DEPENDENCIES[target_platform]:
+        label = f"{dependency['label']} {dependency['version']}"
+        sha256 = dependency["sha256"]
+        directory = DEPS_DIR / dependency["directory"]
+        archive = DEPS_DIR / dependency["url"].rsplit("/", 1)[1]
+        marker = DEPS_DIR / f".dependency_{dependency['directory']}.sha256"
         if directory.is_dir() and marker.is_file() and marker.read_text().strip() == sha256:
-            log(f"{data['label']} {version} is up to date")
+            log(f"{label} is up to date")
             continue
         if not archive.is_file():
-            if dependency == "obs-studio":
-                url = f"{data['baseUrl']}/{archive.name}"
-            else:
-                url = f"{data['baseUrl']}/{version}/{archive.name}"
-            download(url, archive, sha256)
-        log(f"Unpacking {data['label']} {version}")
+            download(dependency["url"], archive, sha256)
+        log(f"Unpacking {label}")
+        remove(marker)
         remove(directory)
-        if dependency == "obs-studio":
-            extract(archive, DEPS_DIR)
+        if dependency["strip_root"]:
+            extract_stripped(archive, directory)
         else:
             extract(archive, directory)
         marker.write_text(sha256 + "\n")
