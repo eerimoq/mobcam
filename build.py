@@ -584,36 +584,20 @@ def clean(arguments):
 def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
-    deps_parser = subparsers.add_parser("deps", help="download the prebuilt dependencies")
+    deps_parser = subparsers.add_parser("deps")
     deps_parser.set_defaults(function=lambda arguments: dependencies())
-    build_parser = subparsers.add_parser("build", help="compile and stage the plugin")
-    build_parser.add_argument("--debug", action="store_true", help="build without optimizations")
-    build_parser.add_argument(
-        "--codesign",
-        action="store_true",
-        help="sign with CODESIGN_IDENT rather than ad-hoc (macOS)",
-    )
+    build_parser = subparsers.add_parser("build")
+    build_parser.add_argument("--debug", action="store_true")
+    build_parser.add_argument("--codesign", action="store_true")
     build_parser.set_defaults(function=build)
-    package_parser = subparsers.add_parser("package", help="archive the staged plugin")
-    package_parser.add_argument(
-        "--installer",
-        action="store_true",
-        help="build the installer package instead of the archive",
-    )
-    package_parser.add_argument(
-        "--codesign",
-        action="store_true",
-        help="sign the installer with CODESIGN_IDENT_INSTALLER (macOS)",
-    )
-    package_parser.add_argument(
-        "--notarize",
-        action="store_true",
-        help="submit the installer package to Apple for notarization (macOS)",
-    )
+    package_parser = subparsers.add_parser("package")
+    package_parser.add_argument("--installer", action="store_true")
+    package_parser.add_argument("--codesign", action="store_true")
+    package_parser.add_argument("--notarize", action="store_true")
     package_parser.set_defaults(function=package)
-    install_parser = subparsers.add_parser("install", help="install for the current user")
+    install_parser = subparsers.add_parser("install")
     install_parser.set_defaults(function=install)
-    clean_parser = subparsers.add_parser("clean", help="remove the build output")
+    clean_parser = subparsers.add_parser("clean")
     clean_parser.set_defaults(function=clean)
     arguments = parser.parse_args()
     try:

@@ -51,11 +51,7 @@ fn dependency_version(buildspec: &serde_json::Value, dependency: &str) -> String
 }
 
 fn dependencies_dir() -> PathBuf {
-    println!("cargo:rerun-if-env-changed=MOBCAM_DEPS_DIR");
-    match env::var("MOBCAM_DEPS_DIR") {
-        Ok(dir) => PathBuf::from(dir),
-        Err(_) => manifest_dir().join(".deps"),
-    }
+    manifest_dir().join(".deps")
 }
 
 fn require(path: PathBuf) -> PathBuf {
