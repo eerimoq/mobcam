@@ -86,9 +86,9 @@ def import_certificate(password):
     certificate.write_bytes(base64.b64decode(os.environ["MACOS_SIGNING_CERT"]))
     keychain = temporary / "app-signing.keychain-db"
     tools = [argument for tool in KEYCHAIN_TOOLS for argument in ("-T", tool)]
-    run(["security", "create-keychain", "-p", password, keychain], quiet=True)
+    run(["security", "create-keychain", "-p", password, keychain])
     run(["security", "set-keychain-settings", "-lut", KEYCHAIN_TIMEOUT, keychain])
-    run(["security", "unlock-keychain", "-p", password, keychain], quiet=True)
+    run(["security", "unlock-keychain", "-p", password, keychain])
     run(
         [
             "security",
@@ -105,12 +105,10 @@ def import_certificate(password):
             keychain,
         ]
         + tools,
-        quiet=True,
     )
     run(
         ["security", "set-key-partition-list", "-S", "apple-tool:,apple:",
          "-k", password, keychain],
-        quiet=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

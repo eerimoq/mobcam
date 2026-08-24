@@ -43,12 +43,7 @@ def log(message):
     print(f"==> {message}", flush=True)
 
 
-def run(command, quiet=False, **kwargs):
-    command = [str(argument) for argument in command]
-    if quiet:
-        print(f"    {' '.join(command[:2])} ...", flush=True)
-    else:
-        print(f"    {' '.join(command)}", flush=True)
+def run(command, **kwargs):
     try:
         return subprocess.run(command, check=True, **kwargs)
     except FileNotFoundError:
