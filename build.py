@@ -37,44 +37,40 @@ OBS_STUDIO_VERSION = "32.2.2"
 OBS_STUDIO_URL = "https://github.com/obsproject/obs-studio/archive/refs/tags"
 PREBUILT_VERSION = "2026-07-15"
 PREBUILT_URL = "https://github.com/obsproject/obs-deps/releases/download"
-DEPENDENCIES = {
-    "macos": [
-        {
-            "label": "OBS sources",
-            "version": OBS_STUDIO_VERSION,
-            "directory": "obs-studio",
-            "url": f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.tar.gz",
-            "sha256": "35d3cd0979d65664fada7119fdb612eca7c34b61a1623a330caec74bf72626c4",
-            "strip_root": True,
+DEPENDENCIES = [
+    {
+        "label": "OBS sources",
+        "version": OBS_STUDIO_VERSION,
+        "directory": "obs-studio",
+        "strip_root": True,
+        "os": {
+            "macos": {
+                "url": f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.tar.gz",
+                "sha256": "35d3cd0979d65664fada7119fdb612eca7c34b61a1623a330caec74bf72626c4",
+            },
+            "windows": {
+                "url": f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.zip",
+                "sha256": "f15f001f1fa526405318835f44f9910046502f496ebc3a30d5296a5018b831aa",
+            },
         },
-        {
-            "label": "Pre-Built obs-deps",
-            "version": PREBUILT_VERSION,
-            "directory": "prebuilt",
-            "url": (f"{PREBUILT_URL}/{PREBUILT_VERSION}/macos-deps-{PREBUILT_VERSION}-universal.tar.xz"),
-            "sha256": "4ecb4c598dfa853168df6c2a0c4e0ffec8495a81fbd1ba051ef88ecd5e0f7e53",
-            "strip_root": False,
+    },
+    {
+        "label": "Pre-Built obs-deps",
+        "version": PREBUILT_VERSION,
+        "directory": "prebuilt",
+        "strip_root": False,
+        "os": {
+            "macos": {
+                "url": (f"{PREBUILT_URL}/{PREBUILT_VERSION}/macos-deps-{PREBUILT_VERSION}-universal.tar.xz"),
+                "sha256": "4ecb4c598dfa853168df6c2a0c4e0ffec8495a81fbd1ba051ef88ecd5e0f7e53",
+            },
+            "windows": {
+                "url": (f"{PREBUILT_URL}/{PREBUILT_VERSION}/windows-deps-{PREBUILT_VERSION}-x64.zip"),
+                "sha256": "6f90e9598fa10cff5ad23cdcfae49b87868c07bf896b02cd464582b4ce2f2ba9",
+            },
         },
-    ],
-    "windows": [
-        {
-            "label": "OBS sources",
-            "version": OBS_STUDIO_VERSION,
-            "directory": "obs-studio",
-            "url": f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.zip",
-            "sha256": "f15f001f1fa526405318835f44f9910046502f496ebc3a30d5296a5018b831aa",
-            "strip_root": True,
-        },
-        {
-            "label": "Pre-Built obs-deps",
-            "version": PREBUILT_VERSION,
-            "directory": "prebuilt",
-            "url": (f"{PREBUILT_URL}/{PREBUILT_VERSION}/windows-deps-{PREBUILT_VERSION}-x64.zip"),
-            "sha256": "6f90e9598fa10cff5ad23cdcfae49b87868c07bf896b02cd464582b4ce2f2ba9",
-            "strip_root": False,
-        },
-    ],
-}
+    },
+]
 
 
 class Error(Exception):
@@ -189,17 +185,19 @@ def dependencies(target_platform=None):
     if target_platform == "linux":
         log("Linux uses the distribution's libobs and FFmpeg; nothing to download")
         return
-    for dependency in DEPENDENCIES[target_platform]:
+    for dependency in DEPENDENCIES:
+        platform = dependency["os"][target_platform]
+        url = platform["url"]
+        sha256 = platform["sha256"]
         label = f"{dependency['label']} {dependency['version']}"
-        sha256 = dependency["sha256"]
         directory = DEPS_DIR / dependency["directory"]
-        archive = DEPS_DIR / dependency["url"].rsplit("/", 1)[1]
+        archive = DEPS_DIR / url.rsplit("/", 1)[1]
         marker = DEPS_DIR / f".dependency_{dependency['directory']}.sha256"
         if directory.is_dir() and marker.is_file() and marker.read_text().strip() == sha256:
             log(f"{label} is up to date")
             continue
         if not archive.is_file():
-            download(dependency["url"], archive, sha256)
+            download(url, archive, sha256)
         log(f"Unpacking {label}")
         remove(marker)
         remove(directory)
