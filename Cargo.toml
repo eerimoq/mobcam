@@ -6,23 +6,30 @@ rust-version = "1.82"
 license = "GPL-2.0-or-later"
 publish = false
 
-# The plugin's own code, linked into the OBS module that CMake builds. CMake is
-# what drives cargo here, so nothing in this file decides where the artifact
-# lands; see the mobcam-rust target in CMakeLists.txt.
+# The plugin is the whole of the module OBS loads: cargo compiles and links it,
+# and build.py bundles and packages what comes out. build.rs is where libobs and
+# FFmpeg are resolved and linked.
 [lib]
-name = "mobcam_rs"
+name = "mobcam"
 path = "src/lib.rs"
-crate-type = ["staticlib"]
+crate-type = ["cdylib"]
 
 [build-dependencies]
 bindgen = "0.72"
 serde_json = "1"
+
+# Only used to find lib.exe, which generates the libobs import library.
+[target.'cfg(windows)'.build-dependencies]
+cc = "1"
 
 [profile.release]
 # A panic must not unwind out of an extern "C" function into OBS, but aborting
 # would take OBS down with it. Every entry point catches instead, which needs
 # unwinding left on.
 panic = "unwind"
+# Debug symbols are separated out by build.py: into a dSYM on macOS, a PDB on
+# Windows, and left in the shared object on Linux.
+debug = true
 
 [dependencies]
 # usbmuxd speaks XML property lists; the crate reads and writes them.

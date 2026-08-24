@@ -1,18 +1,16 @@
-; Inno Setup script for the @PLUGIN_DISPLAY_NAME@ OBS plugin.
+; Inno Setup script for the @DISPLAY_NAME@ OBS plugin.
 ;
-; CMake configures this into the build directory as
-; installer-Windows.generated.iss. Package-Windows.ps1 compiles it with ISCC,
-; passing the staged install tree as /DReleaseDir=<path> and the output name as
-; /F, so the same script builds the installer for any configuration.
+; build.py fills the @...@ placeholders in and writes the result next to the
+; staged install tree, which it passes to ISCC as /DReleaseDir=<path>.
 
-#define MyAppName "@PLUGIN_DISPLAY_NAME@"
-#define MyPluginName "@CMAKE_PROJECT_NAME@"
-#define MyAppVersion "@CMAKE_PROJECT_VERSION@"
-#define MyAppPublisher "@PLUGIN_AUTHOR@"
-#define MyAppURL "@PLUGIN_WEBSITE@"
+#define MyAppName "@DISPLAY_NAME@"
+#define MyPluginName "@NAME@"
+#define MyAppVersion "@VERSION@"
+#define MyAppPublisher "@AUTHOR@"
+#define MyAppURL "@WEBSITE@"
 
 #ifndef ReleaseDir
-  #define ReleaseDir "@INSTALLER_SOURCE_DIR@\release\RelWithDebInfo"
+  #define ReleaseDir "@INSTALL_DIR@"
 #endif
 
 [Setup]
@@ -27,7 +25,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-LicenseFile=@INSTALLER_SOURCE_DIR@\LICENSE
+LicenseFile=@SOURCE_DIR@\LICENSE
 
 ; OBS loads plugins from %ProgramData%\obs-studio\plugins, which is where the
 ; zip archive is meant to be unpacked too. Installing there needs no knowledge
@@ -44,8 +42,8 @@ UninstallDisplayName={#MyAppName} {#MyAppVersion}
 PrivilegesRequired=admin
 MinVersion=10.0
 
-OutputDir=@INSTALLER_SOURCE_DIR@\release
-OutputBaseFilename={#MyPluginName}-{#MyAppVersion}-windows-x64-Installer
+OutputDir=@OUTPUT_DIR@
+OutputBaseFilename=@OUTPUT_NAME@
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

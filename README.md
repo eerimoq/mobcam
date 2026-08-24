@@ -17,9 +17,11 @@ Download and install from [releases page](https://github.com/eerimoq/obs-mobcam-
 
 ## Development
 
-The plugin is written in Rust and built by CMake, which drives cargo and then
-bundles, signs and packages the result as before. A
-[rustup](https://rustup.rs) toolchain is needed rather than any other cargo,
+The plugin is written in Rust. cargo compiles and links it, and `build.py`
+does everything around that: the dependencies, the macOS bundle, the code
+signing and the installers.
+
+A [rustup](https://rustup.rs) toolchain is needed rather than any other cargo,
 since it is the one that honours `rust-toolchain.toml` and the only one that can
 build the second architecture of the macOS universal binary. bindgen generates
 the libobs and FFmpeg bindings at build time and needs libclang: from Xcode on
@@ -27,18 +29,24 @@ macOS, `libclang-dev` on Ubuntu, and LLVM on Windows.
 
 ```shell
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
-cmake --preset macos
-cmake --build build_macos --config Release
-cmake --install build_macos --prefix dist
-open dist/mobcam.pkg
+python3 build.py build
+python3 build.py install
 ```
 
-The parsers, the clock and the format tables are covered by unit tests that do
-not need OBS. They need the same headers the build uses:
+`build.py build` downloads what buildspec.json names into `.deps` on macOS and
+Windows, builds the plugin and stages it under `release/install`. `build.py
+install` copies it into the OBS plugin directory of the current user. The
+archives and the installers the releases are made of come from `build.py
+package --installer`.
+
+On Linux there is nothing to download: libobs and FFmpeg come from the
+distribution, which needs `libobs-dev`, `libavcodec-dev`, `libavutil-dev`,
+`libsimde-dev` and `pkg-config` installed.
+
+The dependencies are all `build.py` needs, so cargo can be run directly too:
 
 ```shell
-export MOBCAM_OBS_INCLUDE_DIRS=.deps/Frameworks/libobs.framework/Headers
-export MOBCAM_FFMPEG_INCLUDE_DIRS=.deps/obs-deps-2026-07-15-universal/include
-cargo test
+cargo build
 cargo clippy --all-targets
+cargo fmt
 ```

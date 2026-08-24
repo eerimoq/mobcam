@@ -2,18 +2,6 @@ name: Check Code Formatting 🛠️
 on:
   workflow_call:
 jobs:
-  gersemi:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: gersemi Check 🎛️
-        id: gersemi
-        uses: ./.github/actions/run-gersemi
-        with:
-          failCondition: error
-
   rustfmt:
     runs-on: ubuntu-24.04
     steps:
@@ -21,9 +9,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set Up Rust 🦀
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+        run: rustup show active-toolchain
       - name: rustfmt check 🦀
         run: cargo fmt --check
 
@@ -35,20 +21,14 @@ jobs:
           fetch-depth: 0
       - name: Set Up Environment 🔧
         run: |
+          # bindgen needs the same headers the plugin links against, which is
+          # what build.rs finds through pkg-config here.
           sudo add-apt-repository --yes ppa:obsproject/obs-studio
           sudo apt-get --quiet update
-          sudo apt-get --quiet --yes install libclang-dev libobs-dev libavcodec-dev libavutil-dev libsimde-dev pkg-config
+          sudo apt-get --quiet --yes --no-install-recommends install \
+            libclang-dev libobs-dev libavcodec-dev libavutil-dev libsimde-dev pkg-config
       - name: Set Up Rust 🦀
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+        run: rustup show active-toolchain
       - name: clippy check 🦀
-        # bindgen needs the same headers the build links against. pkg-config is
-        # where the Linux half of CMakeLists.txt gets them from too.
-        run: |
-          obs="$(pkg-config --cflags-only-I libobs | sed 's/-I//g' | xargs | tr ' ' '|')"
-          ffmpeg="$(pkg-config --cflags-only-I libavcodec libavutil | sed 's/-I//g' | xargs | tr ' ' '|')"
-          export MOBCAM_OBS_INCLUDE_DIRS="${obs}"
-          export MOBCAM_FFMPEG_INCLUDE_DIRS="${ffmpeg}"
-          # The C build treated warnings as errors, so the Rust one does too.
-          cargo clippy --all-targets -- --deny warnings
+        # The C build treated warnings as errors, so the Rust one does too.
+        run: cargo clippy --all-targets -- --deny warnings

@@ -16,7 +16,6 @@ jobs:
       package: ${{ steps.setup.outputs.package }}
       codesign: ${{ steps.setup.outputs.codesign }}
       notarize: ${{ steps.setup.outputs.notarize }}
-      config: ${{ steps.setup.outputs.config }}
       commitHash: ${{ steps.setup.outputs.commitHash }}
       pluginName: ${{ steps.setup.outputs.pluginName }}
     steps:
@@ -33,7 +32,7 @@ jobs:
 
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
-              config_data=('codesign:false' 'notarize:false' 'package:false' 'config:RelWithDebInfo')
+              config_data=('codesign:false' 'notarize:false' 'package:false')
               if gh pr view ${{ github.event.number }} --json labels \
                 | jq -e -r '.labels[] | select(.name == "Seeking Testers")' > /dev/null; then
                 config_data[0]='codesign:true'
@@ -41,17 +40,16 @@ jobs:
               fi
               ;;
             push)
-              config_data=('codesign:true' 'notarize:false' 'package:true' 'config:RelWithDebInfo')
+              config_data=('codesign:true' 'notarize:false' 'package:true')
               if [[ ${GITHUB_REF_NAME} =~ [0-9]+.[0-9]+.[0-9]+(-(rc|beta).+)? ]]; then
                 config_data[1]='notarize:true'
-                config_data[3]='config:Release'
               fi
               ;;
             workflow_dispatch)
-              config_data=('codesign:true' 'notarize:false' 'package:false' 'config:RelWithDebInfo')
+              config_data=('codesign:true' 'notarize:false' 'package:false')
               ;;
             schedule)
-              config_data=('codesign:true' 'notarize:false' 'package:true' 'config:RelWithDebInfo')
+              config_data=('codesign:true' 'notarize:false' 'package:true')
               ;;
             *) ;;
           esac
@@ -62,14 +60,7 @@ jobs:
           done
           echo "commitHash=${GITHUB_SHA:0:9}" >> $GITHUB_OUTPUT
 
-          plugin_name="$(grep 'name' buildspec.json | sed -E -e 's/^.+"name":[^"]+"(.+)",?$/\1/g')"
-          plugin_display_name="$(grep 'displayName' buildspec.json | sed -E -e 's/^.+"displayName":[^"]+"(.+)",?$/\1/g' || echo "")"
-
-          if [[ "${plugin_display_name}" ]]; then
-            echo "pluginName=${plugin_display_name}" >> $GITHUB_OUTPUT
-          else
-            echo "pluginName=${plugin_name}" >> $GITHUB_OUTPUT
-          fi
+          echo "pluginName=$(jq -r '.displayName // .name' buildspec.json)" >> $GITHUB_OUTPUT
 
   macos-build:
     name: Build for macOS 🍏
@@ -77,7 +68,7 @@ jobs:
     needs: check-event
     defaults:
       run:
-        shell: zsh --no-rcs --errexit --pipefail {0}
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,42 +79,23 @@ jobs:
         id: setup
         run: |
           : Set Up Environment 🔧
-          if (( ${+RUNNER_DEBUG} )) setopt XTRACE
+          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
 
-          print '::group::Enable Xcode 26.6'
           sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
-          print '::endgroup::'
 
-          print '::group::Clean Homebrew Environment'
-          local -a unwanted_formulas=()
-          local -a remove_formulas=()
-          for formula (${unwanted_formulas}) {
-            if [[ -d ${HOMEBREW_PREFIX}/Cellar/${formula} ]] remove_formulas+=(${formula})
-          }
-
-          if (( #remove_formulas )) brew uninstall --ignore-dependencies ${remove_formulas}
-          print '::endgroup::'
-
-          local product_name
-          local product_version
           read -r product_name product_version <<< \
             "$(jq -r '. | {name, version} | join(" ")' buildspec.json)"
 
-          print "pluginName=${product_name}" >> $GITHUB_OUTPUT
-          print "pluginVersion=${product_version}" >> $GITHUB_OUTPUT
-
-      - uses: actions/cache/restore@v4
-        id: ccache-cache
-        with:
-          path: ${{ github.workspace }}/.ccache
-          key: ${{ runner.os }}-ccache-${{ needs.check-event.outputs.config }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-
+          echo "pluginName=${product_name}" >> $GITHUB_OUTPUT
+          echo "pluginVersion=${product_version}" >> $GITHUB_OUTPUT
 
       - name: Set Up Rust 🦀
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+        run: |
+          : Set Up Rust 🦀
+          # rust-toolchain.toml decides the toolchain; the targets are added to
+          # whichever one that is, which is the one cargo will use here.
+          rustup show active-toolchain
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - uses: actions/cache@v4
         with:
@@ -131,9 +103,14 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-            ${{ github.workspace }}/build_macos/rust-target
+            ${{ github.workspace }}/target
           key: ${{ runner.os }}-macos-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-macos-cargo-
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.deps
+          key: ${{ runner.os }}-macos-deps-${{ hashFiles('buildspec.json') }}
 
       - name: Set Up Codesigning 🔑
         uses: ./.github/actions/setup-macos-codesigning
@@ -150,42 +127,60 @@ jobs:
           notarizationPassword: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
 
       - name: Build Plugin 🧱
-        uses: ./.github/actions/build-plugin
-        with:
-          target: macos-universal
-          config: ${{ needs.check-event.outputs.config }}
-          codesign: ${{ fromJSON(needs.check-event.outputs.codesign) }}
-          codesignIdent: ${{ steps.codesign.outputs.codesignIdent }}
+        env:
+          CODESIGN_IDENT: ${{ steps.codesign.outputs.codesignIdent }}
+          CODESIGN_TEAM: ${{ steps.codesign.outputs.codesignTeam }}
+        run: |
+          : Build Plugin 🧱
+          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
+
+          build_args=()
+          if [[ '${{ steps.codesign.outputs.haveCodesignIdent }}' == 'true' ]]; then
+            build_args+=(--codesign)
+          fi
+
+          python3 build.py build "${build_args[@]}"
 
       - name: Verify Universal Binary 🔍
-        shell: zsh --no-rcs --errexit --pipefail {0}
         run: |
+          : Verify Universal Binary 🔍
           # A cargo build only ever produces one architecture, so a slip in the
-          # Rust half would ship an arm64 only plugin that Intel users cannot
-          # load. Nothing else in the build would notice.
-          binary=release/${{ needs.check-event.outputs.config }}/mobcam.plugin/Contents/MacOS/mobcam
+          # build would ship an arm64 only plugin that Intel users cannot load.
+          # Nothing else in the build would notice.
+          binary=release/install/${{ steps.setup.outputs.pluginName }}.plugin/Contents/MacOS/${{ steps.setup.outputs.pluginName }}
           archs="$(lipo -archs ${binary})"
-          print "mobcam architectures: ${archs}"
-          for arch (arm64 x86_64) {
-            if [[ ${archs} != *${arch}* ]] {
-              print "::error::mobcam is missing the ${arch} slice"
+          echo "${{ steps.setup.outputs.pluginName }} architectures: ${archs}"
+          for arch in arm64 x86_64; do
+            if [[ ${archs} != *${arch}* ]]; then
+              echo "::error::${{ steps.setup.outputs.pluginName }} is missing the ${arch} slice"
               exit 2
-            }
-          }
+            fi
+          done
 
       - name: Package Plugin 📀
-        uses: ./.github/actions/package-plugin
-        with:
-          target: macos-universal
-          config: ${{ needs.check-event.outputs.config }}
-          package: ${{ fromJSON(needs.check-event.outputs.package) }}
-          codesign: ${{ fromJSON(needs.check-event.outputs.codesign) && fromJSON(steps.codesign.outputs.haveCodesignIdent) }}
-          codesignIdent: ${{ steps.codesign.outputs.codesignIdent }}
-          installerIdent: ${{ steps.codesign.outputs.installerIdent }}
-          codesignTeam: ${{ steps.codesign.outputs.codesignTeam }}
-          notarize: ${{ fromJSON(needs.check-event.outputs.notarize) && fromJSON(steps.codesign.outputs.haveNotarizationUser) }}
-          codesignUser: ${{ secrets.MACOS_NOTARIZATION_USERNAME }}
-          codesignPass: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
+        env:
+          CODESIGN_IDENT: ${{ steps.codesign.outputs.codesignIdent }}
+          CODESIGN_IDENT_INSTALLER: ${{ steps.codesign.outputs.installerIdent }}
+          CODESIGN_TEAM: ${{ steps.codesign.outputs.codesignTeam }}
+          CODESIGN_IDENT_USER: ${{ secrets.MACOS_NOTARIZATION_USERNAME }}
+          CODESIGN_IDENT_PASS: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
+        run: |
+          : Package Plugin 📀
+          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
+
+          package_args=()
+          if [[ '${{ needs.check-event.outputs.package }}' == 'true' ]]; then
+            package_args+=(--installer)
+          fi
+          if [[ '${{ steps.codesign.outputs.haveCodesignIdent }}' == 'true' ]]; then
+            package_args+=(--codesign)
+          fi
+          if [[ '${{ needs.check-event.outputs.notarize }}' == 'true' \
+                && '${{ steps.codesign.outputs.haveNotarizationUser }}' == 'true' ]]; then
+            package_args+=(--notarize)
+          fi
+
+          python3 build.py package "${package_args[@]}"
 
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@v4
@@ -195,16 +190,9 @@ jobs:
 
       - name: Upload Debug Symbol Artifacts 🪲
         uses: actions/upload-artifact@v4
-        if: ${{ needs.check-event.outputs.config == 'Release' }}
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-${{ needs.check-event.outputs.commitHash }}-dSYMs
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-dSYMs.*
-
-      - uses: actions/cache/save@v4
-        if: github.event_name != 'pull_request' && steps.ccache-cache.outputs.cache-hit != 'true'
-        with:
-          path: ${{ github.workspace }}/.ccache
-          key: ${{ runner.os }}-ccache-${{ needs.check-event.outputs.config }}
 
   ubuntu-build:
     name: Build for Ubuntu 🐧
@@ -228,24 +216,23 @@ jobs:
           : Set Up Environment 🔧
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
 
+          # libobs and FFmpeg come from the distribution here, which is what OBS
+          # itself is built against on Ubuntu. bindgen needs libclang.
+          sudo add-apt-repository --yes ppa:obsproject/obs-studio
+          sudo apt-get --quiet update
+          sudo apt-get --quiet --yes --no-install-recommends install \
+            libclang-dev libobs-dev libavcodec-dev libavutil-dev libsimde-dev pkg-config
+
           read -r product_name product_version <<< \
             "$(jq -r '. | {name, version} | join(" ")' buildspec.json)"
 
           echo "pluginName=${product_name}" >> $GITHUB_OUTPUT
           echo "pluginVersion=${product_version}" >> $GITHUB_OUTPUT
 
-      - uses: actions/cache/restore@v4
-        id: ccache-cache
-        with:
-          path: ${{ github.workspace }}/.ccache
-          key: ${{ runner.os }}-${{ matrix.os }}-ccache-x86_64-${{ needs.check-event.outputs.config }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.os }}-ccache-x86_64-
-
       - name: Set Up Rust 🦀
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
+        run: |
+          : Set Up Rust 🦀
+          rustup show active-toolchain
 
       - uses: actions/cache@v4
         with:
@@ -253,22 +240,24 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-            ${{ github.workspace }}/build_x86_64/rust-target
+            ${{ github.workspace }}/target
           key: ${{ runner.os }}-ubuntu-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-ubuntu-cargo-
 
       - name: Build Plugin 🧱
-        uses: ./.github/actions/build-plugin
-        with:
-          target: x86_64
-          config: ${{ needs.check-event.outputs.config }}
+        run: python3 build.py build
 
       - name: Package Plugin 📀
-        uses: ./.github/actions/package-plugin
-        with:
-          target: x86_64
-          config: ${{ needs.check-event.outputs.config }}
-          package: ${{ fromJSON(needs.check-event.outputs.package) }}
+        run: |
+          : Package Plugin 📀
+          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
+
+          package_args=()
+          if [[ '${{ needs.check-event.outputs.package }}' == 'true' ]]; then
+            package_args+=(--installer)
+          fi
+
+          python3 build.py package "${package_args[@]}"
 
       - name: Upload Source Tarball 🗜️
         uses: actions/upload-artifact@v4
@@ -281,19 +270,6 @@ jobs:
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-x86_64-${{ needs.check-event.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-x86_64*.*
-
-      - name: Upload debug symbol artifacts 🪲
-        uses: actions/upload-artifact@v4
-        if: ${{ fromJSON(needs.check-event.outputs.package) }}
-        with:
-          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-x86_64-${{ needs.check-event.outputs.commitHash }}-dbgsym
-          path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-x86_64*-dbgsym.ddeb
-
-      - uses: actions/cache/save@v4
-        if: github.event_name != 'pull_request' && steps.ccache-cache.outputs.cache-hit != 'true'
-        with:
-          path: ${{ github.workspace }}/.ccache
-          key: ${{ runner.os }}-${{ matrix.os }}-ccache-x86_64-${{ needs.check-event.outputs.config }}
 
   windows-build:
     name: Build for Windows 🪟
@@ -317,16 +293,15 @@ jobs:
           }
 
           $BuildSpec = Get-Content -Path buildspec.json -Raw | ConvertFrom-Json
-          $ProductName = $BuildSpec.name
-          $ProductVersion = $BuildSpec.version
 
-          "pluginName=${ProductName}" >> $env:GITHUB_OUTPUT
-          "pluginVersion=${ProductVersion}" >> $env:GITHUB_OUTPUT
+          "pluginName=$($BuildSpec.name)" >> $env:GITHUB_OUTPUT
+          "pluginVersion=$($BuildSpec.version)" >> $env:GITHUB_OUTPUT
 
       - name: Set Up Rust 🦀
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
+        run: |
+          # Set Up Rust 🦀
+          rustup show active-toolchain
+          rustup target add x86_64-pc-windows-msvc
 
       - uses: actions/cache@v4
         with:
@@ -334,22 +309,28 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-            ${{ github.workspace }}/build_x64/rust-target
+            ${{ github.workspace }}/target
           key: ${{ runner.os }}-windows-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-windows-cargo-
 
-      - name: Build Plugin 🧱
-        uses: ./.github/actions/build-plugin
+      - uses: actions/cache@v4
         with:
-          target: x64
-          config: ${{ needs.check-event.outputs.config }}
+          path: ${{ github.workspace }}/.deps
+          key: ${{ runner.os }}-windows-deps-${{ hashFiles('buildspec.json') }}
+
+      - name: Build Plugin 🧱
+        run: python build.py build
 
       - name: Package Plugin 📀
-        uses: ./.github/actions/package-plugin
-        with:
-          target: x64
-          config: ${{ needs.check-event.outputs.config }}
-          package: ${{ fromJSON(needs.check-event.outputs.package) }}
+        run: |
+          # Package Plugin 📀
+          $PackageArgs = @()
+
+          if ( '${{ needs.check-event.outputs.package }}' -eq 'true' ) {
+            $PackageArgs += '--installer'
+          }
+
+          python build.py package @PackageArgs
 
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@v4

@@ -1,8 +1,9 @@
 //! MobCam, an OBS Studio source that receives video and audio from an iPhone or
 //! iPad running Moblin over the USB cable, tunnelled through usbmuxd.
 //!
-//! The crate is built as a static library and linked into the OBS module CMake
-//! produces. The entry points libobs looks up by name live in `obs::module`.
+//! The crate is built as the shared library OBS loads as a module, which
+//! build.py then bundles and packages. The entry points libobs looks up by name
+//! live in `obs::module`.
 
 pub mod decoder;
 pub mod ffmpeg;

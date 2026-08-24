@@ -3,31 +3,19 @@
 
 # Except for default project files
 !/.github
-!/build-aux
-!/cmake
 !/data
+!/packaging
 !/src
+!build.py
 !build.rs
 !Cargo.lock
 !Cargo.toml
 !rustfmt.toml
 !rust-toolchain.toml
-!.gersemirc
 !.gitignore
 !buildspec.json
-!CMakeLists.txt
-!CMakePresets.json
 !LICENSE
 !README.md
 
-# Exclude lock files
-*.lock.json
-
 # Exclude macOS legacy resource forks
 .DS_Store
-
-# Exclude CMake build number cache
-/cmake/.CMakeBuildNumber
-
-# Exclude the cargo build directory, for anyone running cargo outside CMake
-/target
