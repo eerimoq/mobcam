@@ -22,7 +22,8 @@ installing and start it again afterwards.
 ### Windows
 
 The Apple Mobile Device Service is needed to talk to the iPhone or iPad. Both
-the **Apple Devices** app from the Microsoft Store and **iTunes** install it, so install
+the [Apple Devices](https://apps.microsoft.com/detail/9np83lwlpz9k) app from the 
+Microsoft Store and [iTunes](https://www.apple.com/itunes/) install it, so install
 either one. Connect the device once, unlock it and tap Trust.
 
 Then install the plugin:
