@@ -1,0 +1,103 @@
+name: Build
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'release/**'
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  lint:
+    name: Check Lints
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check Lints
+        run: .github/scripts/ci.py lint
+  macos-build:
+    name: Build for macOS
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build Plugin
+        id: build
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_APPLICATION_IDENTITY }}
+          MACOS_SIGNING_INSTALLER_IDENTITY: ${{ secrets.MACOS_SIGNING_INSTALLER_IDENTITY }}
+          MACOS_SIGNING_CERT: ${{ secrets.MACOS_SIGNING_CERT }}
+          MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
+          MACOS_NOTARIZATION_USERNAME: ${{ secrets.MACOS_NOTARIZATION_USERNAME }}
+          MACOS_NOTARIZATION_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
+        run: .github/scripts/ci.py build
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-${{ steps.build.outputs.commitHash }}
+          path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal.*
+      - name: Upload Debug Symbol Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-${{ steps.build.outputs.commitHash }}-dSYMs
+          path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-dSYMs.*
+  ubuntu-build:
+    name: Build for Ubuntu
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build Plugin
+        id: build
+        run: .github/scripts/ci.py build
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-ubuntu-24.04-x86_64-${{ steps.build.outputs.commitHash }}
+          path: |
+            ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-x86_64*.*
+            ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-source.*
+  windows-build:
+    name: Build for Windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build Plugin
+        id: build
+        shell: pwsh
+        run: python .github/scripts/ci.py build
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-windows-x64-${{ steps.build.outputs.commitHash }}
+          path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-windows-x64*.*
+  create-release:
+    name: Create Release
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    needs: [lint, macos-build, ubuntu-build, windows-build]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v8
+      - name: Collect Release Assets
+        id: assets
+        run: .github/scripts/ci.py release
+      - name: Create Release
+        uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
+        with:
+          draft: false
+          tag_name: ${{ github.ref_name }}
+          name: ${{ steps.assets.outputs.pluginName }} ${{ github.ref_name }}
+          body_path: ${{ github.workspace }}/CHECKSUMS.txt
+          files: |
+            ${{ github.workspace }}/*.exe
+            ${{ github.workspace }}/*.zip
+            ${{ github.workspace }}/*.pkg
+            ${{ github.workspace }}/*.deb
+            ${{ github.workspace }}/*.tar.xz

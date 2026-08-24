@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<installer-gui-script minSpecVersion="1.0">
+    <options
+        rootVolumeOnly="true"
+        hostArchitectures="arm64,x86_64"
+        customize="never"
+        allow-external-scripts="no" />
+    <domains enable_currentUserHome="true" enable_anywhere="false" enable_localSystem="false" />
+    <title>@NAME@</title>
+    <choices-outline>
+        <line choice="obs-plugin" />
+    </choices-outline>
+    <choice id="obs-plugin" title="@NAME@" description="">
+        <pkg-ref id="@BUNDLE_ID@" />
+    </choice>
+    <pkg-ref id="@BUNDLE_ID@" version="@VERSION@">#@NAME@.pkg</pkg-ref>
+    <installation-check script="installCheck();" />
+    <script>
+        function installCheck() {
+            var macOSVersion = system.version.ProductVersion
+
+            if (system.compareVersions(macOSVersion, '@DEPLOYMENT_TARGET@') == -1) {
+                my.result.title = system.localizedStandardStringWithFormat(
+                                    'InstallationCheckError',
+                                    system.localizedString('DISTRIBUTION_TITLE')
+                                  );
+                my.result.message = ' ';
+                my.result.type = 'Fatal';
+                return false;
+            }
+        }
+    </script>
+</installer-gui-script>

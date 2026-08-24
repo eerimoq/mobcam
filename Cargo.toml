@@ -1,0 +1,25 @@
+[package]
+name = "mobcam"
+version = "0.5.0"
+edition = "2024"
+rust-version = "1.98"
+license = "GPL-2.0-or-later"
+publish = false
+
+[lib]
+name = "mobcam"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+plist = { version = "1.10.0" }
+
+[build-dependencies]
+bindgen = "0.72"
+
+[target.'cfg(windows)'.build-dependencies]
+cc = "1"
+
+[profile.release]
+panic = "unwind"
+debug = true
