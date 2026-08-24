@@ -2,7 +2,6 @@
 
 import argparse
 import base64
-import contextlib
 import hashlib
 import json
 import os
