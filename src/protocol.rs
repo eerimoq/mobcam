@@ -28,14 +28,12 @@ pub fn audio_codec_name(codec: u8) -> &'static str {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceHello {
     pub version: u8,
     pub name: String,
     pub app_version: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VideoConfig<'a> {
     pub codec: u8,
     pub width: u16,
@@ -43,14 +41,12 @@ pub struct VideoConfig<'a> {
     pub record: &'a [u8],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VideoFrame<'a> {
     pub pts_us: u64,
     pub keyframe: bool,
     pub data: &'a [u8],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioConfig<'a> {
     pub codec: u8,
     pub sample_rate: u32,
@@ -58,7 +54,6 @@ pub struct AudioConfig<'a> {
     pub record: &'a [u8],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioFrame<'a> {
     pub pts_us: u64,
     pub data: &'a [u8],
