@@ -357,7 +357,7 @@ fn fill_device_list(list: &mut obs::Property) {
     let deadline = std::time::Instant::now() + DEVICE_LIST_TIMEOUT;
     let expired = move || std::time::Instant::now() >= deadline;
     list.clear_list();
-    list.add_translated_entry(text(c"Device.Automatic"), "");
+    list.add_translated_list_entry(text(c"Device.Automatic"), "");
     let Ok(devices) = usbmux::list_devices(&expired) else {
         return;
     };

@@ -95,13 +95,22 @@ impl Property {
         }
     }
 
-    pub fn add_translated_entry(&mut self, label: &CStr, value: &str) {
+    pub fn add_translated_list_entry(&mut self, label: &CStr, value: &str) {
         if self.is_null() {
             return;
         }
         let value = c_string(value);
         unsafe {
             sys::obs_property_list_add_string(self.0, label.as_ptr(), value.as_ptr());
+        }
+    }
+
+    pub fn disable_list_entry(&mut self, index: usize, value: bool) {
+        if self.is_null() {
+            return;
+        }
+        unsafe {
+            sys::obs_property_list_item_disable(self.0, index, value);
         }
     }
 }
