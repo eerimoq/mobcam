@@ -1,26 +1,22 @@
 #!/usr/bin/env python3
 
-"""Archive the built plugin, and build the installer when the event asks for
-one.
+"""Archive the built plugin and build the installer.
 
-Signing and notarization are each turned off unless both the event wants them
-and the runner has the credentials for them, which is what lets a fork package
-a plugin at all.
+Every build is meant to be signed and notarized; each is only turned off when
+the runner was given no credentials for it, which is what lets a fork package a
+plugin at all.
 """
 
 import gha
 
 
 def package_plugin():
-    arguments = []
-
-    if gha.flag("PACKAGE"):
-        arguments.append("--installer")
+    arguments = ["--installer"]
 
     if gha.flag("HAVE_CODESIGN_IDENT"):
         arguments.append("--codesign")
 
-    if gha.flag("NOTARIZE") and gha.flag("HAVE_NOTARIZATION_USER"):
+    if gha.flag("HAVE_NOTARIZATION_USER"):
         arguments.append("--notarize")
 
     gha.python("package", *arguments)

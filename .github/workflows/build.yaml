@@ -23,29 +23,24 @@ jobs:
         run: cargo clippy --all-targets -- --deny warnings
       - name: rustfmt check 🦀
         run: cargo fmt --check
-  check-event:
-    name: Check GitHub Event Data 🔎
+  metadata:
+    name: Collect Build Metadata 🏷️
     runs-on: ubuntu-24.04
     defaults:
       run:
         shell: bash
     outputs:
-      package: ${{ steps.setup.outputs.package }}
-      codesign: ${{ steps.setup.outputs.codesign }}
-      notarize: ${{ steps.setup.outputs.notarize }}
       commitHash: ${{ steps.setup.outputs.commitHash }}
       pluginName: ${{ steps.setup.outputs.pluginName }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check Event Data ☑️
+      - name: Collect Build Metadata ☑️
         id: setup
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: .github/scripts/check_event.py
+        run: .github/scripts/build_metadata.py
   macos-build:
     name: Build for macOS 🍏
     runs-on: macos-26
-    needs: check-event
+    needs: metadata
     defaults:
       run:
         shell: bash
@@ -72,15 +67,12 @@ jobs:
           path: ${{ github.workspace }}/.deps
           key: ${{ runner.os }}-macos-deps-${{ hashFiles('buildspec.json') }}
       - name: Set Up Codesigning 🔑
-        if: fromJSON(needs.check-event.outputs.codesign)
         id: codesign
         env:
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_APPLICATION_IDENTITY }}
           MACOS_SIGNING_IDENTITY_INSTALLER: ${{ secrets.MACOS_SIGNING_INSTALLER_IDENTITY }}
           MACOS_SIGNING_CERT: ${{ secrets.MACOS_SIGNING_CERT }}
           MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
-          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
-          MACOS_SIGNING_PROVISIONING_PROFILE: ${{ secrets.MACOS_SIGNING_PROVISIONING_PROFILE }}
           MACOS_NOTARIZATION_USERNAME: ${{ secrets.MACOS_NOTARIZATION_USERNAME }}
           MACOS_NOTARIZATION_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
         run: .github/scripts/setup_codesigning.py
@@ -94,8 +86,6 @@ jobs:
         run: .github/scripts/verify_universal_binary.py
       - name: Package Plugin 📀
         env:
-          PACKAGE: ${{ needs.check-event.outputs.package }}
-          NOTARIZE: ${{ needs.check-event.outputs.notarize }}
           HAVE_CODESIGN_IDENT: ${{ steps.codesign.outputs.haveCodesignIdent }}
           HAVE_NOTARIZATION_USER: ${{ steps.codesign.outputs.haveNotarizationUser }}
           CODESIGN_IDENT: ${{ steps.codesign.outputs.codesignIdent }}
@@ -107,12 +97,12 @@ jobs:
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-${{ needs.check-event.outputs.commitHash }}
+          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-${{ needs.metadata.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal.*
       - name: Upload Debug Symbol Artifacts 🪲
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-${{ needs.check-event.outputs.commitHash }}-dSYMs
+          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-${{ needs.metadata.outputs.commitHash }}-dSYMs
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-dSYMs.*
   ubuntu-build:
     name: Build for Ubuntu 🐧
@@ -120,7 +110,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04]
     runs-on: ${{ matrix.os }}
-    needs: check-event
+    needs: metadata
     defaults:
       run:
         shell: bash
@@ -145,23 +135,21 @@ jobs:
       - name: Build Plugin 🧱
         run: .github/scripts/build_plugin.py
       - name: Package Plugin 📀
-        env:
-          PACKAGE: ${{ needs.check-event.outputs.package }}
         run: .github/scripts/package_plugin.py
       - name: Upload Source Tarball 🗜️
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-sources-${{ needs.check-event.outputs.commitHash }}
+          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-sources-${{ needs.metadata.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-source.*
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-x86_64-${{ needs.check-event.outputs.commitHash }}
+          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-x86_64-${{ needs.metadata.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-x86_64*.*
   windows-build:
     name: Build for Windows 🪟
     runs-on: windows-2022
-    needs: check-event
+    needs: metadata
     defaults:
       run:
         shell: pwsh
@@ -190,19 +178,17 @@ jobs:
       - name: Build Plugin 🧱
         run: python .github/scripts/build_plugin.py
       - name: Package Plugin 📀
-        env:
-          PACKAGE: ${{ needs.check-event.outputs.package }}
         run: python .github/scripts/package_plugin.py
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64-${{ needs.check-event.outputs.commitHash }}
+          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64-${{ needs.metadata.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64*.*
   create-release:
     name: Create Release 🛫
     if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
-    needs: [check-event, macos-build, ubuntu-build, windows-build]
+    needs: [metadata, macos-build, ubuntu-build, windows-build]
     permissions:
       contents: write
     defaults:
@@ -227,7 +213,7 @@ jobs:
         with:
           draft: false
           tag_name: ${{ steps.check.outputs.version }}
-          name: ${{ needs.check-event.outputs.pluginName }} ${{ steps.check.outputs.version }}
+          name: ${{ needs.metadata.outputs.pluginName }} ${{ steps.check.outputs.version }}
           body_path: ${{ github.workspace }}/CHECKSUMS.txt
           files: |
             ${{ github.workspace }}/*.exe
