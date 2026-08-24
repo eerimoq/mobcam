@@ -40,7 +40,7 @@ jobs:
         with:
           name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-${{ steps.build.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal.*
-      - name: Upload Debug Symbol Artifacts 🪲
+      - name: Upload Debug Symbol Artifacts
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-${{ steps.build.outputs.commitHash }}-dSYMs
@@ -75,7 +75,7 @@ jobs:
           name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-windows-x64-${{ steps.build.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-windows-x64*.*
   create-release:
-    name: Create Release 🛫
+    name: Create Release
     if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     needs: [lint, macos-build, ubuntu-build, windows-build]
@@ -88,7 +88,7 @@ jobs:
       - name: Collect Release Assets
         id: assets
         run: .github/scripts/ci.py release
-      - name: Create Release 🛫
+      - name: Create Release
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         with:
           draft: false
