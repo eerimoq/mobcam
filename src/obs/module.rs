@@ -66,7 +66,7 @@ pub extern "C" fn obs_module_free_locale() {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn obs_module_name() -> *const std::os::raw::c_char {
-    c"MobCam".as_ptr()
+    c"Mobcam".as_ptr()
 }
 
 #[unsafe(no_mangle)]

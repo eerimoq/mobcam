@@ -23,7 +23,7 @@ def read_cargo_package():
 
 CARGO_PACKAGE = read_cargo_package()
 NAME = CARGO_PACKAGE["name"]
-DISPLAY_NAME = "MobCam"
+DISPLAY_NAME = "Mobcam"
 VERSION = CARGO_PACKAGE["version"]
 BUNDLE_ID = "com.eerimoq.mobcam"
 DEPS_DIR = ROOT / ".deps"
@@ -104,7 +104,7 @@ def host_platform():
 def plugin():
     return {
         "NAME": NAME,
-        "DISPLAY_NAME": "MobCam",
+        "DISPLAY_NAME": "Mobcam",
         "VERSION": VERSION,
         "AUTHOR": "Erik Moqvist",
         "EMAIL": "erik.moqvist@gmail.com",

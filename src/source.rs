@@ -384,7 +384,7 @@ fn shared_of<'a>(data: *mut c_void) -> Option<&'a Shared> {
 }
 
 extern "C" fn get_name(_type_data: *mut c_void) -> *const c_char {
-    crate::panic::guard("get_name", c"MobCam".as_ptr(), || text(c"MobCam").as_ptr())
+    crate::panic::guard("get_name", c"Mobcam".as_ptr(), || text(c"Mobcam").as_ptr())
 }
 
 extern "C" fn create(settings: *mut sys::obs_data_t, source: *mut sys::obs_source_t) -> *mut c_void {

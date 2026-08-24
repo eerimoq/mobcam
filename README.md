@@ -1,4 +1,4 @@
-# OBS MobCam Plugin
+# OBS Mobcam Plugin
 
 Use an iPhone or iPad running [Moblin](https://github.com/eerimoq/moblin) as a low
 latency camera in OBS Studio over USB.
@@ -91,7 +91,7 @@ Uninstall the plugin by removing
 
 ### Verifying the install
 
-Start OBS Studio and add a source. The plugin loaded if `MobCam` is in the list
+Start OBS Studio and add a source. The plugin loaded if `Mobcam` is in the list
 of source types.
 
 ## Development
