@@ -78,10 +78,10 @@ def setup():
     return platform
 
 
-def import_certificate(arguments, password):
+def import_certificate(args, password):
     temporary = Path(os.environ["RUNNER_TEMP"])
     certificate = temporary / "build_certificate.p12"
-    certificate.write_bytes(base64.b64decode(arguments.codesign_certificate))
+    certificate.write_bytes(base64.b64decode(args.codesign_certificate))
     keychain = temporary / "app-signing.keychain-db"
     tools = [argument for tool in KEYCHAIN_TOOLS for argument in ("-T", tool)]
     run(["security", "create-keychain", "-p", password, keychain])
@@ -93,7 +93,7 @@ def import_certificate(arguments, password):
             "import",
             certificate,
             "-P",
-            arguments.codesign_certificate_password,
+            args.codesign_certificate_password,
             "-A",
             "-t",
             "cert",
@@ -120,17 +120,17 @@ def import_certificate(arguments, password):
     run(["security", "list-keychain", "-d", "user", "-s", keychain, "login-keychain"])
 
 
-def codesigning(arguments):
+def codesigning(args):
     sign = all(
         [
-            arguments.codesign_application_identity,
-            arguments.codesign_installer_identity,
-            arguments.codesign_certificate,
+            args.codesign_application_identity,
+            args.codesign_installer_identity,
+            args.codesign_certificate,
         ]
     )
-    notarize = sign and all([arguments.notarization_user, arguments.notarization_password])
+    notarize = sign and all([args.notarization_user, args.notarization_password])
     if sign:
-        import_certificate(arguments, os.urandom(16).hex())
+        import_certificate(args, os.urandom(16).hex())
     else:
         print("    no signing credentials; building unsigned", flush=True)
     return sign, notarize
@@ -153,26 +153,26 @@ def lint(_):
         run(["make", "--directory", ROOT, target])
 
 
-def build(arguments):
+def build(args):
     platform = setup()
-    sign, notarize = codesigning(arguments) if platform == "macos" else (False, False)
+    sign, notarize = codesigning(args) if platform == "macos" else (False, False)
     codesign_arguments = []
     package_arguments = []
     if sign:
         codesign_arguments = [
             "--codesign-application-identity",
-            arguments.codesign_application_identity,
+            args.codesign_application_identity,
         ]
         package_arguments = codesign_arguments + [
             "--codesign-installer-identity",
-            arguments.codesign_installer_identity,
+            args.codesign_installer_identity,
         ]
     if notarize:
         package_arguments += [
             "--notarization-user",
-            arguments.notarization_user,
+            args.notarization_user,
             "--notarization-password",
-            arguments.notarization_password,
+            args.notarization_password,
         ]
     build_py("build", *codesign_arguments)
     if platform == "macos":
@@ -232,9 +232,9 @@ def main():
     subparser.set_defaults(function=build)
     subparser = subparsers.add_parser("release")
     subparser.set_defaults(function=release)
-    arguments = parser.parse_args()
+    args = parser.parse_args()
     try:
-        arguments.function(arguments)
+        args.function(args)
     except Error as error:
         print(f"::error::{error}", flush=True)
         sys.exit(2)

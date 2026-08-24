@@ -344,16 +344,16 @@ def build_windows(debug):
     return binary_dir / f"{NAME}.dll"
 
 
-def build(arguments):
+def build(args):
     dependencies()
     target_platform = host_platform()
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     if target_platform == "macos":
-        artifact = build_macos(arguments.debug, arguments.codesign_application_identity)
+        artifact = build_macos(args.debug, args.codesign_application_identity)
     elif target_platform == "windows":
-        artifact = build_windows(arguments.debug)
+        artifact = build_windows(args.debug)
     else:
-        artifact = build_linux(arguments.debug)
+        artifact = build_linux(args.debug)
     log(f"Built {artifact}")
 
 
@@ -366,20 +366,20 @@ def tar_xz(archive, directory, members):
             tar_file.add(directory / member, arcname=member)
 
 
-def package_macos(arguments):
+def package_macos(args):
     base = output_name("macos")
     bundle, _, symbols = macos_paths(NAME)
     if not bundle.is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
-    if arguments.installer:
-        package_macos_installer(arguments, base)
+    if args.installer:
+        package_macos_installer(args, base)
     else:
         tar_xz(RELEASE_DIR / f"{base}.tar.xz", INSTALL_DIR, [bundle.name])
     if symbols.is_dir():
         tar_xz(RELEASE_DIR / f"{base}-dSYMs.tar.xz", INSTALL_DIR, [symbols.name])
 
 
-def package_macos_installer(arguments, base):
+def package_macos_installer(args, base):
     values = plugin()
     name = values["NAME"]
     staging = RELEASE_DIR / "installer"
@@ -421,13 +421,13 @@ def package_macos_installer(arguments, base):
         ]
     )
     remove(package)
-    if arguments.codesign_installer_identity:
+    if args.codesign_installer_identity:
         log("Signing the installer package")
         run(
             [
                 "productsign",
                 "--sign",
-                arguments.codesign_installer_identity,
+                args.codesign_installer_identity,
                 unsigned,
                 package,
             ]
@@ -435,14 +435,14 @@ def package_macos_installer(arguments, base):
     else:
         unsigned.replace(package)
     remove(staging)
-    if arguments.notarization_user or arguments.notarization_password:
-        notarize(package, name, arguments)
+    if args.notarization_user or args.notarization_password:
+        notarize(package, name, args)
 
 
-def notarize(package, name, arguments):
-    user = arguments.notarization_user
-    password = arguments.notarization_password
-    team = arguments.codesign_application_identity.rpartition("(")[2].rstrip(")")
+def notarize(package, name, args):
+    user = args.notarization_user
+    password = args.notarization_password
+    team = args.codesign_application_identity.rpartition("(")[2].rstrip(")")
     if not (user and password and team):
         raise Error(
             "notarization needs --notarization-user, --notarization-password "
@@ -478,13 +478,13 @@ def notarize(package, name, arguments):
     run(["xcrun", "stapler", "staple", package])
 
 
-def package_linux(arguments):
+def package_linux(args):
     base = output_name("linux")
     if not (INSTALL_DIR / "lib").is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
     tar_xz(RELEASE_DIR / f"{base}.tar.xz", INSTALL_DIR, ["lib", "share"])
     source_tarball()
-    if arguments.installer:
+    if args.installer:
         package_deb(base, NAME)
 
 
@@ -528,7 +528,7 @@ def source_tarball():
         fout.write(sources)
 
 
-def package_windows(arguments):
+def package_windows(args):
     base = output_name("windows")
     if not (INSTALL_DIR / NAME).is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
@@ -540,7 +540,7 @@ def package_windows(arguments):
         for path in sorted((INSTALL_DIR / NAME).rglob("*")):
             if path.is_file():
                 zip_file.write(path, path.relative_to(INSTALL_DIR))
-    if arguments.installer:
+    if args.installer:
         package_windows_installer(base)
 
 
@@ -575,14 +575,14 @@ def package_windows_installer(base):
     remove(script)
 
 
-def package(arguments):
+def package(args):
     target_platform = host_platform()
     if target_platform == "macos":
-        package_macos(arguments)
+        package_macos(args)
     elif target_platform == "windows":
-        package_windows(arguments)
+        package_windows(args)
     else:
-        package_linux(arguments)
+        package_linux(args)
 
 
 def install(_):
@@ -608,7 +608,7 @@ def install(_):
         raise Error("installing is only supported on macOS and Linux; use the installer instead")
 
 
-def clean(arguments):
+def clean(_):
     for path in [RELEASE_DIR, cargo_target_dir()]:
         if path.exists():
             log(f"Removing {path}")
@@ -619,7 +619,7 @@ def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
     deps_parser = subparsers.add_parser("deps")
-    deps_parser.set_defaults(function=lambda arguments: dependencies())
+    deps_parser.set_defaults(function=lambda args: dependencies())
     build_parser = subparsers.add_parser("build")
     build_parser.add_argument("--debug", action="store_true")
     build_parser.add_argument(
@@ -655,9 +655,9 @@ def main():
     install_parser.set_defaults(function=install)
     clean_parser = subparsers.add_parser("clean")
     clean_parser.set_defaults(function=clean)
-    arguments = parser.parse_args()
+    args = parser.parse_args()
     try:
-        arguments.function(arguments)
+        args.function(args)
     except Error as error:
         sys.exit(f"error: {error}")
 
