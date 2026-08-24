@@ -1,11 +1,49 @@
-name: Build Project
+name: Build
+run-name: ${{ github.event.pull_request.title || github.ref_name }} run 🚀
 on:
-  workflow_call:
-    outputs:
-      pluginName:
-        description: Project name detected by parsing build spec file
-        value: ${{ jobs.check-event.outputs.pluginName }}
+  workflow_dispatch:
+  pull_request:
+    paths-ignore:
+      - '**.md'
+    branches: [master, main]
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - master
+      - main
+      - 'release/**'
+    tags:
+      - '*'
+permissions:
+  contents: read
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
+  cancel-in-progress: true
 jobs:
+  rustfmt:
+    name: Check Formatting 🔍
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set Up Rust 🦀
+        run: python3 .github/scripts/setup_rust.py
+      - name: rustfmt check 🦀
+        run: cargo fmt --check
+  clippy:
+    name: Check Lints 🔍
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set Up Environment 🔧
+        run: python3 .github/scripts/setup_env.py
+      - name: Set Up Rust 🦀
+        run: python3 .github/scripts/setup_rust.py
+      - name: clippy check 🦀
+        run: cargo clippy --all-targets -- --deny warnings
   check-event:
     name: Check GitHub Event Data 🔎
     runs-on: ubuntu-24.04
@@ -186,3 +224,40 @@ jobs:
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64-${{ needs.check-event.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64*.*
+  create-release:
+    name: Create Release 🛫
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    needs: [check-event, macos-build, ubuntu-build, windows-build]
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Release Tag ☑️
+        id: check
+        run: python3 .github/scripts/check_release_tag.py
+      - name: Download Build Artifacts 📥
+        uses: actions/download-artifact@v4
+        if: fromJSON(steps.check.outputs.validTag)
+        id: download
+      - name: Collect Release Assets 🏷️
+        if: fromJSON(steps.check.outputs.validTag)
+        run: python3 .github/scripts/release_assets.py
+      - name: Create Release 🛫
+        if: fromJSON(steps.check.outputs.validTag)
+        id: create_release
+        uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
+        with:
+          draft: false
+          tag_name: ${{ steps.check.outputs.version }}
+          name: ${{ needs.check-event.outputs.pluginName }} ${{ steps.check.outputs.version }}
+          body_path: ${{ github.workspace }}/CHECKSUMS.txt
+          files: |
+            ${{ github.workspace }}/*.exe
+            ${{ github.workspace }}/*.zip
+            ${{ github.workspace }}/*.pkg
+            ${{ github.workspace }}/*.deb
+            ${{ github.workspace }}/*.tar.xz
