@@ -29,7 +29,7 @@ jobs:
         id: build
         run: |
           .github/scripts/ci.py build \
-            --codesign-identity "${{ secrets.MACOS_SIGNING_APPLICATION_IDENTITY }}" \
+            --codesign-application-identity "${{ secrets.MACOS_SIGNING_APPLICATION_IDENTITY }}" \
             --codesign-installer-identity "${{ secrets.MACOS_SIGNING_INSTALLER_IDENTITY }}" \
             --codesign-certificate "${{ secrets.MACOS_SIGNING_CERT }}" \
             --codesign-certificate-password "${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}" \

@@ -355,7 +355,7 @@ def build(arguments):
     target_platform = host_platform()
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     if target_platform == "macos":
-        artifact = build_macos(arguments.debug, arguments.codesign_identity)
+        artifact = build_macos(arguments.debug, arguments.codesign_application_identity)
     elif target_platform == "windows":
         artifact = build_windows(arguments.debug)
     else:
@@ -443,11 +443,11 @@ def package_macos_installer(arguments, base):
 def notarize(package, name, arguments):
     user = arguments.notarization_user
     password = arguments.notarization_password
-    team = arguments.codesign_identity.rpartition("(")[2].rstrip(")")
+    team = arguments.codesign_application_identity.rpartition("(")[2].rstrip(")")
     if not (user and password and team):
         raise Error(
             "notarization needs --notarization-user, --notarization-password "
-            "and a team in --codesign-identity"
+            "and a team in --codesign-application-identity"
         )
     profile = f"{name}-Codesign-Password"
     log("Notarizing the installer package")
@@ -624,7 +624,7 @@ def main():
     build_parser = subparsers.add_parser("build")
     build_parser.add_argument("--debug", action="store_true")
     build_parser.add_argument(
-        "--codesign-identity",
+        "--codesign-application-identity",
         default="",
         help="macOS application signing identity; ad-hoc signed when omitted",
     )
@@ -632,7 +632,7 @@ def main():
     package_parser = subparsers.add_parser("package")
     package_parser.add_argument("--installer", action="store_true")
     package_parser.add_argument(
-        "--codesign-identity",
+        "--codesign-application-identity",
         default="",
         help="macOS application signing identity; the notarization team id is taken from it",
     )

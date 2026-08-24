@@ -111,7 +111,7 @@ def import_certificate(arguments, password):
 def codesigning(arguments):
     sign = all(
         [
-            arguments.codesign_identity,
+            arguments.codesign_application_identity,
             arguments.codesign_installer_identity,
             arguments.codesign_certificate,
         ]
@@ -148,7 +148,7 @@ def build(arguments):
     codesign_arguments = []
     package_arguments = []
     if sign:
-        codesign_arguments = ["--codesign-identity", arguments.codesign_identity]
+        codesign_arguments = ["--codesign-application-identity", arguments.codesign_application_identity]
         package_arguments = codesign_arguments + [
             "--codesign-installer-identity",
             arguments.codesign_installer_identity,
@@ -186,7 +186,7 @@ def main():
     subparser.set_defaults(function=lint)
     subparser = subparsers.add_parser("build")
     subparser.add_argument(
-        "--codesign-identity",
+        "--codesign-application-identity",
         default="",
         help="macOS application signing identity",
     )
