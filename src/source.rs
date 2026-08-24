@@ -372,11 +372,11 @@ fn fill_device_list(list: &mut obs::Property, shared: Option<&Shared>) {
     }
 }
 
-unsafe fn source_of<'a>(data: *mut c_void) -> &'a mut Source {
+fn source_of<'a>(data: *mut c_void) -> &'a mut Source {
     unsafe { &mut *(data as *mut Source) }
 }
 
-unsafe fn shared_of<'a>(data: *mut c_void) -> Option<&'a Shared> {
+fn shared_of<'a>(data: *mut c_void) -> Option<&'a Shared> {
     if data.is_null() {
         return None;
     }
@@ -405,19 +405,19 @@ extern "C" fn destroy(data: *mut c_void) {
 
 extern "C" fn update(data: *mut c_void, settings: *mut sys::obs_data_t) {
     crate::panic::guard("update", (), || {
-        unsafe { source_of(data) }.update(&unsafe { Data::from_raw(settings) });
+        source_of(data).update(&unsafe { Data::from_raw(settings) });
     })
 }
 
 extern "C" fn save(data: *mut c_void, settings: *mut sys::obs_data_t) {
     crate::panic::guard("save", (), || {
-        unsafe { source_of(data) }.save(&unsafe { Data::from_raw(settings) });
+        source_of(data).save(&unsafe { Data::from_raw(settings) });
     })
 }
 
 extern "C" fn show(data: *mut c_void) {
     crate::panic::guard("show", (), || {
-        let context = unsafe { source_of(data) };
+        let context = source_of(data);
         if context.disconnect_when_hidden {
             context.start();
         }
@@ -426,7 +426,7 @@ extern "C" fn show(data: *mut c_void) {
 
 extern "C" fn hide(data: *mut c_void) {
     crate::panic::guard("hide", (), || {
-        let context = unsafe { source_of(data) };
+        let context = source_of(data);
         if context.disconnect_when_hidden {
             context.stop();
         }
@@ -434,14 +434,12 @@ extern "C" fn hide(data: *mut c_void) {
 }
 
 extern "C" fn get_width(data: *mut c_void) -> u32 {
-    crate::panic::guard("get_width", 0, || {
-        unsafe { source_of(data) }.shared.width.load(Ordering::Relaxed)
-    })
+    crate::panic::guard("get_width", 0, || source_of(data).shared.width.load(Ordering::Relaxed))
 }
 
 extern "C" fn get_height(data: *mut c_void) -> u32 {
     crate::panic::guard("get_height", 0, || {
-        unsafe { source_of(data) }.shared.height.load(Ordering::Relaxed)
+        source_of(data).shared.height.load(Ordering::Relaxed)
     })
 }
 
@@ -464,7 +462,7 @@ extern "C" fn refresh_devices_clicked(
 ) -> bool {
     crate::panic::guard("refresh_devices", false, || {
         let mut list = unsafe { obs::properties::get(properties, SETTING_DEVICE) };
-        fill_device_list(&mut list, unsafe { shared_of(data) });
+        fill_device_list(&mut list, shared_of(data));
         true
     })
 }
@@ -473,7 +471,7 @@ extern "C" fn get_properties(data: *mut c_void) -> *mut sys::obs_properties_t {
     crate::panic::guard("get_properties", std::ptr::null_mut(), || {
         let mut properties = Properties::new();
         let mut list = properties.add_string_list(SETTING_DEVICE, text(c"Device"));
-        fill_device_list(&mut list, unsafe { shared_of(data) });
+        fill_device_list(&mut list, shared_of(data));
         unsafe { properties.add_button(c"refresh", text(c"RefreshDevices"), Some(refresh_devices_clicked), data) };
         properties.add_bool(SETTING_HARDWARE_DECODE, text(c"HardwareDecode"));
         properties.add_bool(SETTING_BUFFERING, text(c"Buffering"));
