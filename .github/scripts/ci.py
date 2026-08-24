@@ -21,7 +21,6 @@ from build import (  # noqa: E402
     run,
 )
 
-XCODE = "/Applications/Xcode_26.6.app/Contents/Developer"
 UBUNTU_PACKAGES = [
     "libclang-dev",
     "libobs-dev",
@@ -68,9 +67,7 @@ def build_py(*arguments):
 
 def setup():
     platform = host_platform()
-    if platform == "macos":
-        run(["sudo", "xcode-select", "--switch", XCODE])
-    elif platform == "linux":
+    if platform == "linux":
         run(["sudo", "add-apt-repository", "--yes", "ppa:obsproject/obs-studio"])
         run(["sudo", "apt-get", "--quiet", "update"])
         run(
