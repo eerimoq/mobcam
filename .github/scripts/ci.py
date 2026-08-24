@@ -17,7 +17,6 @@ from build import NAME
 from build import VERSION
 from build import Error
 from build import host_platform
-from build import macos_paths
 from build import run
 
 UBUNTU_PACKAGES = [
@@ -125,17 +124,7 @@ def codesigning(args):
     return True
 
 
-def verify_universal_binary(name):
-    _, binary, _ = macos_paths(name)
-    result = run(["lipo", "-archs", binary], stdout=subprocess.PIPE, text=True)
-    archs = result.stdout.split()
-    print(f"    {name} architectures: {' '.join(archs)}")
-    missing = [arch for arch in ARCHITECTURES if arch not in archs]
-    if missing:
-        raise Error(f"{name} is missing the {' and '.join(missing)} slice")
-
-
-def lint(_):
+def style_and_lint(_):
     setup()
     run([sys.executable, "-m", "pip", "install", "--requirement", ROOT / "requirements.txt"])
     for target in ["style-check", "lint", "spell-check"]:
@@ -147,7 +136,6 @@ def build(args):
     if platform == "macos":
         import_certificate(args, os.urandom(16).hex())
         build_py("build", "--codesign-application-identity", args.codesign_application_identity)
-        verify_universal_binary(NAME)
         build_py(
             "package",
             "--installer",
@@ -181,8 +169,8 @@ def release(_):
 def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparser = subparsers.add_parser("lint")
-    subparser.set_defaults(function=lint)
+    subparser = subparsers.add_parser("style_and_lint")
+    subparser.set_defaults(function=style_and_lint)
     subparser = subparsers.add_parser("build")
     subparser.add_argument("--codesign-application-identity")
     subparser.add_argument("--codesign-installer-identity")

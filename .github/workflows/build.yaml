@@ -13,7 +13,7 @@ defaults:
   run:
     shell: bash
 jobs:
-  lint:
+  style-and-lint:
     name: Check Lints
     runs-on: ubuntu-24.04
     steps:
@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Check Lints
-        run: .github/scripts/ci.py lint
+        run: .github/scripts/ci.py style_and_lint
   macos-build:
     name: Build for macOS
     runs-on: macos-26
@@ -81,7 +81,7 @@ jobs:
     name: Create Release
     if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
-    needs: [lint, macos-build, ubuntu-build, windows-build]
+    needs: [style-and-lint, macos-build, ubuntu-build, windows-build]
     permissions:
       contents: write
     steps:
