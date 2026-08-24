@@ -19,6 +19,8 @@ from build import (  # noqa: E402
     host_platform,
     macos_paths,
     run,
+    NAME,
+    VERSION
 )
 
 UBUNTU_PACKAGES = [
@@ -151,15 +153,15 @@ def build():
     sign, notarize = codesigning() if platform == "macos" else (False, False)
     build_py("build", *(["--codesign"] if sign else []))
     if platform == "macos":
-        verify_universal_binary(spec["name"])
+        verify_universal_binary(NAME)
     build_py(
         "package",
         "--installer",
         *(["--codesign"] if sign else []),
         *(["--notarize"] if notarize else []),
     )
-    output("pluginName", spec["name"])
-    output("pluginVersion", spec["version"])
+    output("pluginName", NAME)
+    output("pluginVersion", VERSION)
     output("commitHash", os.environ.get("GITHUB_SHA", "")[:9])
 
 
@@ -180,7 +182,7 @@ def release():
     (root / CHECKSUMS).write_text("\n".join(lines) + "\n", encoding="utf-8")
     print((root / CHECKSUMS).read_text(encoding="utf-8"))
     spec = buildspec()
-    output("pluginName", spec.get("displayName", spec["name"]))
+    output("pluginName", spec.get("displayName", NAME))
 
 
 def main():

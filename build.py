@@ -11,11 +11,22 @@ import subprocess
 import sys
 import tarfile
 import time
+import tomllib
 import urllib.request
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+
+
+def read_cargo_package():
+    with open(ROOT / "Cargo.toml", "rb") as fin:
+        return tomllib.load(fin)["package"]
+
+
+CARGO_PACKAGE = read_cargo_package()
+NAME = CARGO_PACKAGE["name"]
+VERSION = CARGO_PACKAGE["version"]
 DEPS_DIR = ROOT / ".deps"
 RELEASE_DIR = ROOT / "release"
 INSTALL_DIR = RELEASE_DIR / "install"
@@ -69,17 +80,14 @@ def buildspec():
 
 
 def plugin(spec):
-    """The values the bundle, the packages and the installers are filled in
-    with, all of them from buildspec.json."""
-    name = spec["name"]
     return {
-        "NAME": name,
-        "DISPLAY_NAME": spec.get("displayName", name),
-        "VERSION": spec["version"],
-        "AUTHOR": spec["author"],
-        "EMAIL": spec["email"],
-        "WEBSITE": spec["website"],
-        "BUNDLE_ID": spec["platformConfig"]["macos"]["bundleId"],
+        "NAME": NAME,
+        "DISPLAY_NAME": spec.get("displayName", NAME),
+        "VERSION": VERSION,
+        "AUTHOR": "Erik Moqvist",
+        "EMAIL": "erik.moqvist@gmail.com",
+        "WEBSITE": "https://github.com/eerimoq/obs-mobcam-plugin",
+        "BUNDLE_ID": "com.eerimoq.mobcam",
         "DEPLOYMENT_TARGET": MACOS_DEPLOYMENT_TARGET,
         "YEAR": time.strftime("%Y"),
     }
@@ -101,14 +109,12 @@ def remove(path):
 
 
 def output_name(spec, target_platform):
-    version = spec["version"]
-    name = spec["name"]
     if target_platform == "macos":
-        return f"{name}-{version}-macos-universal"
+        return f"{NAME}-{VERSION}-macos-universal"
     elif target_platform == "windows":
-        return f"{name}-{version}-windows-x64"
+        return f"{NAME}-{VERSION}-windows-x64"
     else:
-        return f"{name}-{version}-{platform.machine()}-linux-gnu"
+        return f"{NAME}-{VERSION}-{platform.machine()}-linux-gnu"
 
 
 def download(url, path, sha256):
@@ -255,14 +261,13 @@ def macos_paths(name):
 
 def build_macos(spec, debug):
     values = plugin(spec)
-    name = values["NAME"]
-    bundle, binary, symbols = macos_paths(name)
-    libraries = cargo_build("macos", name, debug, sorted(MACOS_TARGETS.values()))
+    bundle, binary, symbols = macos_paths(NAME)
+    libraries = cargo_build("macos", NAME, debug, sorted(MACOS_TARGETS.values()))
     remove(bundle)
     binary.parent.mkdir(parents=True)
     log("Creating the universal binary")
     run(["lipo", "-create", *libraries, "-output", binary])
-    run(["install_name_tool", "-id", f"@rpath/{name}", binary])
+    run(["install_name_tool", "-id", f"@rpath/{NAME}", binary])
     render(
         PACKAGING_DIR / "macos" / "Info.plist.in",
         bundle / "Contents" / "Info.plist",
@@ -285,30 +290,28 @@ def entitlements_file():
 
 
 def build_linux(spec, debug):
-    name = spec["name"]
-    (library,) = cargo_build("linux", name, debug, [None])
+    (library,) = cargo_build("linux", NAME, debug, [None])
     library_dir = INSTALL_DIR / "lib" / f"{platform.machine()}-linux-gnu" / "obs-plugins"
     remove(INSTALL_DIR / "lib")
     remove(INSTALL_DIR / "share")
     library_dir.mkdir(parents=True)
-    shutil.copy2(library, library_dir / f"{name}.so")
-    copy_data(INSTALL_DIR / "share" / "obs" / "obs-plugins" / name)
-    return library_dir / f"{name}.so"
+    shutil.copy2(library, library_dir / f"{NAME}.so")
+    copy_data(INSTALL_DIR / "share" / "obs" / "obs-plugins" / NAME)
+    return library_dir / f"{NAME}.so"
 
 
 def build_windows(spec, debug):
-    name = spec["name"]
-    (library,) = cargo_build("windows", name, debug, [None])
-    root = INSTALL_DIR / name
+    (library,) = cargo_build("windows", NAME, debug, [None])
+    root = INSTALL_DIR / NAME
     binary_dir = root / "bin" / "64bit"
     remove(root)
     binary_dir.mkdir(parents=True)
-    shutil.copy2(library, binary_dir / f"{name}.dll")
+    shutil.copy2(library, binary_dir / f"{NAME}.dll")
     symbols = library.with_suffix(".pdb")
     if symbols.is_file():
-        shutil.copy2(symbols, binary_dir / f"{name}.pdb")
+        shutil.copy2(symbols, binary_dir / f"{NAME}.pdb")
     copy_data(root / "data")
-    return binary_dir / f"{name}.dll"
+    return binary_dir / f"{NAME}.dll"
 
 
 def build(arguments):
@@ -338,9 +341,8 @@ def tar_xz(archive, directory, members):
 
 def package_macos(spec, arguments):
     values = plugin(spec)
-    name = values["NAME"]
     base = output_name(spec, "macos")
-    bundle, _, symbols = macos_paths(name)
+    bundle, _, symbols = macos_paths(NAME)
     if not bundle.is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
     if arguments.installer:
@@ -442,13 +444,12 @@ def notarize(package, name):
 
 def package_linux(spec, arguments):
     base = output_name(spec, "linux")
-    name = spec["name"]
     if not (INSTALL_DIR / "lib").is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
     tar_xz(RELEASE_DIR / f"{base}.tar.xz", INSTALL_DIR, ["lib", "share"])
     source_tarball(spec)
     if arguments.installer:
-        package_deb(spec, base, name)
+        package_deb(spec, base, NAME)
 
 
 def package_deb(spec, base, name):
@@ -493,15 +494,14 @@ def source_tarball(spec):
 
 def package_windows(spec, arguments):
     base = output_name(spec, "windows")
-    name = spec["name"]
-    if not (INSTALL_DIR / name).is_dir():
+    if not (INSTALL_DIR / NAME).is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
     archive = RELEASE_DIR / f"{base}.zip"
     remove(archive)
     log(f"Creating {archive.name}")
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        for path in sorted((INSTALL_DIR / name).rglob("*")):
+        for path in sorted((INSTALL_DIR / NAME).rglob("*")):
             if path.is_file():
                 zip_file.write(path, path.relative_to(INSTALL_DIR))
     if arguments.installer:
@@ -552,22 +552,21 @@ def package(arguments):
 
 def install(arguments):
     spec = buildspec()
-    name = spec["name"]
     target_platform = host_platform()
     if target_platform == "macos":
         destination = Path.home() / "Library/Application Support/obs-studio/plugins"
-        source, _, _ = macos_paths(name)
+        source, _, _ = macos_paths(NAME)
         destination.mkdir(parents=True, exist_ok=True)
         remove(destination / source.name)
         shutil.copytree(source, destination / source.name, symlinks=True)
         log(f"Installed {destination / source.name}")
     elif target_platform == "linux":
-        destination = Path.home() / ".config" / "obs-studio" / "plugins" / name
+        destination = Path.home() / ".config" / "obs-studio" / "plugins" / NAME
         remove(destination)
         (destination / "bin" / "64bit").mkdir(parents=True)
         shutil.copy2(
-            INSTALL_DIR / "lib" / f"{platform.machine()}-linux-gnu" / "obs-plugins" / f"{name}.so",
-            destination / "bin" / "64bit" / f"{name}.so",
+            INSTALL_DIR / "lib" / f"{platform.machine()}-linux-gnu" / "obs-plugins" / f"{NAME}.so",
+            destination / "bin" / "64bit" / f"{NAME}.so",
         )
         copy_data(destination / "data")
         log(f"Installed {destination}")

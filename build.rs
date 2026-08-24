@@ -284,20 +284,8 @@ fn generate_ffmpeg(include_dirs: &[PathBuf]) {
     );
 }
 
-fn check_version(buildspec: &serde_json::Value) {
-    let version = buildspec["version"]
-        .as_str()
-        .expect("buildspec.json has a top level version");
-    let cargo = env!("CARGO_PKG_VERSION");
-    assert_eq!(
-        version, cargo,
-        "buildspec.json and Cargo.toml disagree about the plugin version"
-    );
-}
-
 fn main() {
     let buildspec = buildspec();
-    check_version(&buildspec);
     let platform = Platform::current();
     let include_dirs = match platform {
         Platform::Macos => configure_macos(&buildspec),
