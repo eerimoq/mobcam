@@ -180,12 +180,12 @@ impl Worker {
             if socket::read_exact(&mut stream, &mut header, &self.shared).is_err() {
                 break;
             }
-            let (length, kind) = protocol::parse_message_header(&header);
-            if !(1..=protocol::MAX_MESSAGE_LENGTH).contains(&length) {
+            let (kind, length) = protocol::parse_message_header(&header);
+            if length > protocol::MAX_MESSAGE_LENGTH {
                 obs_log!(Level::Warning, "bad message length {length}");
                 break;
             }
-            let payload_size = length as usize - 1;
+            let payload_size = length as usize;
             buffer.clear();
             buffer.resize(payload_size + INPUT_PADDING, 0);
             if socket::read_exact(&mut stream, &mut buffer[..payload_size], &self.shared).is_err() {

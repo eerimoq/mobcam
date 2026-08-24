@@ -9,7 +9,7 @@ pub const MESSAGE_VIDEO_FRAME: u8 = 0x04;
 pub const MESSAGE_AUDIO_CONFIG: u8 = 0x05;
 pub const MESSAGE_AUDIO_FRAME: u8 = 0x06;
 const PROTOCOL_VERSION: u8 = 1;
-pub const HOST_HELLO_SIZE: usize = 10;
+pub const HOST_HELLO_SIZE: usize = 6;
 pub const VIDEO_CODEC_H264: u8 = 0;
 pub const VIDEO_CODEC_HEVC: u8 = 1;
 pub const AUDIO_CODEC_AAC_LC: u8 = 0;
@@ -79,15 +79,14 @@ fn u64_be(bytes: &[u8]) -> u64 {
 
 pub fn pack_host_hello() -> [u8; HOST_HELLO_SIZE] {
     let mut buffer = [0u8; HOST_HELLO_SIZE];
-    buffer[0..4].copy_from_slice(&6u32.to_be_bytes());
-    buffer[4] = MESSAGE_HOST_HELLO;
-    buffer[5..9].copy_from_slice(b"MOBL");
-    buffer[9] = PROTOCOL_VERSION;
+    buffer[0] = MESSAGE_HOST_HELLO;
+    buffer[1..5].copy_from_slice(&1u32.to_be_bytes());
+    buffer[5] = PROTOCOL_VERSION;
     buffer
 }
 
-pub fn parse_message_header(header: &[u8; MESSAGE_HEADER_SIZE]) -> (u32, u8) {
-    (u32_be(header), header[4])
+pub fn parse_message_header(header: &[u8; MESSAGE_HEADER_SIZE]) -> (u8, u32) {
+    (header[0], u32_be(&header[1..]))
 }
 
 pub fn parse_device_hello(payload: &[u8]) -> Option<DeviceHello> {
