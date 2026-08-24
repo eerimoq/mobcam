@@ -6,214 +6,94 @@ on:
       - main
       - 'release/**'
     tags:
-      - '*'
+      - '[0-9]+.[0-9]+.[0-9]+'
 permissions:
   contents: read
+defaults:
+  run:
+    shell: bash
 jobs:
-  lint-and-style:
-    name: Check Lints 🔍
+  lint:
+    name: Check Lints
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Set Up Environment 🔧
-        run: .github/scripts/setup_env.py
-      - name: Set Up Rust 🦀
-        run: .github/scripts/setup_rust.py
-      - name: clippy check 🦀
-        run: cargo clippy --all-targets -- --deny warnings
-      - name: rustfmt check 🦀
-        run: cargo fmt --check
-  metadata:
-    name: Collect Build Metadata 🏷️
-    runs-on: ubuntu-24.04
-    defaults:
-      run:
-        shell: bash
-    outputs:
-      commitHash: ${{ steps.setup.outputs.commitHash }}
-      pluginName: ${{ steps.setup.outputs.pluginName }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Collect Build Metadata ☑️
-        id: setup
-        run: .github/scripts/build_metadata.py
+      - name: Check Lints
+        run: .github/scripts/ci.py lint
   macos-build:
-    name: Build for macOS 🍏
+    name: Build for macOS
     runs-on: macos-26
-    needs: metadata
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Set Up Environment 🔧
-        id: setup
-        run: .github/scripts/setup_env.py
-      - name: Set Up Rust 🦀
-        run: .github/scripts/setup_rust.py
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ${{ github.workspace }}/target
-          key: ${{ runner.os }}-macos-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-macos-cargo-
-      - uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/.deps
-          key: ${{ runner.os }}-macos-deps-${{ hashFiles('buildspec.json') }}
-      - name: Set Up Codesigning 🔑
-        id: codesign
+      - name: Build Plugin
+        id: build
         env:
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_APPLICATION_IDENTITY }}
-          MACOS_SIGNING_IDENTITY_INSTALLER: ${{ secrets.MACOS_SIGNING_INSTALLER_IDENTITY }}
+          MACOS_SIGNING_INSTALLER_IDENTITY: ${{ secrets.MACOS_SIGNING_INSTALLER_IDENTITY }}
           MACOS_SIGNING_CERT: ${{ secrets.MACOS_SIGNING_CERT }}
           MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
           MACOS_NOTARIZATION_USERNAME: ${{ secrets.MACOS_NOTARIZATION_USERNAME }}
           MACOS_NOTARIZATION_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
-        run: .github/scripts/setup_codesigning.py
-      - name: Build Plugin 🧱
-        env:
-          HAVE_CODESIGN_IDENT: ${{ steps.codesign.outputs.haveCodesignIdent }}
-          CODESIGN_IDENT: ${{ steps.codesign.outputs.codesignIdent }}
-          CODESIGN_TEAM: ${{ steps.codesign.outputs.codesignTeam }}
-        run: .github/scripts/build_plugin.py
-      - name: Verify Universal Binary 🔍
-        run: .github/scripts/verify_universal_binary.py
-      - name: Package Plugin 📀
-        env:
-          HAVE_CODESIGN_IDENT: ${{ steps.codesign.outputs.haveCodesignIdent }}
-          HAVE_NOTARIZATION_USER: ${{ steps.codesign.outputs.haveNotarizationUser }}
-          CODESIGN_IDENT: ${{ steps.codesign.outputs.codesignIdent }}
-          CODESIGN_IDENT_INSTALLER: ${{ steps.codesign.outputs.installerIdent }}
-          CODESIGN_TEAM: ${{ steps.codesign.outputs.codesignTeam }}
-          CODESIGN_IDENT_USER: ${{ secrets.MACOS_NOTARIZATION_USERNAME }}
-          CODESIGN_IDENT_PASS: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
-        run: .github/scripts/package_plugin.py
-      - name: Upload Artifacts 📡
+        run: .github/scripts/ci.py build
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-${{ needs.metadata.outputs.commitHash }}
-          path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal.*
+          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-${{ steps.build.outputs.commitHash }}
+          path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal.*
       - name: Upload Debug Symbol Artifacts 🪲
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-${{ needs.metadata.outputs.commitHash }}-dSYMs
-          path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-dSYMs.*
+          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-${{ steps.build.outputs.commitHash }}-dSYMs
+          path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-dSYMs.*
   ubuntu-build:
-    name: Build for Ubuntu 🐧
-    strategy:
-      matrix:
-        os: [ubuntu-24.04]
-    runs-on: ${{ matrix.os }}
-    needs: metadata
-    defaults:
-      run:
-        shell: bash
+    name: Build for Ubuntu
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Build Plugin
+        id: build
+        run: .github/scripts/ci.py build
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          submodules: recursive
-      - name: Set Up Environment 🔧
-        id: setup
-        run: .github/scripts/setup_env.py
-      - name: Set Up Rust 🦀
-        run: .github/scripts/setup_rust.py
-      - uses: actions/cache@v4
-        with:
+          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-ubuntu-24.04-x86_64-${{ steps.build.outputs.commitHash }}
           path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ${{ github.workspace }}/target
-          key: ${{ runner.os }}-ubuntu-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-ubuntu-cargo-
-      - name: Build Plugin 🧱
-        run: .github/scripts/build_plugin.py
-      - name: Package Plugin 📀
-        run: .github/scripts/package_plugin.py
-      - name: Upload Source Tarball 🗜️
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-sources-${{ needs.metadata.outputs.commitHash }}
-          path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-source.*
-      - name: Upload Artifacts 📡
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-x86_64-${{ needs.metadata.outputs.commitHash }}
-          path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-x86_64*.*
+            ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-x86_64*.*
+            ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-source.*
   windows-build:
-    name: Build for Windows 🪟
+    name: Build for Windows
     runs-on: windows-2022
-    needs: metadata
-    defaults:
-      run:
-        shell: pwsh
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Set Up Environment 🔧
-        id: setup
-        run: python .github/scripts/setup_env.py
-      - name: Set Up Rust 🦀
-        run: python .github/scripts/setup_rust.py
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ${{ github.workspace }}/target
-          key: ${{ runner.os }}-windows-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-windows-cargo-
-      - uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/.deps
-          key: ${{ runner.os }}-windows-deps-${{ hashFiles('buildspec.json') }}
-      - name: Build Plugin 🧱
-        run: python .github/scripts/build_plugin.py
-      - name: Package Plugin 📀
-        run: python .github/scripts/package_plugin.py
-      - name: Upload Artifacts 📡
+      - name: Build Plugin
+        id: build
+        shell: pwsh
+        run: python .github/scripts/ci.py build
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64-${{ needs.metadata.outputs.commitHash }}
-          path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64*.*
+          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-windows-x64-${{ steps.build.outputs.commitHash }}
+          path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-windows-x64*.*
   create-release:
     name: Create Release 🛫
     if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
-    needs: [metadata, macos-build, ubuntu-build, windows-build]
+    needs: [macos-build, ubuntu-build, windows-build]
     permissions:
       contents: write
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
-      - name: Check Release Tag ☑️
-        id: check
-        run: .github/scripts/check_release_tag.py
-      - name: Download Build Artifacts 📥
+      - name: Download Build Artifacts
         uses: actions/download-artifact@v4
-        if: fromJSON(steps.check.outputs.validTag)
-        id: download
-      - name: Collect Release Assets 🏷️
-        if: fromJSON(steps.check.outputs.validTag)
-        run: .github/scripts/release_assets.py
+      - name: Collect Release Assets
+        id: assets
+        run: .github/scripts/ci.py release
       - name: Create Release 🛫
-        if: fromJSON(steps.check.outputs.validTag)
-        id: create_release
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         with:
           draft: false
-          tag_name: ${{ steps.check.outputs.version }}
-          name: ${{ needs.metadata.outputs.pluginName }} ${{ steps.check.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ steps.assets.outputs.pluginName }} ${{ github.ref_name }}
           body_path: ${{ github.workspace }}/CHECKSUMS.txt
           files: |
             ${{ github.workspace }}/*.exe
