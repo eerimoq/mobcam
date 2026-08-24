@@ -9,6 +9,10 @@
 #define MyAppPublisher "@AUTHOR@"
 #define MyAppURL "@WEBSITE@"
 
+; Moblin's default logo, rendered to a multi resolution icon. It is the icon
+; of the installer and of the uninstall entry in Apps & features.
+#define MyIconFile "@SOURCE_DIR@\packaging\windows\@NAME@.ico"
+
 ; The directory the 0.7.0 and older installers installed into.
 #define MyLegacyDir "{commonappdata}\obs-studio\plugins\@NAME@"
 
@@ -29,6 +33,7 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 LicenseFile=@SOURCE_DIR@\LICENSE
+SetupIconFile={#MyIconFile}
 
 ; The plugin goes into the OBS Studio installation, so the directory page asks
 ; for the folder OBS Studio itself is installed in. ObsInstallDir() suggests
@@ -45,6 +50,7 @@ UsePreviousAppDir=no
 DisableProgramGroupPage=yes
 Uninstallable=yes
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
+UninstallDisplayIcon={app}\data\obs-plugins\{#MyPluginName}\{#MyPluginName}.ico
 
 ; Writing into the OBS Studio installation directory and registering an
 ; uninstall entry both need elevation. The plugin is x64, and x64 OBS Studio
@@ -71,6 +77,7 @@ SelectDirBrowseLabel=To continue, click Next. If you would like to select a diff
 [Files]
 Source: "{#ReleaseDir}\{#MyPluginName}\bin\64bit\*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#ReleaseDir}\{#MyPluginName}\data\*"; DestDir: "{app}\data\obs-plugins\{#MyPluginName}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyIconFile}"; DestDir: "{app}\data\obs-plugins\{#MyPluginName}"; Flags: ignoreversion
 
 ; An older installation, or a hand unpacked archive, in the plugin directory
 ; would be loaded by OBS Studio as a second copy of the plugin.
