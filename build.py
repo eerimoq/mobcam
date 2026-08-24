@@ -409,6 +409,9 @@ def package_macos_installer(arguments, base):
     )
     distribution = staging / "distribution.xml"
     render(PACKAGING_DIR / "macos" / "distribution.xml.in", distribution, **values)
+    resources = staging / "resources"
+    resources.mkdir(parents=True)
+    shutil.copy2(PACKAGING_DIR / "macos" / "background.png", resources / "background.png")
     package = RELEASE_DIR / f"{base}.pkg"
     unsigned = staging / f"{name}-distribution.pkg"
     run(
@@ -418,6 +421,8 @@ def package_macos_installer(arguments, base):
             distribution,
             "--package-path",
             staging,
+            "--resources",
+            resources,
             unsigned,
         ]
     )

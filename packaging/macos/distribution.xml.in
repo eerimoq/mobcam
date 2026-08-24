@@ -7,6 +7,11 @@
         allow-external-scripts="no" />
     <domains enable_currentUserHome="true" enable_anywhere="false" enable_localSystem="false" />
     <title>@NAME@</title>
+    <!-- Moblin's default logo, in the bottom left corner of the installer
+         window. The logo reads on both appearances, so one image serves both.
+         build.py passes the directory holding it to productbuild. -->
+    <background file="background.png" alignment="bottomleft" scaling="proportional" />
+    <background-darkAqua file="background.png" alignment="bottomleft" scaling="proportional" />
     <choices-outline>
         <line choice="obs-plugin" />
     </choices-outline>
