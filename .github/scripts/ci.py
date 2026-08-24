@@ -144,15 +144,13 @@ def lint(_):
 
 def build(args):
     platform = setup()
-    build_arguments = []
-    package_arguments = []
     if platform == "macos":
         import_certificate(args, os.urandom(16).hex())
         build_arguments = [
             "--codesign-application-identity",
             args.codesign_application_identity,
         ]
-        package_arguments += build_arguments
+        package_arguments = build_arguments
         package_arguments += [
             "--codesign-installer-identity",
             args.codesign_installer_identity,
@@ -163,10 +161,12 @@ def build(args):
             "--notarization-password",
             args.notarization_password,
         ]
-    build_py("build", *build_arguments)
-    if platform == "macos":
+        build_py("build", *build_arguments)
         verify_universal_binary(NAME)
-    build_py("package", "--installer", *package_arguments)
+        build_py("package", "--installer", *package_arguments)
+    else:
+        build_py("build")
+        build_py("package", "--installer")
     output("pluginName", NAME)
     output("pluginVersion", VERSION)
 
