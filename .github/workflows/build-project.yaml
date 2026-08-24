@@ -26,42 +26,7 @@ jobs:
         id: setup
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          : Check Event Data ☑️
-          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
-
-          case "${GITHUB_EVENT_NAME}" in
-            pull_request)
-              config_data=('codesign:false' 'notarize:false' 'package:false')
-              if gh pr view ${{ github.event.number }} --json labels \
-                | jq -e -r '.labels[] | select(.name == "Seeking Testers")' > /dev/null; then
-                config_data[0]='codesign:true'
-                config_data[2]='package:true'
-              fi
-              ;;
-            push)
-              config_data=('codesign:true' 'notarize:false' 'package:true')
-              if [[ ${GITHUB_REF_NAME} =~ [0-9]+.[0-9]+.[0-9]+(-(rc|beta).+)? ]]; then
-                config_data[1]='notarize:true'
-              fi
-              ;;
-            workflow_dispatch)
-              config_data=('codesign:true' 'notarize:false' 'package:false')
-              ;;
-            schedule)
-              config_data=('codesign:true' 'notarize:false' 'package:true')
-              ;;
-            *) ;;
-          esac
-
-          for config in "${config_data[@]}"; do
-            IFS=':' read -r key value <<< "${config}"
-            echo "${key}=${value}" >> $GITHUB_OUTPUT
-          done
-          echo "commitHash=${GITHUB_SHA:0:9}" >> $GITHUB_OUTPUT
-
-          echo "pluginName=$(jq -r '.displayName // .name' buildspec.json)" >> $GITHUB_OUTPUT
-
+        run: python3 .github/scripts/check_event.py
   macos-build:
     name: Build for macOS 🍏
     runs-on: macos-26
@@ -74,29 +39,11 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-
       - name: Set Up Environment 🔧
         id: setup
-        run: |
-          : Set Up Environment 🔧
-          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
-
-          sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
-
-          read -r product_name product_version <<< \
-            "$(jq -r '. | {name, version} | join(" ")' buildspec.json)"
-
-          echo "pluginName=${product_name}" >> $GITHUB_OUTPUT
-          echo "pluginVersion=${product_version}" >> $GITHUB_OUTPUT
-
+        run: python3 .github/scripts/setup_env.py
       - name: Set Up Rust 🦀
-        run: |
-          : Set Up Rust 🦀
-          # rust-toolchain.toml decides the toolchain; the targets are added to
-          # whichever one that is, which is the one cargo will use here.
-          rustup show active-toolchain
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
-
+        run: python3 .github/scripts/setup_rust.py
       - uses: actions/cache@v4
         with:
           path: |
@@ -106,94 +53,53 @@ jobs:
             ${{ github.workspace }}/target
           key: ${{ runner.os }}-macos-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-macos-cargo-
-
       - uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.deps
           key: ${{ runner.os }}-macos-deps-${{ hashFiles('buildspec.json') }}
-
       - name: Set Up Codesigning 🔑
-        uses: ./.github/actions/setup-macos-codesigning
         if: fromJSON(needs.check-event.outputs.codesign)
         id: codesign
-        with:
-          codesignIdentity: ${{ secrets.MACOS_SIGNING_APPLICATION_IDENTITY }}
-          installerIdentity: ${{ secrets.MACOS_SIGNING_INSTALLER_IDENTITY }}
-          codesignCertificate: ${{ secrets.MACOS_SIGNING_CERT }}
-          certificatePassword: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
-          keychainPassword: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
-          provisioningProfile: ${{ secrets.MACOS_SIGNING_PROVISIONING_PROFILE }}
-          notarizationUser: ${{ secrets.MACOS_NOTARIZATION_USERNAME }}
-          notarizationPassword: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
-
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_APPLICATION_IDENTITY }}
+          MACOS_SIGNING_IDENTITY_INSTALLER: ${{ secrets.MACOS_SIGNING_INSTALLER_IDENTITY }}
+          MACOS_SIGNING_CERT: ${{ secrets.MACOS_SIGNING_CERT }}
+          MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          MACOS_SIGNING_PROVISIONING_PROFILE: ${{ secrets.MACOS_SIGNING_PROVISIONING_PROFILE }}
+          MACOS_NOTARIZATION_USERNAME: ${{ secrets.MACOS_NOTARIZATION_USERNAME }}
+          MACOS_NOTARIZATION_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
+        run: python3 .github/scripts/setup_codesigning.py
       - name: Build Plugin 🧱
         env:
+          HAVE_CODESIGN_IDENT: ${{ steps.codesign.outputs.haveCodesignIdent }}
           CODESIGN_IDENT: ${{ steps.codesign.outputs.codesignIdent }}
           CODESIGN_TEAM: ${{ steps.codesign.outputs.codesignTeam }}
-        run: |
-          : Build Plugin 🧱
-          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
-
-          build_args=()
-          if [[ '${{ steps.codesign.outputs.haveCodesignIdent }}' == 'true' ]]; then
-            build_args+=(--codesign)
-          fi
-
-          python3 build.py build "${build_args[@]}"
-
+        run: python3 .github/scripts/build_plugin.py
       - name: Verify Universal Binary 🔍
-        run: |
-          : Verify Universal Binary 🔍
-          # A cargo build only ever produces one architecture, so a slip in the
-          # build would ship an arm64 only plugin that Intel users cannot load.
-          # Nothing else in the build would notice.
-          binary=release/install/${{ steps.setup.outputs.pluginName }}.plugin/Contents/MacOS/${{ steps.setup.outputs.pluginName }}
-          archs="$(lipo -archs ${binary})"
-          echo "${{ steps.setup.outputs.pluginName }} architectures: ${archs}"
-          for arch in arm64 x86_64; do
-            if [[ ${archs} != *${arch}* ]]; then
-              echo "::error::${{ steps.setup.outputs.pluginName }} is missing the ${arch} slice"
-              exit 2
-            fi
-          done
-
+        run: python3 .github/scripts/verify_universal_binary.py
       - name: Package Plugin 📀
         env:
+          PACKAGE: ${{ needs.check-event.outputs.package }}
+          NOTARIZE: ${{ needs.check-event.outputs.notarize }}
+          HAVE_CODESIGN_IDENT: ${{ steps.codesign.outputs.haveCodesignIdent }}
+          HAVE_NOTARIZATION_USER: ${{ steps.codesign.outputs.haveNotarizationUser }}
           CODESIGN_IDENT: ${{ steps.codesign.outputs.codesignIdent }}
           CODESIGN_IDENT_INSTALLER: ${{ steps.codesign.outputs.installerIdent }}
           CODESIGN_TEAM: ${{ steps.codesign.outputs.codesignTeam }}
           CODESIGN_IDENT_USER: ${{ secrets.MACOS_NOTARIZATION_USERNAME }}
           CODESIGN_IDENT_PASS: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
-        run: |
-          : Package Plugin 📀
-          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
-
-          package_args=()
-          if [[ '${{ needs.check-event.outputs.package }}' == 'true' ]]; then
-            package_args+=(--installer)
-          fi
-          if [[ '${{ steps.codesign.outputs.haveCodesignIdent }}' == 'true' ]]; then
-            package_args+=(--codesign)
-          fi
-          if [[ '${{ needs.check-event.outputs.notarize }}' == 'true' \
-                && '${{ steps.codesign.outputs.haveNotarizationUser }}' == 'true' ]]; then
-            package_args+=(--notarize)
-          fi
-
-          python3 build.py package "${package_args[@]}"
-
+        run: python3 .github/scripts/package_plugin.py
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-${{ needs.check-event.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal.*
-
       - name: Upload Debug Symbol Artifacts 🪲
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-${{ needs.check-event.outputs.commitHash }}-dSYMs
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-macos-universal-dSYMs.*
-
   ubuntu-build:
     name: Build for Ubuntu 🐧
     strategy:
@@ -209,31 +115,11 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-
       - name: Set Up Environment 🔧
         id: setup
-        run: |
-          : Set Up Environment 🔧
-          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
-
-          # libobs and FFmpeg come from the distribution here, which is what OBS
-          # itself is built against on Ubuntu. bindgen needs libclang.
-          sudo add-apt-repository --yes ppa:obsproject/obs-studio
-          sudo apt-get --quiet update
-          sudo apt-get --quiet --yes --no-install-recommends install \
-            libclang-dev libobs-dev libavcodec-dev libavutil-dev libsimde-dev pkg-config
-
-          read -r product_name product_version <<< \
-            "$(jq -r '. | {name, version} | join(" ")' buildspec.json)"
-
-          echo "pluginName=${product_name}" >> $GITHUB_OUTPUT
-          echo "pluginVersion=${product_version}" >> $GITHUB_OUTPUT
-
+        run: python3 .github/scripts/setup_env.py
       - name: Set Up Rust 🦀
-        run: |
-          : Set Up Rust 🦀
-          rustup show active-toolchain
-
+        run: python3 .github/scripts/setup_rust.py
       - uses: actions/cache@v4
         with:
           path: |
@@ -243,34 +129,22 @@ jobs:
             ${{ github.workspace }}/target
           key: ${{ runner.os }}-ubuntu-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-ubuntu-cargo-
-
       - name: Build Plugin 🧱
-        run: python3 build.py build
-
+        run: python3 .github/scripts/build_plugin.py
       - name: Package Plugin 📀
-        run: |
-          : Package Plugin 📀
-          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
-
-          package_args=()
-          if [[ '${{ needs.check-event.outputs.package }}' == 'true' ]]; then
-            package_args+=(--installer)
-          fi
-
-          python3 build.py package "${package_args[@]}"
-
+        env:
+          PACKAGE: ${{ needs.check-event.outputs.package }}
+        run: python3 .github/scripts/package_plugin.py
       - name: Upload Source Tarball 🗜️
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-sources-${{ needs.check-event.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-source.*
-
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-x86_64-${{ needs.check-event.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-x86_64*.*
-
   windows-build:
     name: Build for Windows 🪟
     runs-on: windows-2022
@@ -283,26 +157,11 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-
       - name: Set Up Environment 🔧
         id: setup
-        run: |
-          # Set Up Environment 🔧
-          if ( $Env:RUNNER_DEBUG -ne $null ) {
-            Set-PSDebug -Trace 1
-          }
-
-          $BuildSpec = Get-Content -Path buildspec.json -Raw | ConvertFrom-Json
-
-          "pluginName=$($BuildSpec.name)" >> $env:GITHUB_OUTPUT
-          "pluginVersion=$($BuildSpec.version)" >> $env:GITHUB_OUTPUT
-
+        run: python .github/scripts/setup_env.py
       - name: Set Up Rust 🦀
-        run: |
-          # Set Up Rust 🦀
-          rustup show active-toolchain
-          rustup target add x86_64-pc-windows-msvc
-
+        run: python .github/scripts/setup_rust.py
       - uses: actions/cache@v4
         with:
           path: |
@@ -312,26 +171,16 @@ jobs:
             ${{ github.workspace }}/target
           key: ${{ runner.os }}-windows-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-windows-cargo-
-
       - uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.deps
           key: ${{ runner.os }}-windows-deps-${{ hashFiles('buildspec.json') }}
-
       - name: Build Plugin 🧱
-        run: python build.py build
-
+        run: python .github/scripts/build_plugin.py
       - name: Package Plugin 📀
-        run: |
-          # Package Plugin 📀
-          $PackageArgs = @()
-
-          if ( '${{ needs.check-event.outputs.package }}' -eq 'true' ) {
-            $PackageArgs += '--installer'
-          }
-
-          python build.py package @PackageArgs
-
+        env:
+          PACKAGE: ${{ needs.check-event.outputs.package }}
+        run: python .github/scripts/package_plugin.py
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@v4
         with:

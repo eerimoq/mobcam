@@ -18,7 +18,6 @@ jobs:
     uses: ./.github/workflows/check-format.yaml
     permissions:
       contents: read
-
   build-project:
     name: Build Project 🧱
     uses: ./.github/workflows/build-project.yaml

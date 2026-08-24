@@ -19,3 +19,6 @@
 
 # Exclude macOS legacy resource forks
 .DS_Store
+
+# Exclude what running the workflow scripts leaves behind
+__pycache__/

@@ -9,10 +9,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set Up Rust 🦀
-        run: rustup show active-toolchain
+        run: python3 .github/scripts/setup_rust.py
       - name: rustfmt check 🦀
         run: cargo fmt --check
-
   clippy:
     runs-on: ubuntu-24.04
     steps:
@@ -20,15 +19,8 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set Up Environment 🔧
-        run: |
-          # bindgen needs the same headers the plugin links against, which is
-          # what build.rs finds through pkg-config here.
-          sudo add-apt-repository --yes ppa:obsproject/obs-studio
-          sudo apt-get --quiet update
-          sudo apt-get --quiet --yes --no-install-recommends install \
-            libclang-dev libobs-dev libavcodec-dev libavutil-dev libsimde-dev pkg-config
+        run: python3 .github/scripts/setup_env.py
       - name: Set Up Rust 🦀
-        run: rustup show active-toolchain
+        run: python3 .github/scripts/setup_rust.py
       - name: clippy check 🦀
-        # The C build treated warnings as errors, so the Rust one does too.
         run: cargo clippy --all-targets -- --deny warnings
