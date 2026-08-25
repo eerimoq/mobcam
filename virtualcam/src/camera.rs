@@ -1,3 +1,4 @@
+use crate::audio::{self, Audio};
 use crate::convert;
 use crate::options::Options;
 use crate::v4l2;
@@ -75,6 +76,18 @@ fn list() -> ExitCode {
     for (path, name) in &cameras {
         println!("  {} ({name})", path.display());
     }
+    println!("Virtual microphones:");
+    let microphones = audio::devices();
+    if microphones.is_empty() {
+        println!(
+            "  none; create a sink with `pactl load-module module-null-sink sink_name={}` \
+             or load the module with `sudo modprobe snd-aloop`",
+            audio::DEFAULT_SINK
+        );
+    }
+    for microphone in &microphones {
+        println!("  {microphone}");
+    }
     ExitCode::SUCCESS
 }
 
@@ -91,9 +104,22 @@ fn choose_device(chosen: Option<&Path>) -> Result<v4l2::Device, String> {
 
 fn run(options: Options) -> Result<(), String> {
     let mut device = choose_device(options.device.as_deref())?;
+    let mut audio = options
+        .audio
+        .then(|| Audio::open(options.audio_backend, options.audio_device.as_deref()))
+        .flatten();
+    if options.audio && audio.is_none() {
+        log!(
+            Level::Info,
+            "no virtual microphone; create a sink with \
+             `pactl load-module module-null-sink sink_name={}` or load the module with \
+             `sudo modprobe snd-aloop`, and the audio plays into it",
+            audio::DEFAULT_SINK
+        );
+    }
     let mut decoder = Decoder::new().ok_or("failed to create the decoder")?;
     decoder.set_hardware(options.hardware_decode);
-    decoder.set_audio(false);
+    decoder.set_audio(audio.is_some());
     unsafe {
         signal(SIGINT, stop as extern "C" fn(c_int) as usize);
         signal(SIGTERM, stop as extern "C" fn(c_int) as usize);
@@ -106,8 +132,12 @@ fn run(options: Options) -> Result<(), String> {
         match usbmux::connect_to_device(options.udid(), options.port, &abort) {
             Ok((mut stream, serial)) => {
                 reported_failure = None;
+                if let Some(audio) = audio.as_mut() {
+                    audio.reset();
+                }
                 let mut output = Output {
                     device: &mut device,
+                    audio: audio.as_mut(),
                     buffer: &mut buffer,
                     serial: serial.clone(),
                     logged_pixel_format: None,
@@ -143,6 +173,7 @@ fn wait_before_reconnecting() {
 
 struct Output<'a> {
     device: &'a mut v4l2::Device,
+    audio: Option<&'a mut Audio>,
     buffer: &'a mut Vec<u8>,
     serial: String,
     logged_pixel_format: Option<av::AVPixelFormat>,
@@ -177,7 +208,11 @@ impl Sink for Output<'_> {
         }
     }
 
-    fn audio(&mut self, _frame: &ffmpeg::Frame) {}
+    fn audio(&mut self, frame: &ffmpeg::Frame) {
+        if let Some(audio) = self.audio.as_deref_mut() {
+            audio.play(frame);
+        }
+    }
 }
 
 impl Handler for Output<'_> {

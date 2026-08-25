@@ -1,4 +1,4 @@
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, ValueEnum};
 use std::path::PathBuf;
 
 pub const DEFAULT_PORT: u16 = 7790;
@@ -6,10 +6,28 @@ pub const DEFAULT_PORT: u16 = 7790;
 const ABOUT: &str = "\
 Use an iPhone or iPad running Moblin as a camera in any program, over USB.
 
-The device is fed into a v4l2loopback device, which every program that can use a
-camera can read. Load the module first, for example with
+The video is fed into a v4l2loopback device and the audio into a PulseAudio or
+PipeWire sink, which every program that can use a camera and a microphone can
+read. Load the module and create the sink first, for example with
 
-    sudo modprobe v4l2loopback card_label=Mobcam exclusive_caps=1";
+    sudo modprobe v4l2loopback card_label=Mobcam exclusive_caps=1
+    pactl load-module module-null-sink sink_name=Mobcam
+
+Programs then record from the monitor of that sink. An ALSA loopback device,
+from `sudo modprobe snd-aloop`, is used instead on machines without PulseAudio
+or PipeWire.";
+
+/// The virtual microphone to play the audio into.
+#[derive(Clone, Copy, Eq, PartialEq, ValueEnum)]
+pub enum AudioBackend {
+    /// a PulseAudio or PipeWire sink, or an ALSA loopback device when there is
+    /// no sound server
+    Auto,
+    /// a PulseAudio or PipeWire sink
+    Pulse,
+    /// an ALSA loopback device
+    Alsa,
+}
 
 #[derive(Parser)]
 #[command(version, about = ABOUT)]
@@ -26,11 +44,25 @@ pub struct Options {
     #[arg(short, long, value_name = "PORT", default_value_t = DEFAULT_PORT)]
     pub port: u16,
 
+    /// do not play the audio into a virtual microphone
+    #[arg(long = "no-audio", action = ArgAction::SetFalse)]
+    pub audio: bool,
+
+    /// virtual microphone to play the audio into
+    #[arg(long, value_name = "BACKEND", default_value = "auto")]
+    pub audio_backend: AudioBackend,
+
+    /// PulseAudio sink or ALSA device to play the audio into, Mobcam and the
+    /// first loopback device by default
+    #[arg(long, value_name = "NAME")]
+    pub audio_device: Option<String>,
+
     /// decode in software even when the machine can do it in hardware
     #[arg(long = "no-hardware-decode", action = ArgAction::SetFalse)]
     pub hardware_decode: bool,
 
-    /// list the attached iPhones and iPads and the v4l2loopback devices, and exit
+    /// list the attached iPhones and iPads, the v4l2loopback devices and the
+    /// virtual microphones, and exit
     #[arg(short, long)]
     pub list: bool,
 }

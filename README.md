@@ -99,13 +99,13 @@ Uninstall the plugin by removing
 Start OBS Studio and add a source. The plugin loaded if `Mobcam` is in the list
 of source types.
 
-## Virtual camera, without OBS Studio
+## Virtual camera and microphone, without OBS Studio
 
-The Linux package also installs `mobcam-virtualcam`. It reads the same video
-over the same USB cable, but writes it to a
-[v4l2loopback](https://github.com/umlaeute/v4l2loopback) device instead of into
-OBS Studio, so every program that can use a camera can use the iPhone or iPad,
-whether or not OBS Studio is running.
+The Linux package also installs `mobcam-virtualcam`. It reads the same video and
+audio over the same USB cable, but writes them to a
+[v4l2loopback](https://github.com/umlaeute/v4l2loopback) device and a virtual
+microphone instead of into OBS Studio, so every program that can use a camera
+can use the iPhone or iPad, whether or not OBS Studio is running.
 
 Install the kernel module and load it:
 
@@ -118,23 +118,45 @@ sudo modprobe v4l2loopback card_label=Mobcam exclusive_caps=1
 what Chrome, Firefox and most video conferencing programs expect. `card_label`
 is the name the camera shows up under.
 
+Create the sink the audio is played into:
+
+```shell
+pactl load-module module-null-sink sink_name=Mobcam \
+    sink_properties=device.description=Mobcam
+```
+
+PulseAudio and PipeWire both take that, and both then offer `Monitor of Mobcam`
+as a microphone. Programs record from it the way they record from any other
+one. The sink is gone at the next reboot, so put the command in the session
+autostart to keep it.
+
 Then start it and leave it running:
 
 ```shell
 mobcam-virtualcam
 ```
 
-It picks the first v4l2loopback device and the first attached iPhone or iPad,
-waits for Moblin to connect and writes every frame it decodes. The camera
-becomes selectable in other programs once the first frame arrives. Stop it with
-Ctrl-C.
+It picks the first v4l2loopback device, the `Mobcam` sink and the first attached
+iPhone or iPad, waits for Moblin to connect and writes every frame it decodes.
+The camera becomes selectable in other programs once the first frame arrives.
+Stop it with Ctrl-C.
 
-`mobcam-virtualcam --list` prints the attached iPhones and iPads and the
-v4l2loopback devices, and `--help` the rest of the options, `--device` and
-`--udid` among them to pick which of each to use.
+`mobcam-virtualcam --list` prints the attached iPhones and iPads, the
+v4l2loopback devices and the virtual microphones, and `--help` the rest of the
+options, `--device`, `--udid` and `--audio-device` among them to pick which of
+each to use.
 
-A virtual camera carries video only, so the audio Moblin sends is thrown away
-without being decoded. Use the OBS Studio plugin if the audio is wanted.
+The video keeps going on its own if the audio cannot be played: nothing is set
+up, the sink was never created, or `--no-audio` was passed. A machine without
+PulseAudio or PipeWire falls back to an ALSA loopback device, which
+`--audio-backend alsa` also picks outright:
+
+```shell
+sudo modprobe snd-aloop
+```
+
+The audio is written to `plughw:CARD=Loopback,DEV=0`, and programs record it
+from `hw:Loopback,1,0`.
 
 ## Development
 
@@ -167,7 +189,8 @@ On Linux there is nothing to download: libobs and FFmpeg come from the
 distribution, which needs `libobs-dev`, `libavcodec-dev`, `libavutil-dev`,
 `libsimde-dev` and `pkg-config` installed. `mobcam-virtualcam` needs none of
 libobs, so `cargo build -p mobcam-virtualcam` gets by with the FFmpeg packages
-alone.
+alone; it loads libpulse and libasound with `dlopen` at run time, so neither is
+needed to build it, and it runs on a machine that has only one of them.
 
 The dependencies are all `build.py` needs, so cargo can be run directly too:
 
