@@ -174,7 +174,22 @@ version = "0.16.0"
 dependencies = [
  "bindgen",
  "cc",
+ "mobcam-core",
+]
+
+[[package]]
+name = "mobcam-core"
+version = "0.16.0"
+dependencies = [
+ "bindgen",
  "plist",
+]
+
+[[package]]
+name = "mobcam-virtualcam"
+version = "0.16.0"
+dependencies = [
+ "mobcam-core",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-use crate::obs::OwnedData;
+use crate::json;
 
 pub const MESSAGE_HEADER_SIZE: usize = 5;
 pub const MAX_MESSAGE_SIZE: u32 = 100 * 1024 * 1024;
@@ -94,12 +94,11 @@ pub fn unpack_device_hello(payload: &[u8]) -> Option<DeviceHello> {
     }
     let json_size = u32_be(&payload[1..]) as usize;
     let json = payload.get(5..5usize.checked_add(json_size)?)?;
-    let json = std::ffi::CString::new(json).ok()?;
-    let data = OwnedData::from_json(&json)?;
+    let fields = json::string_fields(std::str::from_utf8(json).ok()?)?;
     Some(DeviceHello {
         version: payload[0],
-        name: data.string(c"name"),
-        app_version: data.string(c"version"),
+        name: json::field(&fields, "name"),
+        app_version: json::field(&fields, "version"),
     })
 }
 

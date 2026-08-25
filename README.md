@@ -55,7 +55,7 @@ Uninstall the plugin from Settings, Apps, Installed apps.
 sudo apt install usbmuxd
 ```
 
-Then install the plugin. On Debian and Ubuntu, download
+Then install the plugin and `mobcam-virtualcam`. On Debian and Ubuntu, download
 `mobcam-<version>-x86_64-linux-gnu.deb` and install it:
 
 ```shell
@@ -76,8 +76,8 @@ installed as a Flatpak or a Snap looks for its plugins inside its own sandbox
 and will not find it.
 
 Uninstall the package with `sudo apt remove mobcam`, or, for the tarball, remove
-`/usr/lib/x86_64-linux-gnu/obs-plugins/mobcam.so` and
-`/usr/share/obs/obs-plugins/mobcam`.
+`/usr/lib/x86_64-linux-gnu/obs-plugins/mobcam.so`,
+`/usr/share/obs/obs-plugins/mobcam` and `/usr/bin/mobcam-virtualcam`.
 
 ### macOS
 
@@ -99,11 +99,51 @@ Uninstall the plugin by removing
 Start OBS Studio and add a source. The plugin loaded if `Mobcam` is in the list
 of source types.
 
+## Virtual camera, without OBS Studio
+
+The Linux package also installs `mobcam-virtualcam`. It reads the same video
+over the same USB cable, but writes it to a
+[v4l2loopback](https://github.com/umlaeute/v4l2loopback) device instead of into
+OBS Studio, so every program that can use a camera can use the iPhone or iPad,
+whether or not OBS Studio is running.
+
+Install the kernel module and load it:
+
+```shell
+sudo apt install v4l2loopback-dkms
+sudo modprobe v4l2loopback card_label=Mobcam exclusive_caps=1
+```
+
+`exclusive_caps=1` hides the device until something is writing to it, which is
+what Chrome, Firefox and most video conferencing programs expect. `card_label`
+is the name the camera shows up under.
+
+Then start it and leave it running:
+
+```shell
+mobcam-virtualcam
+```
+
+It picks the first v4l2loopback device and the first attached iPhone or iPad,
+waits for Moblin to connect and writes every frame it decodes. The camera
+becomes selectable in other programs once the first frame arrives. Stop it with
+Ctrl-C.
+
+`mobcam-virtualcam --list` prints the attached iPhones and iPads and the
+v4l2loopback devices, and `--help` the rest of the options, `--device` and
+`--udid` among them to pick which of each to use.
+
+A virtual camera carries video only, so the audio Moblin sends is thrown away
+without being decoded. Use the OBS Studio plugin if the audio is wanted.
+
 ## Development
 
-The plugin is written in Rust. cargo compiles and links it, and `build.py`
-does everything around that: the dependencies, the macOS bundle, the code
-signing and the installers.
+Everything is written in Rust, in a cargo workspace of three crates:
+`mobcam-core` with the USB transport, the Moblin protocol and the decoding,
+the root `mobcam` crate with the OBS Studio plugin on top of it, and
+`mobcam-virtualcam` with the Linux virtual camera. cargo compiles and links
+them, and `build.py` does everything around that: the dependencies, the macOS
+bundle, the code signing and the installers.
 
 A [rustup](https://rustup.rs) toolchain is needed rather than any other cargo,
 since it is the one that honours `rust-toolchain.toml` and the only one that can
@@ -125,12 +165,15 @@ package --installer`.
 
 On Linux there is nothing to download: libobs and FFmpeg come from the
 distribution, which needs `libobs-dev`, `libavcodec-dev`, `libavutil-dev`,
-`libsimde-dev` and `pkg-config` installed.
+`libsimde-dev` and `pkg-config` installed. `mobcam-virtualcam` needs none of
+libobs, so `cargo build -p mobcam-virtualcam` gets by with the FFmpeg packages
+alone.
 
 The dependencies are all `build.py` needs, so cargo can be run directly too:
 
 ```shell
 cargo build
-cargo clippy --all-targets
+cargo clippy --workspace --all-targets
+cargo test --workspace
 cargo fmt
 ```

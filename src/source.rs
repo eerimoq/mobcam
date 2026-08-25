@@ -1,9 +1,11 @@
-use crate::decoder::{Decoder, INPUT_PADDING, Sink};
 use crate::devices::{Device, Devices};
-use crate::obs::{self, Audio, Data, Frame, Level, Properties, sys, text};
-use crate::obs_log;
-use crate::protocol;
-use crate::usbmux::{self, Abort, Stream};
+use crate::obs::{self, Audio, Data, Frame, Properties, media, sys, text};
+use mobcam_core::decoder::{Decoder, Sink};
+use mobcam_core::ffmpeg::{self, sys as av};
+use mobcam_core::protocol::DeviceHello;
+use mobcam_core::session::{self, Handler};
+use mobcam_core::usbmux::{self, Abort, Stream};
+use mobcam_core::{Level, log, panic};
 use std::ffi::{CStr, c_char, c_void};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -83,7 +85,7 @@ impl Shared {
     }
 }
 
-impl Abort for Arc<Shared> {
+impl Abort for Shared {
     fn aborted(&self) -> bool {
         self.stopping.load(Ordering::Relaxed)
     }
@@ -92,19 +94,105 @@ impl Abort for Arc<Shared> {
 struct Output {
     shared: Arc<Shared>,
     clock: Clock,
+    serial: String,
+    logged_pixel_format: Option<av::AVPixelFormat>,
+    logged_sample_format: Option<av::AVSampleFormat>,
+    logged_channels: Option<i32>,
+}
+
+impl Output {
+    fn new(shared: Arc<Shared>, serial: &str) -> Self {
+        Self {
+            shared,
+            clock: Clock::default(),
+            serial: serial.to_string(),
+            logged_pixel_format: None,
+            logged_sample_format: None,
+            logged_channels: None,
+        }
+    }
 }
 
 impl Sink for Output {
-    fn video(&mut self, frame: &mut Frame, pts_us: u64) {
-        frame.timestamp = self.clock.timestamp(pts_us);
+    fn video(&mut self, source: &ffmpeg::Frame) {
+        let Some((format, format_is_full_range)) = media::video_format(source.pixel_format()) else {
+            if self.logged_pixel_format != Some(source.pixel_format()) {
+                self.logged_pixel_format = Some(source.pixel_format());
+                log!(
+                    Level::Warning,
+                    "unsupported pixel format {}",
+                    ffmpeg::pixel_format_name(source.pixel_format())
+                );
+            }
+            return;
+        };
+        let full_range = format_is_full_range || source.is_full_range();
+        let mut frame = Frame {
+            format,
+            width: source.width() as u32,
+            height: source.height() as u32,
+            full_range,
+            trc: media::transfer(source),
+            timestamp: self.clock.timestamp(source.pts() as u64),
+            ..Default::default()
+        };
+        for plane in 0..(sys::MAX_AV_PLANES as usize).min(ffmpeg::Frame::PLANES) {
+            let (data, linesize) = source.plane(plane);
+            frame.data[plane] = data;
+            frame.linesize[plane] = linesize as u32;
+        }
+        media::set_color_parameters(&mut frame, media::colorspace(source), full_range);
         self.shared.width.store(frame.width, Ordering::Relaxed);
         self.shared.height.store(frame.height, Ordering::Relaxed);
-        self.shared.source.output_video(frame);
+        self.shared.source.output_video(&frame);
     }
 
-    fn audio(&mut self, audio: &mut Audio, pts_us: u64) {
-        audio.timestamp = self.clock.timestamp(pts_us);
-        self.shared.source.output_audio(audio);
+    fn audio(&mut self, source: &ffmpeg::Frame) {
+        let Some(format) = media::audio_format(source.sample_format()) else {
+            if self.logged_sample_format != Some(source.sample_format()) {
+                self.logged_sample_format = Some(source.sample_format());
+                log!(
+                    Level::Warning,
+                    "unsupported sample format {}",
+                    ffmpeg::sample_format_name(source.sample_format())
+                );
+            }
+            return;
+        };
+        let channels = source.channels();
+        let Some(speakers) = media::speakers(channels) else {
+            if self.logged_channels != Some(channels) {
+                self.logged_channels = Some(channels);
+                log!(Level::Warning, "unsupported channel count {channels}");
+            }
+            return;
+        };
+        let mut audio = Audio {
+            format,
+            speakers,
+            frames: source.samples() as u32,
+            samples_per_sec: source.sample_rate() as u32,
+            timestamp: self.clock.timestamp(source.pts() as u64),
+            ..Default::default()
+        };
+        let planes = media::audio_planes(format, speakers).min(sys::MAX_AV_PLANES as usize);
+        for plane in 0..planes {
+            audio.data[plane] = source.audio_plane(plane);
+        }
+        self.shared.source.output_audio(&audio);
+    }
+}
+
+impl Handler for Output {
+    fn hello(&mut self, hello: &DeviceHello) {
+        log!(
+            Level::Info,
+            "connected to {} (Moblin {}) on {}",
+            hello.name,
+            hello.app_version,
+            self.serial
+        );
+        self.shared.remember(&self.serial, &hello.name);
     }
 }
 
@@ -136,12 +224,12 @@ impl Worker {
     }
 
     fn connect(&mut self) {
-        let (stream, serial) = match usbmux::connect_to_device(&self.serial, self.port, &self.shared) {
+        let (stream, serial) = match usbmux::connect_to_device(&self.serial, self.port, self.shared.as_ref()) {
             Ok(connected) => connected,
             Err(error) => {
                 if error != usbmux::Error::Aborted && self.reported_failure != Some(error) {
                     self.reported_failure = Some(error);
-                    obs_log!(Level::Info, "not connected: {}", error.message());
+                    log!(Level::Info, "not connected: {}", error.message());
                 }
                 return;
             }
@@ -149,116 +237,18 @@ impl Worker {
         self.reported_failure = None;
         self.stream(stream, &serial);
         if !self.shared.stopping.load(Ordering::Relaxed) {
-            obs_log!(Level::Info, "disconnected from {serial}");
+            log!(Level::Info, "disconnected from {serial}");
         }
         self.shared.clear_video();
     }
 
     fn stream(&mut self, mut stream: Stream, serial: &str) {
-        if !stream.write_all(&protocol::pack_host_hello()) {
-            obs_log!(Level::Warning, "failed to say hello to {serial}");
-            return;
-        }
         let Some(decoder) = self.decoder.as_mut() else {
             return;
         };
-        decoder.reset();
-        let mut output = Output {
-            shared: Arc::clone(&self.shared),
-            clock: Clock::default(),
-        };
-        let mut buffer: Vec<u8> = Vec::new();
-        loop {
-            let mut header = [0u8; protocol::MESSAGE_HEADER_SIZE];
-            if stream.read_exact(&mut header, &self.shared).is_err() {
-                break;
-            }
-            let (kind, length) = protocol::unpack_message_header(&header);
-            if length > protocol::MAX_MESSAGE_SIZE {
-                obs_log!(Level::Warning, "message of {length} bytes is too big");
-                break;
-            }
-            let payload_size = length as usize;
-            buffer.resize(payload_size + INPUT_PADDING, 0);
-            buffer[payload_size..].fill(0);
-            if stream.read_exact(&mut buffer[..payload_size], &self.shared).is_err() {
-                break;
-            }
-            if !handle_message(decoder, &mut output, kind, &buffer[..payload_size], serial) {
-                break;
-            }
-        }
+        let mut output = Output::new(Arc::clone(&self.shared), serial);
+        session::stream(&mut stream, decoder, &mut output, self.shared.as_ref());
     }
-}
-
-fn handle_message(decoder: &mut Decoder, output: &mut Output, kind: u8, payload: &[u8], serial: &str) -> bool {
-    match kind {
-        protocol::MESSAGE_DEVICE_HELLO => handle_message_device_hello(output, payload, serial),
-        protocol::MESSAGE_VIDEO_CONFIG => handle_message_video_config(decoder, payload),
-        protocol::MESSAGE_VIDEO_FRAME => handle_message_video_frame(decoder, output, payload),
-        protocol::MESSAGE_AUDIO_CONFIG => handle_message_audio_config(decoder, payload),
-        protocol::MESSAGE_AUDIO_FRAME => handle_message_audio_frame(decoder, output, payload),
-        _ => true,
-    }
-}
-
-fn handle_message_device_hello(output: &mut Output, payload: &[u8], serial: &str) -> bool {
-    let Some(hello) = protocol::unpack_device_hello(payload) else {
-        obs_log!(Level::Warning, "malformed device hello");
-        return false;
-    };
-    obs_log!(
-        Level::Info,
-        "connected to {} (Moblin {}) on {serial}",
-        hello.name,
-        hello.app_version
-    );
-    output.shared.remember(serial, &hello.name);
-    true
-}
-
-fn handle_message_video_config(decoder: &mut Decoder, payload: &[u8]) -> bool {
-    match protocol::unpack_video_config(payload) {
-        Some(config) => decoder.configure_video(&config),
-        None => {
-            obs_log!(Level::Warning, "malformed video config");
-            false
-        }
-    }
-}
-
-fn handle_message_video_frame(decoder: &mut Decoder, output: &mut Output, payload: &[u8]) -> bool {
-    match protocol::unpack_video_frame(payload) {
-        Some(frame) => decoder.decode_video(&frame, output),
-        None => {
-            obs_log!(Level::Warning, "malformed video frame");
-            false
-        }
-    }
-}
-
-fn handle_message_audio_config(decoder: &mut Decoder, payload: &[u8]) -> bool {
-    match protocol::unpack_audio_config(payload) {
-        Some(config) => {
-            decoder.configure_audio(&config);
-        }
-        None => {
-            obs_log!(Level::Warning, "malformed audio config");
-            return false;
-        }
-    }
-    true
-}
-
-fn handle_message_audio_frame(decoder: &mut Decoder, output: &mut Output, payload: &[u8]) -> bool {
-    match protocol::unpack_audio_frame(payload) {
-        Some(frame) => decoder.decode_audio(&frame, output),
-        None => {
-            obs_log!(Level::Warning, "malformed audio frame");
-            return false;
-        }
-    }
-    true
 }
 
 struct Source {
@@ -295,7 +285,7 @@ impl Source {
             return;
         }
         let Some(mut decoder) = Decoder::new() else {
-            obs_log!(Level::Error, "failed to create the decoder");
+            log!(Level::Error, "failed to create the decoder");
             return;
         };
         decoder.set_hardware(self.hardware_decode);
@@ -312,10 +302,10 @@ impl Source {
         };
         match std::thread::Builder::new()
             .name(String::from("mobcam"))
-            .spawn(|| crate::panic::guard("the receive thread", (), || worker.run()))
+            .spawn(|| panic::guard("the receive thread", (), || worker.run()))
         {
             Ok(thread) => self.thread = Some(thread),
-            Err(_) => obs_log!(Level::Error, "failed to start the receive thread"),
+            Err(_) => log!(Level::Error, "failed to start the receive thread"),
         }
     }
 
@@ -401,11 +391,11 @@ fn shared_of<'a>(data: *mut c_void) -> Option<&'a Shared> {
 }
 
 extern "C" fn get_name(_type_data: *mut c_void) -> *const c_char {
-    crate::panic::guard("get_name", c"Mobcam".as_ptr(), || text(c"Mobcam").as_ptr())
+    panic::guard("get_name", c"Mobcam".as_ptr(), || text(c"Mobcam").as_ptr())
 }
 
 extern "C" fn create(settings: *mut sys::obs_data_t, source: *mut sys::obs_source_t) -> *mut c_void {
-    crate::panic::guard("create", std::ptr::null_mut(), || {
+    panic::guard("create", std::ptr::null_mut(), || {
         let mut context = Box::new(Source::new(obs::Source::from_raw(source)));
         let settings = Data::from_raw(settings);
         context.shared.load(&settings);
@@ -415,25 +405,25 @@ extern "C" fn create(settings: *mut sys::obs_data_t, source: *mut sys::obs_sourc
 }
 
 extern "C" fn destroy(data: *mut c_void) {
-    crate::panic::guard("destroy", (), || {
+    panic::guard("destroy", (), || {
         drop(unsafe { Box::from_raw(data as *mut Source) });
     })
 }
 
 extern "C" fn update(data: *mut c_void, settings: *mut sys::obs_data_t) {
-    crate::panic::guard("update", (), || {
+    panic::guard("update", (), || {
         source_of(data).update(&Data::from_raw(settings));
     })
 }
 
 extern "C" fn save(data: *mut c_void, settings: *mut sys::obs_data_t) {
-    crate::panic::guard("save", (), || {
+    panic::guard("save", (), || {
         source_of(data).shared.save(&Data::from_raw(settings));
     })
 }
 
 extern "C" fn show(data: *mut c_void) {
-    crate::panic::guard("show", (), || {
+    panic::guard("show", (), || {
         let context = source_of(data);
         if context.disconnect_when_hidden {
             context.start();
@@ -442,7 +432,7 @@ extern "C" fn show(data: *mut c_void) {
 }
 
 extern "C" fn hide(data: *mut c_void) {
-    crate::panic::guard("hide", (), || {
+    panic::guard("hide", (), || {
         let context = source_of(data);
         if context.disconnect_when_hidden {
             context.stop();
@@ -451,17 +441,17 @@ extern "C" fn hide(data: *mut c_void) {
 }
 
 extern "C" fn get_width(data: *mut c_void) -> u32 {
-    crate::panic::guard("get_width", 0, || source_of(data).shared.width.load(Ordering::Relaxed))
+    panic::guard("get_width", 0, || source_of(data).shared.width.load(Ordering::Relaxed))
 }
 
 extern "C" fn get_height(data: *mut c_void) -> u32 {
-    crate::panic::guard("get_height", 0, || {
+    panic::guard("get_height", 0, || {
         source_of(data).shared.height.load(Ordering::Relaxed)
     })
 }
 
 extern "C" fn get_defaults(settings: *mut sys::obs_data_t) {
-    crate::panic::guard("get_defaults", (), || {
+    panic::guard("get_defaults", (), || {
         let settings = Data::from_raw(settings);
         settings.set_default_string(SETTING_DEVICE, c"");
         settings.set_default_int(SETTING_PORT, DEFAULT_PORT);
@@ -477,7 +467,7 @@ extern "C" fn refresh_devices_clicked(
     _property: *mut sys::obs_property_t,
     data: *mut c_void,
 ) -> bool {
-    crate::panic::guard("refresh_devices", false, || {
+    panic::guard("refresh_devices", false, || {
         let mut list = unsafe { obs::properties::get(properties, SETTING_DEVICE) };
         fill_device_list(&mut list, shared_of(data));
         true
@@ -485,7 +475,7 @@ extern "C" fn refresh_devices_clicked(
 }
 
 extern "C" fn get_properties(data: *mut c_void) -> *mut sys::obs_properties_t {
-    crate::panic::guard("get_properties", std::ptr::null_mut(), || {
+    panic::guard("get_properties", std::ptr::null_mut(), || {
         let mut properties = Properties::new();
         let mut list = properties.add_string_list(SETTING_DEVICE, text(c"Device"));
         fill_device_list(&mut list, shared_of(data));

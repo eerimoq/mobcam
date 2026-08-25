@@ -9,7 +9,7 @@ pub fn guard<T>(name: &str, on_panic: T, body: impl FnOnce() -> T) -> T {
                 .copied()
                 .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
                 .unwrap_or("unknown");
-            crate::obs::log(crate::obs::Level::Error, &format!("{name} panicked: {reason}"));
+            crate::log(crate::Level::Error, &format!("{name} panicked: {reason}"));
             on_panic
         }
     }

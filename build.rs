@@ -88,13 +88,10 @@ fn pkg_config(packages: &[&str], flags: &str) -> Vec<String> {
 fn configure_macos() -> Vec<PathBuf> {
     let dependencies = dependencies_dir();
     let obs_include = require(dependencies.join("obs-studio").join("libobs"));
-    let prebuilt_dir = require(dependencies.join("prebuilt"));
-    println!("cargo:rustc-link-search=native={}", prebuilt_dir.join("lib").display());
-    println!("cargo:rustc-link-lib=dylib=avcodec");
-    println!("cargo:rustc-link-lib=dylib=avutil");
+    let prebuilt_include = require(dependencies.join("prebuilt").join("include"));
     println!("cargo:rustc-link-arg=-Wl,-undefined,dynamic_lookup");
     println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
-    vec![obs_include, prebuilt_dir.join("include"), obsconfig_dir()]
+    vec![obs_include, prebuilt_include, obsconfig_dir()]
 }
 
 #[cfg(windows)]
@@ -158,17 +155,14 @@ fn write_import_library(_bindings: &Path) {
 fn configure_windows() -> Vec<PathBuf> {
     let dependencies = dependencies_dir();
     let obs_include = require(dependencies.join("obs-studio").join("libobs"));
-    let prebuilt_dir = require(dependencies.join("prebuilt"));
-    println!("cargo:rustc-link-search=native={}", prebuilt_dir.join("lib").display());
-    println!("cargo:rustc-link-lib=dylib=avcodec");
-    println!("cargo:rustc-link-lib=dylib=avutil");
+    let prebuilt_include = require(dependencies.join("prebuilt").join("include"));
     println!("cargo:rustc-link-search=native={}", out_dir().display());
     println!("cargo:rustc-link-lib=dylib=obs");
-    vec![obs_include, prebuilt_dir.join("include"), obsconfig_dir()]
+    vec![obs_include, prebuilt_include, obsconfig_dir()]
 }
 
 fn configure_linux() -> Vec<PathBuf> {
-    let packages = ["libobs", "libavcodec", "libavutil"];
+    let packages = ["libobs"];
     for dir in pkg_config(&packages, "--libs-only-L") {
         println!("cargo:rustc-link-search=native={dir}");
     }
@@ -243,25 +237,6 @@ fn generate_obs(include_dirs: &[PathBuf]) -> PathBuf {
     )
 }
 
-fn generate_ffmpeg(include_dirs: &[PathBuf]) {
-    let builder = builder(include_dirs)
-        .allowlist_item("av_.*")
-        .allowlist_item("avcodec_.*")
-        .allowlist_item("AV_.*")
-        .allowlist_item("AV(Codec|Packet|Frame|Buffer|Pixel|Sample|HWDevice|Rational|Channel|Dictionary|Class|Color|Media|Profile|Discard|Field|Chroma|Audio).*")
-        .allowlist_item("AVERROR.*")
-        .allowlist_item("FF_.*");
-    generate(
-        "ffmpeg",
-        "#include <libavcodec/avcodec.h>\n\
-         #include <libavutil/channel_layout.h>\n\
-         #include <libavutil/hwcontext.h>\n\
-         #include <libavutil/pixdesc.h>\n\
-         #include <libavutil/samplefmt.h>\n",
-        builder,
-    );
-}
-
 fn main() {
     let platform = Platform::current();
     let include_dirs = match platform {
@@ -270,7 +245,6 @@ fn main() {
         Platform::Linux => configure_linux(),
     };
     let obs_bindings = generate_obs(&include_dirs);
-    generate_ffmpeg(&include_dirs);
     if let Platform::Windows = platform {
         write_import_library(&obs_bindings);
     }

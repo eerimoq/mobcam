@@ -1,9 +1,8 @@
 use crate::ffmpeg::{self, Codec, Context, Device, Packet, Status, sys as av};
-use crate::obs::{self, Audio, Frame, Level, media};
-use crate::obs_log;
 use crate::protocol::{
     AUDIO_CODEC_AAC_LC, AudioConfig, AudioFrame, VIDEO_CODEC_H264, VIDEO_CODEC_HEVC, VideoConfig, VideoFrame,
 };
+use crate::{Level, log};
 
 pub const INPUT_PADDING: usize = 64;
 
@@ -151,19 +150,20 @@ impl Stream {
     }
 }
 
+/// Where decoded frames go. Both callbacks borrow the decoder's frame, which is
+/// unreferenced as soon as they return, so a sink that keeps anything has to
+/// copy it.
 pub trait Sink {
-    fn video(&mut self, frame: &mut Frame, pts_us: u64);
-    fn audio(&mut self, audio: &mut Audio, pts_us: u64);
+    fn video(&mut self, frame: &ffmpeg::Frame);
+    fn audio(&mut self, frame: &ffmpeg::Frame);
 }
 
 pub struct Decoder {
     video: Stream,
     audio: Stream,
     hardware: bool,
+    audio_wanted: bool,
     got_keyframe: bool,
-    logged_pixel_format: Option<av::AVPixelFormat>,
-    logged_sample_format: Option<av::AVSampleFormat>,
-    logged_channels: Option<i32>,
 }
 
 unsafe impl Send for Decoder {}
@@ -174,15 +174,22 @@ impl Decoder {
             video: Stream::new()?,
             audio: Stream::new()?,
             hardware: false,
+            audio_wanted: true,
             got_keyframe: false,
-            logged_pixel_format: None,
-            logged_sample_format: None,
-            logged_channels: None,
         })
     }
 
     pub fn set_hardware(&mut self, hardware: bool) {
         self.hardware = hardware;
+    }
+
+    /// Turns audio decoding off for sinks that have nowhere to play it, so the
+    /// audio messages are dropped without spending any time on them.
+    pub fn set_audio(&mut self, audio: bool) {
+        self.audio_wanted = audio;
+        if !audio {
+            self.audio.close();
+        }
     }
 
     pub fn reset(&mut self) {
@@ -196,7 +203,7 @@ impl Decoder {
             VIDEO_CODEC_H264 => av::AV_CODEC_ID_H264,
             VIDEO_CODEC_HEVC => av::AV_CODEC_ID_HEVC,
             codec => {
-                obs_log!(Level::Warning, "unsupported video codec {codec}");
+                log!(Level::Warning, "unsupported video codec {codec}");
                 return false;
             }
         };
@@ -206,7 +213,7 @@ impl Decoder {
         self.video.close();
         self.got_keyframe = false;
         let Some(codec) = Codec::find(codec_id) else {
-            obs_log!(Level::Error, "no {} decoder available", config.video_codec_name());
+            log!(Level::Error, "no {} decoder available", config.video_codec_name());
             return false;
         };
         let Some(context) = self.video.begin(codec, config.record) else {
@@ -218,11 +225,10 @@ impl Decoder {
             self.video.attach_hardware(codec);
         }
         if !self.video.open(codec, config.codec, self.hardware, config.record) {
-            obs_log!(Level::Error, "failed to open the {} decoder", config.video_codec_name());
+            log!(Level::Error, "failed to open the {} decoder", config.video_codec_name());
             return false;
         }
-        self.logged_pixel_format = None;
-        obs_log!(
+        log!(
             Level::Info,
             "decoding {} {}x{} in {}",
             config.video_codec_name(),
@@ -234,10 +240,13 @@ impl Decoder {
     }
 
     pub fn configure_audio(&mut self, config: &AudioConfig<'_>) -> bool {
+        if !self.audio_wanted {
+            return true;
+        }
         let codec_id = match config.codec {
             AUDIO_CODEC_AAC_LC => av::AV_CODEC_ID_AAC,
             codec => {
-                obs_log!(Level::Warning, "unsupported audio codec {codec}");
+                log!(Level::Warning, "unsupported audio codec {codec}");
                 return false;
             }
         };
@@ -246,7 +255,7 @@ impl Decoder {
         }
         self.audio.close();
         let Some(codec) = Codec::find(codec_id) else {
-            obs_log!(Level::Error, "no {} decoder available", config.audio_codec_name());
+            log!(Level::Error, "no {} decoder available", config.audio_codec_name());
             return false;
         };
         let Some(context) = self.audio.begin(codec, config.record) else {
@@ -254,12 +263,10 @@ impl Decoder {
         };
         context.set_audio(config.sample_rate, i32::from(config.channels));
         if !self.audio.open(codec, config.codec, false, config.record) {
-            obs_log!(Level::Error, "failed to open the {} decoder", config.audio_codec_name());
+            log!(Level::Error, "failed to open the {} decoder", config.audio_codec_name());
             return false;
         }
-        self.logged_sample_format = None;
-        self.logged_channels = None;
-        obs_log!(
+        log!(
             Level::Info,
             "decoding {} {} Hz {} channel",
             config.audio_codec_name(),
@@ -280,7 +287,7 @@ impl Decoder {
             self.got_keyframe = true;
         }
         if !self.video.send(frame.data, frame.pts_us as i64, frame.keyframe) {
-            obs_log!(Level::Warning, "failed to decode a frame, flushing the decoder");
+            log!(Level::Warning, "failed to decode a frame, flushing the decoder");
             self.video.flush();
             self.got_keyframe = false;
             return true;
@@ -289,11 +296,11 @@ impl Decoder {
             match self.video.receive() {
                 Received::Drained => break,
                 Received::Failed => {
-                    obs_log!(Level::Warning, "failed to receive a frame, reopening the decoder");
+                    log!(Level::Warning, "failed to receive a frame, reopening the decoder");
                     self.video.close();
                     return false;
                 }
-                Received::Frame => self.emit_video(sink),
+                Received::Frame => sink.video(&self.video.frame),
             }
             self.video.release();
         }
@@ -305,7 +312,7 @@ impl Decoder {
             return;
         }
         if !self.audio.send(frame.data, frame.pts_us as i64, true) {
-            obs_log!(Level::Warning, "failed to decode audio, flushing the decoder");
+            log!(Level::Warning, "failed to decode audio, flushing the decoder");
             self.audio.flush();
             return;
         }
@@ -313,79 +320,13 @@ impl Decoder {
             match self.audio.receive() {
                 Received::Drained => break,
                 Received::Failed => {
-                    obs_log!(Level::Warning, "failed to decode audio, flushing the decoder");
+                    log!(Level::Warning, "failed to decode audio, flushing the decoder");
                     self.audio.flush();
                     break;
                 }
-                Received::Frame => self.emit_audio(sink),
+                Received::Frame => sink.audio(&self.audio.frame),
             }
             self.audio.release();
         }
-    }
-
-    fn emit_video(&mut self, sink: &mut dyn Sink) {
-        let source = &self.video.frame;
-        let Some((format, format_is_full_range)) = media::video_format(source.pixel_format()) else {
-            if self.logged_pixel_format != Some(source.pixel_format()) {
-                self.logged_pixel_format = Some(source.pixel_format());
-                obs_log!(
-                    Level::Warning,
-                    "unsupported pixel format {}",
-                    ffmpeg::pixel_format_name(source.pixel_format())
-                );
-            }
-            return;
-        };
-        let full_range = format_is_full_range || source.is_full_range();
-        let mut frame = Frame {
-            format,
-            width: source.width() as u32,
-            height: source.height() as u32,
-            full_range,
-            trc: media::transfer(source),
-            ..Default::default()
-        };
-        for plane in 0..(obs::sys::MAX_AV_PLANES as usize).min(ffmpeg::Frame::PLANES) {
-            let (data, linesize) = source.plane(plane);
-            frame.data[plane] = data;
-            frame.linesize[plane] = linesize as u32;
-        }
-        media::set_color_parameters(&mut frame, media::colorspace(source), full_range);
-        sink.video(&mut frame, source.pts() as u64);
-    }
-
-    fn emit_audio(&mut self, sink: &mut dyn Sink) {
-        let source = &self.audio.frame;
-        let Some(format) = media::audio_format(source.sample_format()) else {
-            if self.logged_sample_format != Some(source.sample_format()) {
-                self.logged_sample_format = Some(source.sample_format());
-                obs_log!(
-                    Level::Warning,
-                    "unsupported sample format {}",
-                    ffmpeg::sample_format_name(source.sample_format())
-                );
-            }
-            return;
-        };
-        let channels = source.channels();
-        let Some(speakers) = media::speakers(channels) else {
-            if self.logged_channels != Some(channels) {
-                self.logged_channels = Some(channels);
-                obs_log!(Level::Warning, "unsupported channel count {channels}");
-            }
-            return;
-        };
-        let mut audio = Audio {
-            format,
-            speakers,
-            frames: source.samples() as u32,
-            samples_per_sec: source.sample_rate() as u32,
-            ..Default::default()
-        };
-        let planes = media::audio_planes(format, speakers).min(obs::sys::MAX_AV_PLANES as usize);
-        for plane in 0..planes {
-            audio.data[plane] = source.audio_plane(plane);
-        }
-        sink.audio(&mut audio, source.pts() as u64);
     }
 }

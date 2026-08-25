@@ -1,5 +1,5 @@
 use super::sys;
-use crate::ffmpeg::{self, sys as av};
+use mobcam_core::ffmpeg::{self, sys as av};
 pub type Frame = sys::obs_source_frame;
 pub type Audio = sys::obs_source_audio;
 

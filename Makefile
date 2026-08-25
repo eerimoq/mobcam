@@ -16,9 +16,12 @@ style-check:
 	ruff format $(PYTHON_DIRS) --check
 
 lint:
-	cargo clippy --all-targets -- --deny warnings
+	cargo clippy --workspace --all-targets -- --deny warnings
 	ruff check $(PYTHON_DIRS)
 	mypy $(PYTHON_DIRS)
+
+test:
+	cargo test --workspace
 
 spell-check:
 	codespell $(CODE_DIRS)

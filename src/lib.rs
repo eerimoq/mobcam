@@ -1,21 +1,17 @@
-pub mod decoder;
 pub mod devices;
-pub mod ffmpeg;
 pub mod obs;
-pub mod panic;
-pub mod protocol;
 pub mod source;
-pub mod usbmux;
-use obs::Level;
+use mobcam_core::{Level, log, panic};
 
 pub const PLUGIN_NAME: &str = "mobcam";
 pub const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[unsafe(no_mangle)]
 pub extern "C" fn obs_module_load() -> bool {
+    obs::install_logger();
     panic::guard("obs_module_load", false, || {
         obs::register(&source::info());
-        obs_log!(Level::Info, "plugin loaded successfully (version {PLUGIN_VERSION})");
+        log!(Level::Info, "plugin loaded successfully (version {PLUGIN_VERSION})");
         true
     })
 }
@@ -23,6 +19,6 @@ pub extern "C" fn obs_module_load() -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn obs_module_unload() {
     panic::guard("obs_module_unload", (), || {
-        obs_log!(Level::Info, "plugin unloaded");
+        log!(Level::Info, "plugin unloaded");
     })
 }

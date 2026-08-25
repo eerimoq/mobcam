@@ -40,16 +40,17 @@ class Dependency:
 REPO_ROOT = Path(__file__).resolve().parent
 
 
-def read_cargo_package() -> dict[str, Any]:
+def read_cargo_manifest() -> dict[str, Any]:
     with open(REPO_ROOT / "Cargo.toml", "rb") as fin:
-        package: dict[str, Any] = tomllib.load(fin)["package"]
-        return package
+        manifest: dict[str, Any] = tomllib.load(fin)
+        return manifest
 
 
-CARGO_PACKAGE = read_cargo_package()
-NAME: str = CARGO_PACKAGE["name"]
+CARGO_MANIFEST = read_cargo_manifest()
+NAME: str = CARGO_MANIFEST["package"]["name"]
 DISPLAY_NAME = "Mobcam"
-VERSION: str = CARGO_PACKAGE["version"]
+VERSION: str = CARGO_MANIFEST["workspace"]["package"]["version"]
+VIRTUALCAM_NAME = f"{NAME}-virtualcam"
 BUNDLE_ID = "com.eerimoq.mobcam"
 DEPS_DIR = REPO_ROOT / ".deps"
 RELEASE_DIR = REPO_ROOT / "release"
@@ -249,6 +250,14 @@ def cargo_build(target_platform: Platform, name: str, targets: Sequence[str | No
     return libraries
 
 
+def cargo_build_binary(package: str) -> Path:
+    run(
+        ["cargo", "build", "--locked", "--profile", "release", "--package", package],
+        cwd=REPO_ROOT,
+    )
+    return cargo_target_dir() / "release" / package
+
+
 def copy_data(destination: Path) -> None:
     shutil.copytree(DATA_DIR, destination, dirs_exist_ok=True)
 
@@ -298,11 +307,16 @@ def build_macos(identity: str) -> None:
 
 def build_linux() -> None:
     (library,) = cargo_build("linux", NAME, [None])
+    virtualcam = cargo_build_binary(VIRTUALCAM_NAME)
     library_dir = INSTALL_DIR / "lib" / f"{platform.machine()}-linux-gnu" / "obs-plugins"
+    binary_dir = INSTALL_DIR / "bin"
+    remove(INSTALL_DIR / "bin")
     remove(INSTALL_DIR / "lib")
     remove(INSTALL_DIR / "share")
     library_dir.mkdir(parents=True)
     shutil.copy2(library, library_dir / f"{NAME}.so")
+    binary_dir.mkdir(parents=True)
+    shutil.copy2(virtualcam, binary_dir / VIRTUALCAM_NAME)
     copy_data(INSTALL_DIR / "share" / "obs" / "obs-plugins" / NAME)
 
 
@@ -449,7 +463,7 @@ def package_linux(args: argparse.Namespace) -> None:
     base = output_name("linux")
     if not (INSTALL_DIR / "lib").is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
-    tar_xz(RELEASE_DIR / f"{base}.tar.xz", INSTALL_DIR, ["lib", "share"])
+    tar_xz(RELEASE_DIR / f"{base}.tar.xz", INSTALL_DIR, ["bin", "lib", "share"])
     source_tarball()
     if args.installer:
         package_deb(base, NAME)
@@ -561,6 +575,9 @@ def install(_: argparse.Namespace) -> None:
             destination / "bin" / "64bit" / f"{NAME}.so",
         )
         copy_data(destination / "data")
+        binaries = Path.home() / ".local" / "bin"
+        binaries.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(INSTALL_DIR / "bin" / VIRTUALCAM_NAME, binaries / VIRTUALCAM_NAME)
     else:
         raise Error("installing is only supported on macOS and Linux")
 

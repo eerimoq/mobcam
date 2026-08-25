@@ -1,0 +1,17 @@
+[package]
+name = "mobcam-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "mobcam_core"
+path = "src/lib.rs"
+
+[dependencies]
+plist = "1.10.0"
+
+[build-dependencies]
+bindgen = "0.72"
