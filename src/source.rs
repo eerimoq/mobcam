@@ -162,7 +162,7 @@ impl Worker {
             if socket::read_exact(&mut stream, &mut header, &self.shared).is_err() {
                 break;
             }
-            let (kind, length) = protocol::parse_message_header(&header);
+            let (kind, length) = protocol::unpack_message_header(&header);
             let payload_size = length as usize;
             buffer.clear();
             buffer.resize(payload_size + INPUT_PADDING, 0);
@@ -188,7 +188,7 @@ fn handle_message(decoder: &mut Decoder, output: &mut Output, kind: u8, payload:
 }
 
 fn handle_message_device_hello(output: &mut Output, payload: &[u8], serial: &str) -> bool {
-    let Some(hello) = protocol::parse_device_hello(payload) else {
+    let Some(hello) = protocol::unpack_device_hello(payload) else {
         obs_log!(Level::Warning, "malformed device hello");
         return false;
     };
@@ -203,7 +203,7 @@ fn handle_message_device_hello(output: &mut Output, payload: &[u8], serial: &str
 }
 
 fn handle_message_video_config(decoder: &mut Decoder, payload: &[u8]) -> bool {
-    match protocol::parse_video_config(payload) {
+    match protocol::unpack_video_config(payload) {
         Some(config) => decoder.configure_video(&config),
         None => {
             obs_log!(Level::Warning, "malformed video config");
@@ -213,7 +213,7 @@ fn handle_message_video_config(decoder: &mut Decoder, payload: &[u8]) -> bool {
 }
 
 fn handle_message_video_frame(decoder: &mut Decoder, output: &mut Output, payload: &[u8]) -> bool {
-    match protocol::parse_video_frame(payload) {
+    match protocol::unpack_video_frame(payload) {
         Some(frame) => decoder.decode_video(&frame, output),
         None => {
             obs_log!(Level::Warning, "malformed video frame");
@@ -223,7 +223,7 @@ fn handle_message_video_frame(decoder: &mut Decoder, output: &mut Output, payloa
 }
 
 fn handle_message_audio_config(decoder: &mut Decoder, payload: &[u8]) -> bool {
-    match protocol::parse_audio_config(payload) {
+    match protocol::unpack_audio_config(payload) {
         Some(config) => {
             decoder.configure_audio(&config);
         }
@@ -236,7 +236,7 @@ fn handle_message_audio_config(decoder: &mut Decoder, payload: &[u8]) -> bool {
 }
 
 fn handle_message_audio_frame(decoder: &mut Decoder, output: &mut Output, payload: &[u8]) -> bool {
-    match protocol::parse_audio_frame(payload) {
+    match protocol::unpack_audio_frame(payload) {
         Some(frame) => decoder.decode_audio(&frame, output),
         None => {
             obs_log!(Level::Warning, "malformed audio frame");

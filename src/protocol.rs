@@ -79,11 +79,11 @@ pub fn pack_host_hello() -> [u8; HOST_HELLO_SIZE] {
     buffer
 }
 
-pub fn parse_message_header(header: &[u8; MESSAGE_HEADER_SIZE]) -> (u8, u32) {
+pub fn unpack_message_header(header: &[u8; MESSAGE_HEADER_SIZE]) -> (u8, u32) {
     (header[0], u32_be(&header[1..]))
 }
 
-pub fn parse_device_hello(payload: &[u8]) -> Option<DeviceHello> {
+pub fn unpack_device_hello(payload: &[u8]) -> Option<DeviceHello> {
     if payload.len() < 5 {
         return None;
     }
@@ -98,7 +98,7 @@ pub fn parse_device_hello(payload: &[u8]) -> Option<DeviceHello> {
     })
 }
 
-pub fn parse_video_config(payload: &[u8]) -> Option<VideoConfig<'_>> {
+pub fn unpack_video_config(payload: &[u8]) -> Option<VideoConfig<'_>> {
     if payload.len() < 9 {
         return None;
     }
@@ -111,7 +111,7 @@ pub fn parse_video_config(payload: &[u8]) -> Option<VideoConfig<'_>> {
     })
 }
 
-pub fn parse_video_frame(payload: &[u8]) -> Option<VideoFrame<'_>> {
+pub fn unpack_video_frame(payload: &[u8]) -> Option<VideoFrame<'_>> {
     if payload.len() < 9 {
         return None;
     }
@@ -122,7 +122,7 @@ pub fn parse_video_frame(payload: &[u8]) -> Option<VideoFrame<'_>> {
     })
 }
 
-pub fn parse_audio_config(payload: &[u8]) -> Option<AudioConfig<'_>> {
+pub fn unpack_audio_config(payload: &[u8]) -> Option<AudioConfig<'_>> {
     if payload.len() < 10 {
         return None;
     }
@@ -135,7 +135,7 @@ pub fn parse_audio_config(payload: &[u8]) -> Option<AudioConfig<'_>> {
     })
 }
 
-pub fn parse_audio_frame(payload: &[u8]) -> Option<AudioFrame<'_>> {
+pub fn unpack_audio_frame(payload: &[u8]) -> Option<AudioFrame<'_>> {
     if payload.len() < 8 {
         return None;
     }
