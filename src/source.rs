@@ -125,7 +125,7 @@ impl Worker {
     }
 
     fn connect(&mut self) {
-        let (stream, serial) = match usbmux::connect(&self.serial, self.port, &self.shared) {
+        let (stream, serial) = match usbmux::connect_to_device(&self.serial, self.port, &self.shared) {
             Ok(connected) => connected,
             Err(error) => {
                 if error != usbmux::Error::Aborted && self.reported_failure != Some(error) {
@@ -178,58 +178,72 @@ impl Worker {
 
 fn handle_message(decoder: &mut Decoder, output: &mut Output, kind: u8, payload: &[u8], serial: &str) -> bool {
     match kind {
-        protocol::MESSAGE_DEVICE_HELLO => {
-            let Some(hello) = protocol::parse_device_hello(payload) else {
-                obs_log!(Level::Warning, "malformed device hello");
-                return false;
-            };
-            obs_log!(
-                Level::Info,
-                "connected to {} (Moblin {}) on {serial}",
-                hello.name,
-                hello.app_version
-            );
-            output.shared.remember(serial, &hello.name);
-            true
-        }
-        protocol::MESSAGE_VIDEO_CONFIG => match protocol::parse_video_config(payload) {
-            Some(config) => decoder.configure_video(&config),
-            None => {
-                obs_log!(Level::Warning, "malformed video config");
-                false
-            }
-        },
-        protocol::MESSAGE_VIDEO_FRAME => match protocol::parse_video_frame(payload) {
-            Some(frame) => decoder.decode_video(&frame, output),
-            None => {
-                obs_log!(Level::Warning, "malformed video frame");
-                false
-            }
-        },
-        protocol::MESSAGE_AUDIO_CONFIG => {
-            match protocol::parse_audio_config(payload) {
-                Some(config) => {
-                    decoder.configure_audio(&config);
-                }
-                None => {
-                    obs_log!(Level::Warning, "malformed audio config");
-                    return false;
-                }
-            }
-            true
-        }
-        protocol::MESSAGE_AUDIO_FRAME => {
-            match protocol::parse_audio_frame(payload) {
-                Some(frame) => decoder.decode_audio(&frame, output),
-                None => {
-                    obs_log!(Level::Warning, "malformed audio frame");
-                    return false;
-                }
-            }
-            true
-        }
+        protocol::MESSAGE_DEVICE_HELLO => handle_message_device_hello(output, payload, serial),
+        protocol::MESSAGE_VIDEO_CONFIG => handle_message_video_config(decoder, payload),
+        protocol::MESSAGE_VIDEO_FRAME => handle_message_video_frame(decoder, output, payload),
+        protocol::MESSAGE_AUDIO_CONFIG => handle_message_audio_config(decoder, payload),
+        protocol::MESSAGE_AUDIO_FRAME => handle_message_audio_frame(decoder, output, payload),
         _ => true,
     }
+}
+
+fn handle_message_device_hello(output: &mut Output, payload: &[u8], serial: &str) -> bool {
+    let Some(hello) = protocol::parse_device_hello(payload) else {
+        obs_log!(Level::Warning, "malformed device hello");
+        return false;
+    };
+    obs_log!(
+        Level::Info,
+        "connected to {} (Moblin {}) on {serial}",
+        hello.name,
+        hello.app_version
+    );
+    output.shared.remember(serial, &hello.name);
+    true
+}
+
+fn handle_message_video_config(decoder: &mut Decoder, payload: &[u8]) -> bool {
+    match protocol::parse_video_config(payload) {
+        Some(config) => decoder.configure_video(&config),
+        None => {
+            obs_log!(Level::Warning, "malformed video config");
+            false
+        }
+    }
+}
+
+fn handle_message_video_frame(decoder: &mut Decoder, output: &mut Output, payload: &[u8]) -> bool {
+    match protocol::parse_video_frame(payload) {
+        Some(frame) => decoder.decode_video(&frame, output),
+        None => {
+            obs_log!(Level::Warning, "malformed video frame");
+            false
+        }
+    }
+}
+
+fn handle_message_audio_config(decoder: &mut Decoder, payload: &[u8]) -> bool {
+    match protocol::parse_audio_config(payload) {
+        Some(config) => {
+            decoder.configure_audio(&config);
+        }
+        None => {
+            obs_log!(Level::Warning, "malformed audio config");
+            return false;
+        }
+    }
+    true
+}
+
+fn handle_message_audio_frame(decoder: &mut Decoder, output: &mut Output, payload: &[u8]) -> bool {
+    match protocol::parse_audio_frame(payload) {
+        Some(frame) => decoder.decode_audio(&frame, output),
+        None => {
+            obs_log!(Level::Warning, "malformed audio frame");
+            return false;
+        }
+    }
+    true
 }
 
 struct Source {

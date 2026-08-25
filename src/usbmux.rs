@@ -5,7 +5,6 @@ const HEADER_SIZE: usize = 16;
 const VERSION_PLIST: u32 = 1;
 const TYPE_PLIST: u32 = 8;
 const MAX_REPLY_SIZE: u32 = 4 * 1024 * 1024;
-const MAX_COLLECTIONS: usize = 1024;
 const CLIENT_NAME: &str = "obs-mobcam";
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -45,7 +44,7 @@ impl Session {
         Ok(Self { stream, tag: 0 })
     }
 
-    fn request(&mut self, body: Dictionary, abort: &dyn Abort) -> Result<Value, Error> {
+    fn request(&mut self, body: Dictionary, abort: &dyn Abort) -> Result<Dictionary, Error> {
         self.tag += 1;
         let body = encode(body)?;
         let total = HEADER_SIZE
@@ -86,27 +85,14 @@ fn encode(body: Dictionary) -> Result<Vec<u8>, Error> {
     Ok(xml)
 }
 
-fn decode(payload: &[u8]) -> Result<Value, Error> {
-    if collections(payload) > MAX_COLLECTIONS {
-        return Err(Error::Failed);
+fn decode(payload: &[u8]) -> Result<Dictionary, Error> {
+    match Value::from_reader_xml(payload) {
+        Ok(value) => value.into_dictionary().ok_or(Error::Failed),
+        Err(_) => Err(Error::Failed),
     }
-    Value::from_reader_xml(payload).map_err(|_| Error::Failed)
 }
 
-fn collections(payload: &[u8]) -> usize {
-    (0..payload.len())
-        .filter(|index| {
-            let rest = &payload[*index..];
-            rest.starts_with(b"<dict") || rest.starts_with(b"<array")
-        })
-        .count()
-}
-
-fn get<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
-    value.as_dictionary()?.get(key)
-}
-
-fn request_begin(message_type: &str) -> Dictionary {
+fn create_request(message_type: &str) -> Dictionary {
     let mut body = Dictionary::new();
     body.insert("ClientVersionString".into(), CLIENT_NAME.into());
     body.insert("ProgName".into(), CLIENT_NAME.into());
@@ -115,16 +101,21 @@ fn request_begin(message_type: &str) -> Dictionary {
     body
 }
 
-fn devices_from_reply(reply: &Value) -> Vec<Device> {
-    let Some(list) = get(reply, "DeviceList").and_then(Value::as_array) else {
-        return Vec::new();
-    };
-    list.iter()
+pub fn list_devices(abort: &dyn Abort) -> Result<Vec<Device>, Error> {
+    let mut session = Session::open()?;
+    let reply = session.request(create_request("ListDevices"), abort)?;
+    Ok(reply
+        .get("DeviceList")
+        .ok_or(Error::Failed)?
+        .as_array()
+        .ok_or(Error::Failed)?
+        .iter()
         .filter_map(|device| {
-            let properties = get(device, "Properties")?;
-            let serial = get(properties, "SerialNumber")?.as_string()?;
-            let device_id = get(device, "DeviceID")?.as_signed_integer()?;
-            match get(properties, "ConnectionType").and_then(Value::as_string) {
+            let device = device.as_dictionary()?;
+            let properties = device.get("Properties")?.as_dictionary()?;
+            let serial = properties.get("SerialNumber")?.as_string()?;
+            let device_id = device.get("DeviceID")?.as_signed_integer()?;
+            match properties.get("ConnectionType").and_then(Value::as_string) {
                 Some(connection) if connection != "USB" => return None,
                 _ => {}
             }
@@ -133,31 +124,21 @@ fn devices_from_reply(reply: &Value) -> Vec<Device> {
                 serial: serial.to_string(),
             })
         })
-        .collect()
+        .collect())
 }
 
-pub fn list_devices(abort: &dyn Abort) -> Result<Vec<Device>, Error> {
-    let mut session = Session::open()?;
-    let reply = session.request(request_begin("ListDevices"), abort)?;
-    let devices = devices_from_reply(&reply);
-    if devices.is_empty() {
-        return Err(Error::NoDevice);
-    }
-    Ok(devices)
-}
-
-pub fn connect(serial: &str, port: u16, abort: &dyn Abort) -> Result<(Stream, String), Error> {
+pub fn connect_to_device(serial: &str, port: u16, abort: &dyn Abort) -> Result<(Stream, String), Error> {
     let devices = list_devices(abort)?;
     let chosen = devices
         .iter()
         .find(|device| serial.is_empty() || device.serial == serial)
         .ok_or(Error::NoDevice)?;
     let mut session = Session::open()?;
-    let mut body = request_begin("Connect");
+    let mut body = create_request("Connect");
     body.insert("DeviceID".into(), chosen.device_id.into());
     body.insert("PortNumber".into(), port.to_be().into());
     let reply = session.request(body, abort)?;
-    if get(&reply, "Number").and_then(Value::as_signed_integer) != Some(0) {
+    if reply.get("Number").and_then(Value::as_signed_integer) != Some(0) {
         return Err(Error::Refused);
     }
     Ok((session.stream, chosen.serial.clone()))
