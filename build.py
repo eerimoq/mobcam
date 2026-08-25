@@ -232,27 +232,20 @@ def library_name(target_platform: Platform, name: str) -> str:
         return f"lib{name}.so"
 
 
-def cargo_build(
-    target_platform: Platform,
-    name: str,
-    debug: bool,
-    targets: Sequence[str | None],
-) -> list[Path]:
-    profile = "dev" if debug else "release"
-    profile_directory = "debug" if debug else "release"
+def cargo_build(target_platform: Platform, name: str, targets: Sequence[str | None]) -> list[Path]:
     environment = dict(os.environ)
     libraries: list[Path] = []
     if target_platform == "macos":
         environment["MACOSX_DEPLOYMENT_TARGET"] = MACOS_DEPLOYMENT_TARGET
     for target in targets:
-        command = ["cargo", "build", "--locked", "--profile", profile]
+        command = ["cargo", "build", "--locked", "--profile", "release"]
         if target is not None:
             command += ["--target", target]
         run(command, cwd=REPO_ROOT, env=environment)
         directory = cargo_target_dir()
         if target is not None:
             directory /= target
-        libraries.append(directory / profile_directory / library_name(target_platform, name))
+        libraries.append(directory / "release" / library_name(target_platform, name))
     return libraries
 
 
@@ -284,9 +277,9 @@ def macos_paths(name: str) -> tuple[Path, Path, Path]:
     )
 
 
-def build_macos(debug: bool, identity: str) -> None:
+def build_macos(identity: str) -> None:
     bundle, binary, symbols = macos_paths(NAME)
-    libraries = cargo_build("macos", NAME, debug, sorted(MACOS_TARGETS.values()))
+    libraries = cargo_build("macos", NAME, sorted(MACOS_TARGETS.values()))
     remove(bundle)
     binary.parent.mkdir(parents=True)
     run(["lipo", "-create", *libraries, "-output", binary])
@@ -298,14 +291,13 @@ def build_macos(debug: bool, identity: str) -> None:
     )
     copy_data(bundle / "Contents" / "Resources")
     remove(symbols)
-    if not debug:
-        run(["dsymutil", binary, "-o", symbols])
-        run(["strip", "-x", binary])
+    run(["dsymutil", binary, "-o", symbols])
+    run(["strip", "-x", binary])
     codesign(bundle, identity)
 
 
-def build_linux(debug: bool) -> None:
-    (library,) = cargo_build("linux", NAME, debug, [None])
+def build_linux() -> None:
+    (library,) = cargo_build("linux", NAME, [None])
     library_dir = INSTALL_DIR / "lib" / f"{platform.machine()}-linux-gnu" / "obs-plugins"
     remove(INSTALL_DIR / "lib")
     remove(INSTALL_DIR / "share")
@@ -314,8 +306,8 @@ def build_linux(debug: bool) -> None:
     copy_data(INSTALL_DIR / "share" / "obs" / "obs-plugins" / NAME)
 
 
-def build_windows(debug: bool) -> None:
-    (library,) = cargo_build("windows", NAME, debug, [None])
+def build_windows() -> None:
+    (library,) = cargo_build("windows", NAME, [None])
     root = INSTALL_DIR / NAME
     binary_dir = root / "bin" / "64bit"
     remove(root)
@@ -331,11 +323,11 @@ def build(args: argparse.Namespace) -> None:
     target_platform = host_platform()
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     if target_platform == "macos":
-        build_macos(args.debug, args.codesign_application_identity)
+        build_macos(args.codesign_application_identity)
     elif target_platform == "windows":
-        build_windows(args.debug)
+        build_windows()
     else:
-        build_linux(args.debug)
+        build_linux()
 
 
 def tar_xz(archive: Path, directory: Path, members: Iterable[str]) -> None:
@@ -360,11 +352,9 @@ def package_macos(args: argparse.Namespace) -> None:
 
 
 def package_macos_installer(args: argparse.Namespace, base: str) -> None:
-    values = plugin()
-    name = values["NAME"]
     staging = RELEASE_DIR / "installer"
     root = staging / "root" / "Library" / "Application Support" / "obs-studio" / "plugins"
-    bundle, _, _ = macos_paths(name)
+    bundle, _, _ = macos_paths(NAME)
     remove(staging)
     root.mkdir(parents=True)
     shutil.copytree(bundle, root / bundle.name, symlinks=True)
@@ -377,16 +367,16 @@ def package_macos_installer(args: argparse.Namespace, base: str) -> None:
             VERSION,
             "--root",
             staging / "root",
-            staging / f"{name}.pkg",
+            staging / f"{NAME}.pkg",
         ]
     )
     distribution = staging / "distribution.xml"
-    render(PACKAGING_DIR / "macos" / "distribution.xml.in", distribution, **values)
+    render(PACKAGING_DIR / "macos" / "distribution.xml.in", distribution, **plugin())
     resources = staging / "resources"
     resources.mkdir(parents=True)
     shutil.copy2(PACKAGING_DIR / "macos" / "background.png", resources / "background.png")
     package = RELEASE_DIR / f"{base}.pkg"
-    unsigned = staging / f"{name}-distribution.pkg"
+    unsigned = staging / f"{NAME}-distribution.pkg"
     run(
         [
             "productbuild",
@@ -414,7 +404,7 @@ def package_macos_installer(args: argparse.Namespace, base: str) -> None:
         unsigned.replace(package)
     remove(staging)
     if args.notarization_user or args.notarization_password:
-        notarize(package, name, args)
+        notarize(package, NAME, args)
 
 
 def notarize(package: Path, name: str, args: argparse.Namespace) -> None:
@@ -533,7 +523,6 @@ def find_inno_setup() -> str:
 
 
 def package_windows_installer(base: str) -> None:
-    values = plugin()
     script = RELEASE_DIR / "installer.iss"
     render(
         PACKAGING_DIR / "windows" / "installer.iss.in",
@@ -542,7 +531,7 @@ def package_windows_installer(base: str) -> None:
         INSTALL_DIR=INSTALL_DIR,
         OUTPUT_DIR=RELEASE_DIR,
         OUTPUT_NAME=f"{base}-Installer",
-        **values,
+        **plugin(),
     )
     run([find_inno_setup(), script, f"/DReleaseDir={INSTALL_DIR}"])
     remove(script)
@@ -576,7 +565,7 @@ def install(_: argparse.Namespace) -> None:
         )
         copy_data(destination / "data")
     else:
-        raise Error("installing is only supported on macOS and Linux; use the installer instead")
+        raise Error("installing is only supported on macOS and Linux")
 
 
 def clean(_: argparse.Namespace) -> None:
@@ -591,35 +580,14 @@ def main() -> None:
     deps_parser = subparsers.add_parser("deps")
     deps_parser.set_defaults(function=lambda args: dependencies())
     build_parser = subparsers.add_parser("build")
-    build_parser.add_argument("--debug", action="store_true")
-    build_parser.add_argument(
-        "--codesign-application-identity",
-        default="",
-        help="macOS application signing identity; ad-hoc signed when omitted",
-    )
+    build_parser.add_argument("--codesign-application-identity")
     build_parser.set_defaults(function=build)
     package_parser = subparsers.add_parser("package")
     package_parser.add_argument("--installer", action="store_true")
-    package_parser.add_argument(
-        "--codesign-application-identity",
-        default="",
-        help="macOS application signing identity; the notarization team id is taken from it",
-    )
-    package_parser.add_argument(
-        "--codesign-installer-identity",
-        default="",
-        help="macOS installer signing identity; the installer is unsigned when omitted",
-    )
-    package_parser.add_argument(
-        "--notarization-user",
-        default="",
-        help="Apple ID to notarize the installer with; not notarized when omitted",
-    )
-    package_parser.add_argument(
-        "--notarization-password",
-        default="",
-        help="app-specific password for --notarization-user",
-    )
+    package_parser.add_argument("--codesign-application-identity")
+    package_parser.add_argument("--codesign-installer-identity")
+    package_parser.add_argument("--notarization-user")
+    package_parser.add_argument("--notarization-password")
     package_parser.set_defaults(function=package)
     install_parser = subparsers.add_parser("install")
     install_parser.set_defaults(function=install)
