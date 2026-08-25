@@ -3,7 +3,6 @@ use crate::obs::{self, Audio, Frame, Level, media};
 use crate::obs_log;
 use crate::protocol::{
     AUDIO_CODEC_AAC_LC, AudioConfig, AudioFrame, VIDEO_CODEC_H264, VIDEO_CODEC_HEVC, VideoConfig, VideoFrame,
-    audio_codec_name, video_codec_name,
 };
 
 pub const INPUT_PADDING: usize = 64;
@@ -220,7 +219,7 @@ impl Decoder {
         self.video.close();
         self.got_keyframe = false;
         let Some(codec) = Codec::find(codec_id) else {
-            obs_log!(Level::Error, "no {} decoder available", video_codec_name(config.codec));
+            obs_log!(Level::Error, "no {} decoder available", config.video_codec_name());
             return false;
         };
         let Some(context) = self.video.begin(codec, config.record) else {
@@ -232,11 +231,7 @@ impl Decoder {
             self.video.attach_hardware(codec);
         }
         if !self.video.open(codec, config.codec, self.hardware, config.record) {
-            obs_log!(
-                Level::Error,
-                "failed to open the {} decoder",
-                video_codec_name(config.codec)
-            );
+            obs_log!(Level::Error, "failed to open the {} decoder", config.video_codec_name());
             return false;
         }
         self.logged_pixel_format = None;
@@ -248,7 +243,7 @@ impl Decoder {
         obs_log!(
             Level::Info,
             "decoding {} {}x{} in {where_}",
-            video_codec_name(config.codec),
+            config.video_codec_name(),
             config.width,
             config.height
         );
@@ -268,7 +263,7 @@ impl Decoder {
         }
         self.audio.close();
         let Some(codec) = Codec::find(codec_id) else {
-            obs_log!(Level::Error, "no {} decoder available", audio_codec_name(config.codec));
+            obs_log!(Level::Error, "no {} decoder available", config.audio_codec_name());
             return false;
         };
         let Some(context) = self.audio.begin(codec, config.record) else {
@@ -276,11 +271,7 @@ impl Decoder {
         };
         context.set_audio(config.sample_rate as i32, i32::from(config.channels));
         if !self.audio.open(codec, config.codec, false, config.record) {
-            obs_log!(
-                Level::Error,
-                "failed to open the {} decoder",
-                audio_codec_name(config.codec)
-            );
+            obs_log!(Level::Error, "failed to open the {} decoder", config.audio_codec_name());
             return false;
         }
         self.logged_sample_format = None;
@@ -288,7 +279,7 @@ impl Decoder {
         obs_log!(
             Level::Info,
             "decoding {} {} Hz {} channel",
-            audio_codec_name(config.codec),
+            config.audio_codec_name(),
             config.sample_rate,
             config.channels
         );

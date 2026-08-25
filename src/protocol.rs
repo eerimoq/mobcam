@@ -13,21 +13,6 @@ pub const VIDEO_CODEC_H264: u8 = 0;
 pub const VIDEO_CODEC_HEVC: u8 = 1;
 pub const AUDIO_CODEC_AAC_LC: u8 = 0;
 
-pub fn video_codec_name(codec: u8) -> &'static str {
-    match codec {
-        VIDEO_CODEC_H264 => "H.264",
-        VIDEO_CODEC_HEVC => "HEVC",
-        _ => "unknown",
-    }
-}
-
-pub fn audio_codec_name(codec: u8) -> &'static str {
-    match codec {
-        AUDIO_CODEC_AAC_LC => "AAC-LC",
-        _ => "unknown",
-    }
-}
-
 pub struct DeviceHello {
     pub version: u8,
     pub name: String,
@@ -41,6 +26,16 @@ pub struct VideoConfig<'a> {
     pub record: &'a [u8],
 }
 
+impl<'a> VideoConfig<'a> {
+    pub fn video_codec_name(&self) -> &'static str {
+        match self.codec {
+            VIDEO_CODEC_H264 => "H.264",
+            VIDEO_CODEC_HEVC => "HEVC",
+            _ => "unknown",
+        }
+    }
+}
+
 pub struct VideoFrame<'a> {
     pub pts_us: u64,
     pub keyframe: bool,
@@ -52,6 +47,15 @@ pub struct AudioConfig<'a> {
     pub sample_rate: u32,
     pub channels: u8,
     pub record: &'a [u8],
+}
+
+impl<'a> AudioConfig<'a> {
+    pub fn audio_codec_name(&self) -> &'static str {
+        match self.codec {
+            AUDIO_CODEC_AAC_LC => "AAC-LC",
+            _ => "unknown",
+        }
+    }
 }
 
 pub struct AudioFrame<'a> {
