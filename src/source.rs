@@ -300,7 +300,7 @@ impl Source {
         };
         match std::thread::Builder::new()
             .name(String::from("mobcam"))
-            .spawn(|| worker.run())
+            .spawn(|| crate::panic::guard("the receive thread", (), || worker.run()))
         {
             Ok(thread) => self.thread = Some(thread),
             Err(_) => obs_log!(Level::Error, "failed to start the receive thread"),
