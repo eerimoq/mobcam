@@ -183,7 +183,6 @@ def dependencies(target_platform=None):
         platform = dependency["os"][target_platform]
         url = platform["url"]
         sha256 = platform["sha256"]
-        label = f"{dependency['label']} {dependency['version']}"
         directory = DEPS_DIR / dependency["directory"]
         archive = DEPS_DIR / url.rsplit("/", 1)[1]
         marker = DEPS_DIR / f".dependency_{dependency['directory']}.sha256"
@@ -294,7 +293,6 @@ def build_macos(debug, identity):
         run(["dsymutil", binary, "-o", symbols])
         run(["strip", "-x", binary])
     codesign(bundle, identity)
-    return bundle
 
 
 def build_linux(debug):
@@ -305,7 +303,6 @@ def build_linux(debug):
     library_dir.mkdir(parents=True)
     shutil.copy2(library, library_dir / f"{NAME}.so")
     copy_data(INSTALL_DIR / "share" / "obs" / "obs-plugins" / NAME)
-    return library_dir / f"{NAME}.so"
 
 
 def build_windows(debug):
@@ -319,18 +316,17 @@ def build_windows(debug):
     if symbols.is_file():
         shutil.copy2(symbols, binary_dir / f"{NAME}.pdb")
     copy_data(root / "data")
-    return binary_dir / f"{NAME}.dll"
 
 
 def build(args):
     target_platform = host_platform()
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     if target_platform == "macos":
-        artifact = build_macos(args.debug, args.codesign_application_identity)
+        build_macos(args.debug, args.codesign_application_identity)
     elif target_platform == "windows":
-        artifact = build_windows(args.debug)
+        build_windows(args.debug)
     else:
-        artifact = build_linux(args.debug)
+        build_linux(args.debug)
 
 
 def tar_xz(archive, directory, members):
