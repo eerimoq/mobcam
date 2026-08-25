@@ -30,7 +30,6 @@ struct Stream {
 enum Received {
     Frame,
     Drained,
-    NotTransferred,
     Failed,
 }
 
@@ -139,7 +138,7 @@ impl Stream {
             return Received::Frame;
         }
         if !self.frame.download(&hardware.frame) {
-            return Received::NotTransferred;
+            return Received::Failed;
         }
         Received::Frame
     }
@@ -163,7 +162,6 @@ pub struct Decoder {
     hardware: bool,
     got_keyframe: bool,
     logged_pixel_format: Option<av::AVPixelFormat>,
-    logged_transfer_failure: bool,
     logged_sample_format: Option<av::AVSampleFormat>,
     logged_channels: Option<i32>,
 }
@@ -178,7 +176,6 @@ impl Decoder {
             hardware: false,
             got_keyframe: false,
             logged_pixel_format: None,
-            logged_transfer_failure: false,
             logged_sample_format: None,
             logged_channels: None,
         })
@@ -225,7 +222,6 @@ impl Decoder {
             return false;
         }
         self.logged_pixel_format = None;
-        self.logged_transfer_failure = false;
         obs_log!(
             Level::Info,
             "decoding {} {}x{} in {}",
@@ -292,12 +288,10 @@ impl Decoder {
         loop {
             match self.video.receive() {
                 Received::Drained => break,
-                Received::Failed => return false,
-                Received::NotTransferred => {
-                    if !self.logged_transfer_failure {
-                        self.logged_transfer_failure = true;
-                        obs_log!(Level::Warning, "failed to read a frame back from the hardware decoder");
-                    }
+                Received::Failed => {
+                    obs_log!(Level::Warning, "failed to receive a frame, reopening the decoder");
+                    self.video.close();
+                    return false;
                 }
                 Received::Frame => self.emit_video(sink),
             }
@@ -318,7 +312,7 @@ impl Decoder {
         loop {
             match self.audio.receive() {
                 Received::Drained => break,
-                Received::Failed | Received::NotTransferred => {
+                Received::Failed => {
                     obs_log!(Level::Warning, "failed to decode audio, flushing the decoder");
                     self.audio.flush();
                     break;
