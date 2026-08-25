@@ -167,8 +167,8 @@ impl Worker {
                 break;
             }
             let payload_size = length as usize;
-            buffer.clear();
             buffer.resize(payload_size + INPUT_PADDING, 0);
+            buffer[payload_size..].fill(0);
             if stream.read_exact(&mut buffer[..payload_size], &self.shared).is_err() {
                 break;
             }
