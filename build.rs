@@ -88,11 +88,6 @@ fn pkg_config(packages: &[&str], flags: &str) -> Vec<String> {
         .collect()
 }
 
-/// The libobs.pc of OBS 31 and later gives `-I${includedir}` even though the
-/// headers are installed in `${includedir}/obs`, and pkg-config drops the flag
-/// entirely when it names a default system directory such as `/usr/include`.
-/// Look for the headers in the `obs` subdirectory of every candidate as well,
-/// the includedir variable of the package included.
 fn obs_include_dir(cflags_dirs: &[PathBuf]) -> PathBuf {
     let mut candidates = cflags_dirs.to_vec();
     candidates.push(PathBuf::from(

@@ -2,9 +2,6 @@
 
 use mobcam_core::ffmpeg::{self, sys as av};
 
-/// How to read one output plane out of a decoder plane: `columns` samples from
-/// each of `rows` rows, taking every `column_step`-th sample of every
-/// `row_step`-th row, starting `offset` samples into each row.
 struct Grid {
     columns: usize,
     rows: usize,
@@ -14,7 +11,6 @@ struct Grid {
 }
 
 impl Grid {
-    /// The plane holds exactly one sample per output sample, in order.
     fn direct(columns: usize, rows: usize) -> Self {
         Self {
             columns,
@@ -25,7 +21,6 @@ impl Grid {
         }
     }
 
-    /// One of the two components of an interleaved chroma plane.
     fn component(&self, offset: usize) -> Self {
         Self {
             columns: self.columns,
@@ -36,12 +31,10 @@ impl Grid {
         }
     }
 
-    /// The rows of the decoder plane the grid reaches into.
     fn source_rows(&self) -> Option<usize> {
         self.rows.checked_sub(1)?.checked_mul(self.row_step)?.checked_add(1)
     }
 
-    /// The samples of a row the grid reaches into, the offset included.
     fn source_columns(&self) -> Option<usize> {
         self.columns
             .checked_sub(1)?
@@ -55,15 +48,12 @@ struct Plane<'a> {
     stride: usize,
 }
 
-/// The frame size I420 allows, which is the decoded one rounded down to even.
 fn size(frame: &ffmpeg::Frame) -> Option<(usize, usize)> {
     let width = usize::try_from(frame.width()).ok()? & !1;
     let height = usize::try_from(frame.height()).ok()? & !1;
     (width != 0 && height != 0).then_some((width, height))
 }
 
-/// Writes the frame into `out` as I420 and returns the size it was written at,
-/// or nothing if the pixel format is not one this understands.
 pub fn to_i420(frame: &ffmpeg::Frame, out: &mut Vec<u8>) -> Option<(u32, u32)> {
     let (width, height) = size(frame)?;
     let (chroma_width, chroma_height) = (width / 2, height / 2);
@@ -91,8 +81,6 @@ pub fn to_i420(frame: &ffmpeg::Frame, out: &mut Vec<u8>) -> Option<(u32, u32)> {
             };
             planar(out, frame, [(0, &luma, 0), (1, &chroma, 0), (2, &chroma, 0)])
         }
-        // Ten bit samples sit in the low bits for I010 and in the high bits for
-        // P010, so they need a different shift to become eight bit ones.
         av::AV_PIX_FMT_YUV420P10LE => planar(out, frame, [(0, &luma, 2), (1, &chroma, 2), (2, &chroma, 2)]),
         av::AV_PIX_FMT_P010LE => planar(out, frame, [(0, &luma, 8)]) && interleaved(out, frame, &chroma, 8, [0, 1]),
         _ => false,
@@ -100,16 +88,12 @@ pub fn to_i420(frame: &ffmpeg::Frame, out: &mut Vec<u8>) -> Option<(u32, u32)> {
     converted.then_some((width as u32, height as u32))
 }
 
-/// Copies whole planes, one output plane each. A `shift` of zero means the
-/// plane holds eight bit samples, anything else sixteen bit little endian ones.
 fn planar<const N: usize>(out: &mut Vec<u8>, frame: &ffmpeg::Frame, planes: [(usize, &Grid, u32); N]) -> bool {
     planes
         .into_iter()
         .all(|(index, grid, shift)| plane(frame, index, grid).is_some_and(|plane| copy(out, &plane, grid, shift)))
 }
 
-/// Splits an interleaved chroma plane into the two output planes, taking the
-/// component at the first offset for all of the first plane and so on.
 fn interleaved(out: &mut Vec<u8>, frame: &ffmpeg::Frame, grid: &Grid, shift: u32, offsets: [usize; 2]) -> bool {
     let Some(plane) = plane(frame, 1, grid) else {
         return false;

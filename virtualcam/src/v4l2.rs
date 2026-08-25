@@ -58,8 +58,6 @@ struct PixFormat {
     transfer_function: u32,
 }
 
-/// The kernel's `struct v4l2_format` payload: 200 bytes, aligned like the
-/// largest member of its union, which holds pointers.
 #[repr(C)]
 #[derive(Clone, Copy)]
 union FormatPayload {
@@ -81,7 +79,6 @@ const _: () = assert!(size_of::<PixFormat>() == 48);
 const DIRECTION_WRITE: c_ulong = 1;
 const DIRECTION_READ: c_ulong = 2;
 
-/// The `_IOC` encoding from the kernel's asm-generic/ioctl.h.
 const fn request(direction: c_ulong, number: c_ulong, size: usize) -> c_ulong {
     (direction << 30) | ((size as c_ulong) << 16) | ((b'V' as c_ulong) << 8) | number
 }
@@ -95,8 +92,6 @@ const _: () = {
     assert!(S_FMT == 0xc0d0_5605);
 };
 
-/// The picture a frame is written as. Setting it again is only needed when it
-/// changes, which normally never happens after the first frame.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct Picture {
     pub width: u32,
@@ -139,8 +134,6 @@ impl Device {
         &self.path
     }
 
-    /// Writes one I420 image, telling the driver about the picture first if it
-    /// is not the one already set.
     pub fn write_frame(&mut self, picture: Picture, data: &[u8]) -> Result<(), String> {
         if self.picture != Some(picture) {
             self.set_picture(picture)?;
@@ -211,7 +204,6 @@ fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(&bytes[..end]).into_owned()
 }
 
-/// Every v4l2loopback device that can be written to, lowest number first.
 pub fn loopback_devices() -> Vec<(PathBuf, String)> {
     let Ok(entries) = std::fs::read_dir("/dev") else {
         return Vec::new();

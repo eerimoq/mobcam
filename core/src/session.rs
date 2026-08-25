@@ -1,19 +1,12 @@
-//! The Moblin side of a connection: say hello, then read messages until the
-//! device goes away. Shared by the OBS plugin and the virtual camera.
-
 use crate::decoder::{Decoder, INPUT_PADDING, Sink};
 use crate::protocol::{self, DeviceHello};
 use crate::usbmux::{Abort, Stream};
 use crate::{Level, log};
 
-/// What a caller has to provide to run a session: somewhere to put the decoded
-/// frames, plus the device hello.
 pub trait Handler: Sink {
     fn hello(&mut self, hello: &DeviceHello);
 }
 
-/// Says hello and dispatches messages until the device disconnects, the stream
-/// breaks or `abort` says to stop.
 pub fn stream(stream: &mut Stream, decoder: &mut Decoder, handler: &mut dyn Handler, abort: &dyn Abort) {
     if !stream.write_all(&protocol::pack_host_hello()) {
         log!(Level::Warning, "failed to say hello");

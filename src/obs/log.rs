@@ -18,7 +18,6 @@ fn write(level: Level, message: &str) {
     }
 }
 
-/// Sends everything the core logs to the OBS log.
 pub fn install_logger() {
     mobcam_core::set_logger(write);
 }

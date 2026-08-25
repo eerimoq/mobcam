@@ -150,9 +150,6 @@ impl Stream {
     }
 }
 
-/// Where decoded frames go. Both callbacks borrow the decoder's frame, which is
-/// unreferenced as soon as they return, so a sink that keeps anything has to
-/// copy it.
 pub trait Sink {
     fn video(&mut self, frame: &ffmpeg::Frame);
     fn audio(&mut self, frame: &ffmpeg::Frame);
@@ -183,8 +180,6 @@ impl Decoder {
         self.hardware = hardware;
     }
 
-    /// Turns audio decoding off for sinks that have nowhere to play it, so the
-    /// audio messages are dropped without spending any time on them.
     pub fn set_audio(&mut self, audio: bool) {
         self.audio_wanted = audio;
         if !audio {

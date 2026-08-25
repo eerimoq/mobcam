@@ -156,7 +156,6 @@ struct Output<'a> {
     buffer: &'a mut Vec<u8>,
     serial: String,
     logged_pixel_format: Option<av::AVPixelFormat>,
-    /// Set when writing fails, which ends the session and the program.
     failure: Option<String>,
 }
 
