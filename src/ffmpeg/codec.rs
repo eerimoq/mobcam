@@ -15,20 +15,20 @@ impl Codec {
         self.0
     }
 
-    pub(super) fn hardware_pixel_format(self, kind: sys::AVHWDeviceType) -> Option<sys::AVPixelFormat> {
+    pub(super) fn supports_hardware_device(self, kind: sys::AVHWDeviceType) -> bool {
         for index in 0.. {
             let config = unsafe { sys::avcodec_get_hw_config(self.0, index) };
             if config.is_null() {
-                return None;
+                return false;
             }
             let config = unsafe { &*config };
             if (config.methods & sys::AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX as i32) != 0 && config.device_type == kind
             {
-                return Some(config.pix_fmt);
+                return true;
             }
         }
 
-        None
+        false
     }
 }
 

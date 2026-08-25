@@ -15,7 +15,6 @@ const TYPES: [sys::AVHWDeviceType; 7] = [
 pub struct Device {
     raw: *mut sys::AVBufferRef,
     kind: sys::AVHWDeviceType,
-    format: sys::AVPixelFormat,
 }
 
 impl Device {
@@ -24,18 +23,16 @@ impl Device {
     }
 
     fn open_kind(codec: Codec, kind: sys::AVHWDeviceType) -> Option<Self> {
-        let format = codec.hardware_pixel_format(kind)?;
+        if !codec.supports_hardware_device(kind) {
+            return None;
+        }
         let mut raw = ptr::null_mut();
         let created = unsafe { sys::av_hwdevice_ctx_create(&mut raw, kind, ptr::null(), ptr::null_mut(), 0) };
-        (created >= 0).then_some(Self { raw, kind, format })
+        (created >= 0).then_some(Self { raw, kind })
     }
 
     pub(super) fn as_ptr(&self) -> *const sys::AVBufferRef {
         self.raw
-    }
-
-    pub fn format(&self) -> sys::AVPixelFormat {
-        self.format
     }
 
     pub fn name(&self) -> String {

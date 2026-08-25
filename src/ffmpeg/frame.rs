@@ -22,6 +22,17 @@ impl Frame {
         unsafe { sys::av_frame_unref(self.0) }
     }
 
+    pub fn is_hardware(&self) -> bool {
+        !self.get().hw_frames_ctx.is_null()
+    }
+
+    pub fn move_from(&mut self, source: &mut Frame) {
+        unsafe {
+            sys::av_frame_unref(self.0);
+            sys::av_frame_move_ref(self.0, source.0);
+        }
+    }
+
     pub fn download(&mut self, source: &Frame) -> bool {
         unsafe {
             sys::av_frame_unref(self.0);

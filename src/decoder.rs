@@ -22,16 +22,9 @@ struct Stream {
     hardware: Option<Hardware>,
     packet: Packet,
     frame: ffmpeg::Frame,
-    decoded: Decoded,
     codec: u8,
     record: Vec<u8>,
     hardware_requested: bool,
-}
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum Decoded {
-    Own,
-    Hardware,
 }
 
 enum Received {
@@ -48,7 +41,6 @@ impl Stream {
             hardware: None,
             packet: Packet::new()?,
             frame: ffmpeg::Frame::new()?,
-            decoded: Decoded::Own,
             codec: 0,
             record: Vec::new(),
             hardware_requested: false,
@@ -139,26 +131,17 @@ impl Stream {
             Status::Error(_) => return Received::Failed,
             Status::Ok => (),
         }
-        let Some(hardware) = self.hardware.as_ref() else {
-            self.decoded = Decoded::Own;
+        let Some(hardware) = self.hardware.as_mut() else {
             return Received::Frame;
         };
-        if hardware.frame.pixel_format() != hardware.device.format() {
-            self.decoded = Decoded::Hardware;
+        if !hardware.frame.is_hardware() {
+            self.frame.move_from(&mut hardware.frame);
             return Received::Frame;
         }
         if !self.frame.download(&hardware.frame) {
             return Received::NotTransferred;
         }
-        self.decoded = Decoded::Own;
         Received::Frame
-    }
-
-    fn decoded(&self) -> &ffmpeg::Frame {
-        match self.hardware.as_ref() {
-            Some(hardware) if self.decoded == Decoded::Hardware => &hardware.frame,
-            _ => &self.frame,
-        }
     }
 
     fn release(&mut self) {
@@ -347,7 +330,7 @@ impl Decoder {
     }
 
     fn emit_video(&mut self, sink: &mut dyn Sink) {
-        let source = self.video.decoded();
+        let source = &self.video.frame;
         let Some((format, format_is_full_range)) = media::video_format(source.pixel_format()) else {
             if self.logged_pixel_format != Some(source.pixel_format()) {
                 self.logged_pixel_format = Some(source.pixel_format());
@@ -374,12 +357,11 @@ impl Decoder {
             frame.linesize[plane] = linesize as u32;
         }
         media::set_color_parameters(&mut frame, media::colorspace(source), full_range);
-        let pts = source.pts();
-        sink.video(&mut frame, pts as u64);
+        sink.video(&mut frame, source.pts() as u64);
     }
 
     fn emit_audio(&mut self, sink: &mut dyn Sink) {
-        let source = self.audio.decoded();
+        let source = &self.audio.frame;
         let Some(format) = media::audio_format(source.sample_format()) else {
             if self.logged_sample_format != Some(source.sample_format()) {
                 self.logged_sample_format = Some(source.sample_format());
@@ -410,7 +392,6 @@ impl Decoder {
         for plane in 0..planes {
             audio.data[plane] = source.audio_plane(plane);
         }
-        let pts = source.pts();
-        sink.audio(&mut audio, pts as u64);
+        sink.audio(&mut audio, source.pts() as u64);
     }
 }
