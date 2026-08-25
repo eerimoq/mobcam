@@ -13,14 +13,14 @@ defaults:
     shell: bash
 jobs:
   style-and-lint:
-    name: Check Lints
+    name: Style and lint
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: Check Lints
+      - name: Style and lint
         run: ./ci.py style_and_lint
   macos-build:
     name: Build for macOS
