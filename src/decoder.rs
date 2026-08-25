@@ -55,6 +55,13 @@ impl Stream {
         })
     }
 
+    pub fn get_decoder_name(&self) -> String {
+        match self.hardware.as_ref() {
+            Some(hardware) => hardware.device.name(),
+            None => String::from("software"),
+        }
+    }
+
     fn is_open(&self) -> bool {
         self.context.as_ref().is_some_and(Context::is_open)
     }
@@ -236,16 +243,13 @@ impl Decoder {
         }
         self.logged_pixel_format = None;
         self.logged_transfer_failure = false;
-        let where_ = match self.video.hardware.as_ref() {
-            Some(hardware) => hardware.device.name(),
-            None => String::from("software"),
-        };
         obs_log!(
             Level::Info,
-            "decoding {} {}x{} in {where_}",
+            "decoding {} {}x{} in {}",
             config.video_codec_name(),
             config.width,
-            config.height
+            config.height,
+            self.video.get_decoder_name()
         );
         true
     }
