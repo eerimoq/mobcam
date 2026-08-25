@@ -2,16 +2,6 @@ use super::Codec;
 use super::sys;
 use std::ptr;
 
-const TYPES: [sys::AVHWDeviceType; 7] = [
-    sys::AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
-    sys::AV_HWDEVICE_TYPE_D3D11VA,
-    sys::AV_HWDEVICE_TYPE_CUDA,
-    sys::AV_HWDEVICE_TYPE_VAAPI,
-    sys::AV_HWDEVICE_TYPE_QSV,
-    sys::AV_HWDEVICE_TYPE_DXVA2,
-    sys::AV_HWDEVICE_TYPE_VDPAU,
-];
-
 pub struct Device {
     raw: *mut sys::AVBufferRef,
     kind: sys::AVHWDeviceType,
@@ -19,13 +9,10 @@ pub struct Device {
 
 impl Device {
     pub fn open(codec: Codec) -> Option<Self> {
-        TYPES.into_iter().find_map(|kind| Self::open_kind(codec, kind))
+        codec.hardware_device_types().find_map(Self::open_kind)
     }
 
-    fn open_kind(codec: Codec, kind: sys::AVHWDeviceType) -> Option<Self> {
-        if !codec.supports_hardware_device(kind) {
-            return None;
-        }
+    fn open_kind(kind: sys::AVHWDeviceType) -> Option<Self> {
         let mut raw = ptr::null_mut();
         let created = unsafe { sys::av_hwdevice_ctx_create(&mut raw, kind, ptr::null(), ptr::null_mut(), 0) };
         (created >= 0).then_some(Self { raw, kind })

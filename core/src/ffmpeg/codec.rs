@@ -15,20 +15,14 @@ impl Codec {
         self.0
     }
 
-    pub(super) fn supports_hardware_device(self, kind: sys::AVHWDeviceType) -> bool {
-        for index in 0.. {
-            let config = unsafe { sys::avcodec_get_hw_config(self.0, index) };
-            if config.is_null() {
-                return false;
-            }
-            let config = unsafe { &*config };
-            if (config.methods & sys::AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX as i32) != 0 && config.device_type == kind
-            {
-                return true;
-            }
-        }
-
-        false
+    pub(super) fn hardware_device_types(self) -> impl Iterator<Item = sys::AVHWDeviceType> {
+        (0..)
+            .map_while(move |index| {
+                let config = unsafe { sys::avcodec_get_hw_config(self.0, index) };
+                (!config.is_null()).then(|| unsafe { *config })
+            })
+            .filter(|config| (config.methods & sys::AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX as i32) != 0)
+            .map(|config| config.device_type)
     }
 }
 
