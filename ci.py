@@ -45,13 +45,12 @@ VARIANTS: dict[str, list[str]] = {
 def output(name: str, value: str) -> None:
     path = os.environ.get("GITHUB_OUTPUT")
     if path is None:
-        print(f"{name}={value}", flush=True)
         return
     with open(path, "a", encoding="utf-8") as fout:
         fout.write(f"{name}={value}\n")
 
 
-def build_py(*arguments: str | Path) -> subprocess.CompletedProcess[Any]:
+def build_py(*arguments: str) -> subprocess.CompletedProcess[Any]:
     return run([sys.executable, REPO_ROOT / "build.py", *arguments])
 
 
@@ -71,7 +70,6 @@ def setup() -> Platform:
             ]
             + UBUNTU_PACKAGES
         )
-    run(["rustup", "show", "active-toolchain"])
     if TARGETS[platform]:
         run(["rustup", "target", "add"] + TARGETS[platform])
     return platform
@@ -162,7 +160,7 @@ def release(_: argparse.Namespace) -> None:
                 for path in sorted(directory.glob(f"*.{suffix}")):
                     print(f"    {path.relative_to(root)}")
                     shutil.move(path, root / path.name)
-    output("pluginName", DISPLAY_NAME)
+    output("pluginDisplayName", DISPLAY_NAME)
 
 
 def main() -> None:
