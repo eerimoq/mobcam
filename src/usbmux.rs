@@ -17,10 +17,12 @@ const TYPE_PLIST: u32 = 8;
 const MAX_REPLY_SIZE: u32 = 4 * 1024 * 1024;
 const CLIENT_NAME: &str = "obs-mobcam";
 
-#[cfg(unix)]
-pub type Stream = UnixStream;
-#[cfg(windows)]
-pub type Stream = TcpStream;
+pub struct Stream {
+    #[cfg(unix)]
+    inner: UnixStream,
+    #[cfg(windows)]
+    inner: TcpStream,
+}
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Io {
@@ -39,40 +41,42 @@ impl<F: Fn() -> bool> Abort for F {
     }
 }
 
-pub fn connect_usbmuxd() -> Option<Stream> {
-    #[cfg(unix)]
-    let stream = UnixStream::connect(USBMUXD_PATH).ok()?;
-    #[cfg(windows)]
-    let stream = {
-        let stream = TcpStream::connect(USBMUXD_ADDRESS).ok()?;
-        let _ = stream.set_nodelay(true);
-        stream
-    };
-    stream.set_read_timeout(Some(POLL_INTERVAL)).ok()?;
-    Some(stream)
-}
-
-pub fn write_all(stream: &mut Stream, data: &[u8]) -> bool {
-    stream.write_all(data).is_ok()
-}
-
-pub fn read_exact(stream: &mut Stream, buffer: &mut [u8], abort: &dyn Abort) -> Result<(), Io> {
-    let mut filled = 0;
-    while filled < buffer.len() {
-        if abort.aborted() {
-            return Err(Io::Aborted);
-        }
-        match stream.read(&mut buffer[filled..]) {
-            Ok(0) => return Err(Io::Closed),
-            Ok(read) => filled += read,
-            Err(error) => match error.kind() {
-                ErrorKind::WouldBlock | ErrorKind::TimedOut => continue,
-                ErrorKind::Interrupted => continue,
-                _ => return Err(Io::Error),
-            },
-        }
+impl Stream {
+    pub fn connect_usbmuxd() -> Option<Self> {
+        #[cfg(unix)]
+        let inner = UnixStream::connect(USBMUXD_PATH).ok()?;
+        #[cfg(windows)]
+        let inner = {
+            let inner = TcpStream::connect(USBMUXD_ADDRESS).ok()?;
+            let _ = inner.set_nodelay(true);
+            inner
+        };
+        inner.set_read_timeout(Some(POLL_INTERVAL)).ok()?;
+        Some(Self { inner })
     }
-    Ok(())
+
+    pub fn write_all(&mut self, data: &[u8]) -> bool {
+        self.inner.write_all(data).is_ok()
+    }
+
+    pub fn read_exact(&mut self, buffer: &mut [u8], abort: &dyn Abort) -> Result<(), Io> {
+        let mut filled = 0;
+        while filled < buffer.len() {
+            if abort.aborted() {
+                return Err(Io::Aborted);
+            }
+            match self.inner.read(&mut buffer[filled..]) {
+                Ok(0) => return Err(Io::Closed),
+                Ok(read) => filled += read,
+                Err(error) => match error.kind() {
+                    ErrorKind::WouldBlock | ErrorKind::TimedOut => continue,
+                    ErrorKind::Interrupted => continue,
+                    _ => return Err(Io::Error),
+                },
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -108,7 +112,7 @@ struct Session {
 
 impl Session {
     fn open() -> Result<Self, Error> {
-        let stream = connect_usbmuxd().ok_or(Error::NoDaemon)?;
+        let stream = Stream::connect_usbmuxd().ok_or(Error::NoDaemon)?;
         Ok(Self { stream, tag: 0 })
     }
 
@@ -124,16 +128,16 @@ impl Session {
         header[4..8].copy_from_slice(&VERSION_PLIST.to_le_bytes());
         header[8..12].copy_from_slice(&TYPE_PLIST.to_le_bytes());
         header[12..16].copy_from_slice(&self.tag.to_le_bytes());
-        if !write_all(&mut self.stream, &header) || !write_all(&mut self.stream, &body) {
+        if !self.stream.write_all(&header) || !self.stream.write_all(&body) {
             return Err(Error::Failed);
         }
-        read_exact(&mut self.stream, &mut header, abort).map_err(Self::io_error)?;
+        self.stream.read_exact(&mut header, abort).map_err(Self::io_error)?;
         let total = u32::from_le_bytes(header[0..4].try_into().expect("four bytes"));
         if total < HEADER_SIZE as u32 || total > MAX_REPLY_SIZE {
             return Err(Error::Failed);
         }
         let mut payload = vec![0u8; total as usize - HEADER_SIZE];
-        read_exact(&mut self.stream, &mut payload, abort).map_err(Self::io_error)?;
+        self.stream.read_exact(&mut payload, abort).map_err(Self::io_error)?;
         decode(&payload)
     }
 

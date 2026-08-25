@@ -143,7 +143,7 @@ impl Worker {
     }
 
     fn stream(&mut self, mut stream: Stream, serial: &str) {
-        if !usbmux::write_all(&mut stream, &protocol::pack_host_hello()) {
+        if !stream.write_all(&protocol::pack_host_hello()) {
             obs_log!(Level::Warning, "failed to say hello to {serial}");
             return;
         }
@@ -158,14 +158,14 @@ impl Worker {
         let mut buffer: Vec<u8> = Vec::new();
         loop {
             let mut header = [0u8; protocol::MESSAGE_HEADER_SIZE];
-            if usbmux::read_exact(&mut stream, &mut header, &self.shared).is_err() {
+            if stream.read_exact(&mut header, &self.shared).is_err() {
                 break;
             }
             let (kind, length) = protocol::unpack_message_header(&header);
             let payload_size = length as usize;
             buffer.clear();
             buffer.resize(payload_size + INPUT_PADDING, 0);
-            if usbmux::read_exact(&mut stream, &mut buffer[..payload_size], &self.shared).is_err() {
+            if stream.read_exact(&mut buffer[..payload_size], &self.shared).is_err() {
                 break;
             }
             if !handle_message(decoder, &mut output, kind, &buffer[..payload_size], serial) {
