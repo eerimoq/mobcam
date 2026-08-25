@@ -1,6 +1,7 @@
 use crate::obs::OwnedData;
 
 pub const MESSAGE_HEADER_SIZE: usize = 5;
+pub const MAX_MESSAGE_SIZE: u32 = 100 * 1024 * 1024;
 pub const MESSAGE_HOST_HELLO: u8 = 0x01;
 pub const MESSAGE_DEVICE_HELLO: u8 = 0x02;
 pub const MESSAGE_VIDEO_CONFIG: u8 = 0x03;

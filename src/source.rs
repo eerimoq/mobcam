@@ -162,6 +162,10 @@ impl Worker {
                 break;
             }
             let (kind, length) = protocol::unpack_message_header(&header);
+            if length > protocol::MAX_MESSAGE_SIZE {
+                obs_log!(Level::Warning, "message of {length} bytes is too big");
+                break;
+            }
             let payload_size = length as usize;
             buffer.clear();
             buffer.resize(payload_size + INPUT_PADDING, 0);
