@@ -226,27 +226,6 @@ def cargo_target_dir() -> Path:
     return Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
 
 
-def cargo_executable() -> Path:
-    directories: list[Path] = []
-    if "CARGO_HOME" in os.environ:
-        directories.append(Path(os.environ["CARGO_HOME"]) / "bin")
-    directories.append(Path.home() / ".cargo" / "bin")
-    if "HOMEBREW_PREFIX" in os.environ:
-        directories.append(Path(os.environ["HOMEBREW_PREFIX"]) / "opt" / "rustup" / "bin")
-    directories += [
-        Path("/opt/homebrew/opt/rustup/bin"),
-        Path("/usr/local/opt/rustup/bin"),
-    ]
-    for directory in directories:
-        executable = shutil.which("cargo", path=str(directory))
-        if executable:
-            return Path(executable)
-    executable = shutil.which("cargo")
-    if executable:
-        return Path(executable)
-    raise Error("cargo not found; install a toolchain from https://rustup.rs")
-
-
 def library_name(target_platform: Platform, name: str) -> str:
     if target_platform == "macos":
         return f"lib{name}.dylib"
@@ -264,14 +243,12 @@ def cargo_build(
 ) -> list[Path]:
     profile = "dev" if debug else "release"
     profile_directory = "debug" if debug else "release"
-    cargo = cargo_executable()
     environment = dict(os.environ)
     libraries: list[Path] = []
-    environment["PATH"] = os.pathsep.join([str(cargo.parent), environment.get("PATH", "")])
     if target_platform == "macos":
         environment["MACOSX_DEPLOYMENT_TARGET"] = MACOS_DEPLOYMENT_TARGET
     for target in targets:
-        command: list[str | Path] = [cargo, "build", "--locked", "--profile", profile]
+        command: list[str | Path] = ["cargo", "build", "--locked", "--profile", profile]
         if target is not None:
             command += ["--target", target]
         run(command, cwd=ROOT, env=environment)
