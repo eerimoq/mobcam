@@ -1,6 +1,7 @@
 use crate::convert;
-use crate::options::{self, Options, Parsed};
+use crate::options::Options;
 use crate::v4l2;
+use clap::Parser;
 use mobcam_core::decoder::{Decoder, Sink};
 use mobcam_core::ffmpeg::{self, sys as av};
 use mobcam_core::protocol::DeviceHello;
@@ -8,7 +9,7 @@ use mobcam_core::session::{self, Handler};
 use mobcam_core::usbmux;
 use mobcam_core::{Level, log};
 use std::ffi::c_int;
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -44,21 +45,10 @@ fn write_log(level: Level, message: &str) {
 
 pub fn main() -> ExitCode {
     mobcam_core::set_logger(write_log);
-    let parsed = match options::parse(std::env::args().skip(1)) {
-        Ok(parsed) => parsed,
-        Err(message) => {
-            eprintln!("{message}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let options = match parsed {
-        Parsed::Text(text) => {
-            print!("{text}");
-            return ExitCode::SUCCESS;
-        }
-        Parsed::List => return list(),
-        Parsed::Run(options) => options,
-    };
+    let options = Options::parse();
+    if options.list {
+        return list();
+    }
     match run(options) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
@@ -88,9 +78,9 @@ fn list() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn choose_device(chosen: Option<PathBuf>) -> Result<v4l2::Device, String> {
+fn choose_device(chosen: Option<&Path>) -> Result<v4l2::Device, String> {
     if let Some(path) = chosen {
-        return v4l2::Device::open(&path);
+        return v4l2::Device::open(path);
     }
     let (path, _) = v4l2::loopback_devices().into_iter().next().ok_or(
         "no v4l2loopback device found; load the module with `sudo modprobe v4l2loopback` \
@@ -100,7 +90,7 @@ fn choose_device(chosen: Option<PathBuf>) -> Result<v4l2::Device, String> {
 }
 
 fn run(options: Options) -> Result<(), String> {
-    let mut device = choose_device(options.device)?;
+    let mut device = choose_device(options.device.as_deref())?;
     let mut decoder = Decoder::new().ok_or("failed to create the decoder")?;
     decoder.set_hardware(options.hardware_decode);
     decoder.set_audio(false);
@@ -113,7 +103,7 @@ fn run(options: Options) -> Result<(), String> {
     let mut reported_failure = None;
     let mut buffer = Vec::new();
     while !stopping() {
-        match usbmux::connect_to_device(&options.udid, options.port, &abort) {
+        match usbmux::connect_to_device(options.udid(), options.port, &abort) {
             Ok((mut stream, serial)) => {
                 reported_failure = None;
                 let mut output = Output {
