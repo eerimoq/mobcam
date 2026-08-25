@@ -273,7 +273,7 @@ impl Decoder {
         let Some(context) = self.audio.begin(codec, config.record) else {
             return false;
         };
-        context.set_audio(config.sample_rate as i32, i32::from(config.channels));
+        context.set_audio(config.sample_rate, i32::from(config.channels));
         if !self.audio.open(codec, config.codec, false, config.record) {
             obs_log!(Level::Error, "failed to open the {} decoder", config.audio_codec_name());
             return false;

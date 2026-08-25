@@ -1,11 +1,79 @@
-use crate::socket::{self, Abort, Io, Stream};
 use plist::{Dictionary, Value};
+use std::io::{ErrorKind, Read, Write};
+#[cfg(windows)]
+use std::net::TcpStream;
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
+use std::time::Duration;
 
+const POLL_INTERVAL: Duration = Duration::from_millis(100);
+#[cfg(unix)]
+const USBMUXD_PATH: &str = "/var/run/usbmuxd";
+#[cfg(windows)]
+const USBMUXD_ADDRESS: &str = "127.0.0.1:27015";
 const HEADER_SIZE: usize = 16;
 const VERSION_PLIST: u32 = 1;
 const TYPE_PLIST: u32 = 8;
 const MAX_REPLY_SIZE: u32 = 4 * 1024 * 1024;
 const CLIENT_NAME: &str = "obs-mobcam";
+
+#[cfg(unix)]
+pub type Stream = UnixStream;
+#[cfg(windows)]
+pub type Stream = TcpStream;
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum Io {
+    Aborted,
+    Closed,
+    Error,
+}
+
+pub trait Abort {
+    fn aborted(&self) -> bool;
+}
+
+impl<F: Fn() -> bool> Abort for F {
+    fn aborted(&self) -> bool {
+        self()
+    }
+}
+
+pub fn connect_usbmuxd() -> Option<Stream> {
+    #[cfg(unix)]
+    let stream = UnixStream::connect(USBMUXD_PATH).ok()?;
+    #[cfg(windows)]
+    let stream = {
+        let stream = TcpStream::connect(USBMUXD_ADDRESS).ok()?;
+        let _ = stream.set_nodelay(true);
+        stream
+    };
+    stream.set_read_timeout(Some(POLL_INTERVAL)).ok()?;
+    Some(stream)
+}
+
+pub fn write_all(stream: &mut Stream, data: &[u8]) -> bool {
+    stream.write_all(data).is_ok()
+}
+
+pub fn read_exact(stream: &mut Stream, buffer: &mut [u8], abort: &dyn Abort) -> Result<(), Io> {
+    let mut filled = 0;
+    while filled < buffer.len() {
+        if abort.aborted() {
+            return Err(Io::Aborted);
+        }
+        match stream.read(&mut buffer[filled..]) {
+            Ok(0) => return Err(Io::Closed),
+            Ok(read) => filled += read,
+            Err(error) => match error.kind() {
+                ErrorKind::WouldBlock | ErrorKind::TimedOut => continue,
+                ErrorKind::Interrupted => continue,
+                _ => return Err(Io::Error),
+            },
+        }
+    }
+    Ok(())
+}
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Error {
@@ -40,7 +108,7 @@ struct Session {
 
 impl Session {
     fn open() -> Result<Self, Error> {
-        let stream = socket::connect_usbmuxd().ok_or(Error::NoDaemon)?;
+        let stream = connect_usbmuxd().ok_or(Error::NoDaemon)?;
         Ok(Self { stream, tag: 0 })
     }
 
@@ -56,16 +124,16 @@ impl Session {
         header[4..8].copy_from_slice(&VERSION_PLIST.to_le_bytes());
         header[8..12].copy_from_slice(&TYPE_PLIST.to_le_bytes());
         header[12..16].copy_from_slice(&self.tag.to_le_bytes());
-        if !socket::write_all(&mut self.stream, &header) || !socket::write_all(&mut self.stream, &body) {
+        if !write_all(&mut self.stream, &header) || !write_all(&mut self.stream, &body) {
             return Err(Error::Failed);
         }
-        socket::read_exact(&mut self.stream, &mut header, abort).map_err(Self::io_error)?;
+        read_exact(&mut self.stream, &mut header, abort).map_err(Self::io_error)?;
         let total = u32::from_le_bytes(header[0..4].try_into().expect("four bytes"));
         if total < HEADER_SIZE as u32 || total > MAX_REPLY_SIZE {
             return Err(Error::Failed);
         }
         let mut payload = vec![0u8; total as usize - HEADER_SIZE];
-        socket::read_exact(&mut self.stream, &mut payload, abort).map_err(Self::io_error)?;
+        read_exact(&mut self.stream, &mut payload, abort).map_err(Self::io_error)?;
         decode(&payload)
     }
 

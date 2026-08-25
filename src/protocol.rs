@@ -44,7 +44,7 @@ pub struct VideoFrame<'a> {
 
 pub struct AudioConfig<'a> {
     pub codec: u8,
-    pub sample_rate: u32,
+    pub sample_rate: i32,
     pub channels: u8,
     pub record: &'a [u8],
 }
@@ -133,7 +133,7 @@ pub fn unpack_audio_config(payload: &[u8]) -> Option<AudioConfig<'_>> {
     let record_size = u32_be(&payload[6..]) as usize;
     Some(AudioConfig {
         codec: payload[0],
-        sample_rate: u32_be(&payload[1..]),
+        sample_rate: u32_be(&payload[1..]) as i32,
         channels: payload[5],
         record: payload.get(10..10usize.checked_add(record_size)?)?,
     })

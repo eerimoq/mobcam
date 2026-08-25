@@ -4,7 +4,6 @@ pub mod ffmpeg;
 pub mod obs;
 pub mod panic;
 pub mod protocol;
-pub mod socket;
 pub mod source;
 pub mod usbmux;
 use obs::Level;

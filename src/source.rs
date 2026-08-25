@@ -3,8 +3,7 @@ use crate::devices::{Device, Devices};
 use crate::obs::{self, Audio, Data, Frame, Level, Properties, sys, text};
 use crate::obs_log;
 use crate::protocol;
-use crate::socket::{self, Abort, Stream};
-use crate::usbmux;
+use crate::usbmux::{self, Abort, Stream};
 use std::ffi::{CStr, c_char, c_void};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -144,7 +143,7 @@ impl Worker {
     }
 
     fn stream(&mut self, mut stream: Stream, serial: &str) {
-        if !socket::write_all(&mut stream, &protocol::pack_host_hello()) {
+        if !usbmux::write_all(&mut stream, &protocol::pack_host_hello()) {
             obs_log!(Level::Warning, "failed to say hello to {serial}");
             return;
         }
@@ -159,14 +158,14 @@ impl Worker {
         let mut buffer: Vec<u8> = Vec::new();
         loop {
             let mut header = [0u8; protocol::MESSAGE_HEADER_SIZE];
-            if socket::read_exact(&mut stream, &mut header, &self.shared).is_err() {
+            if usbmux::read_exact(&mut stream, &mut header, &self.shared).is_err() {
                 break;
             }
             let (kind, length) = protocol::unpack_message_header(&header);
             let payload_size = length as usize;
             buffer.clear();
             buffer.resize(payload_size + INPUT_PADDING, 0);
-            if socket::read_exact(&mut stream, &mut buffer[..payload_size], &self.shared).is_err() {
+            if usbmux::read_exact(&mut stream, &mut buffer[..payload_size], &self.shared).is_err() {
                 break;
             }
             if !handle_message(decoder, &mut output, kind, &buffer[..payload_size], serial) {
