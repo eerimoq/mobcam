@@ -69,6 +69,18 @@ impl Shared {
         self.width.store(0, Ordering::Relaxed);
         self.height.store(0, Ordering::Relaxed);
     }
+
+    fn load(&self, settings: &Data) {
+        if let Ok(mut devices) = self.devices.lock() {
+            devices.load(settings);
+        }
+    }
+
+    fn save(&self, settings: &Data) {
+        if let Ok(devices) = self.devices.lock() {
+            devices.save(settings);
+        }
+    }
 }
 
 impl Abort for Arc<Shared> {
@@ -320,18 +332,6 @@ impl Source {
         self.shared.clear_video();
     }
 
-    fn load(&mut self, settings: &Data) {
-        if let Ok(mut devices) = self.shared.devices.lock() {
-            devices.load(settings);
-        }
-    }
-
-    fn save(&self, settings: &Data) {
-        if let Ok(devices) = self.shared.devices.lock() {
-            devices.save(settings);
-        }
-    }
-
     fn update(&mut self, settings: &Data) {
         let serial = settings.string(SETTING_DEVICE);
         let port = settings.int(SETTING_PORT) as u16;
@@ -408,7 +408,7 @@ extern "C" fn create(settings: *mut sys::obs_data_t, source: *mut sys::obs_sourc
     crate::panic::guard("create", std::ptr::null_mut(), || {
         let mut context = Box::new(Source::new(obs::Source::from_raw(source)));
         let settings = Data::from_raw(settings);
-        context.load(&settings);
+        context.shared.load(&settings);
         context.update(&settings);
         Box::into_raw(context) as *mut c_void
     })
@@ -428,7 +428,7 @@ extern "C" fn update(data: *mut c_void, settings: *mut sys::obs_data_t) {
 
 extern "C" fn save(data: *mut c_void, settings: *mut sys::obs_data_t) {
     crate::panic::guard("save", (), || {
-        source_of(data).save(&Data::from_raw(settings));
+        source_of(data).shared.save(&Data::from_raw(settings));
     })
 }
 
