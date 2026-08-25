@@ -1,6 +1,3 @@
-//! Reads video from an iPhone or iPad over USB and writes it to a
-//! v4l2loopback device, so that it shows up as a camera everywhere else.
-
 use crate::convert;
 use crate::options::{self, Options, Parsed};
 use crate::v4l2;
@@ -106,7 +103,6 @@ fn run(options: Options) -> Result<(), String> {
     let mut device = choose_device(options.device)?;
     let mut decoder = Decoder::new().ok_or("failed to create the decoder")?;
     decoder.set_hardware(options.hardware_decode);
-    // A v4l2loopback device carries video only, so audio is left undecoded.
     decoder.set_audio(false);
     unsafe {
         signal(SIGINT, stop as extern "C" fn(c_int) as usize);
@@ -187,8 +183,6 @@ impl Sink for Output<'_> {
             },
         };
         if let Err(error) = self.device.write_frame(picture, self.buffer) {
-            // Nothing is going to fix itself, so give up rather than fail for
-            // every frame from here on.
             self.failure = Some(format!("failed to write a frame: {error}"));
             STOPPING.store(true, Ordering::Relaxed);
         }
