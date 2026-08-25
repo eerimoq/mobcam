@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -16,6 +17,7 @@ from build import MACOS_TARGETS
 from build import NAME
 from build import VERSION
 from build import Error
+from build import Platform
 from build import host_platform
 from build import run
 
@@ -27,7 +29,7 @@ UBUNTU_PACKAGES = [
     "libsimde-dev",
     "pkg-config",
 ]
-TARGETS = {
+TARGETS: dict[Platform, list[str]] = {
     "macos": sorted(MACOS_TARGETS.values()),
     "windows": ["x86_64-pc-windows-msvc"],
     "linux": [],
@@ -35,14 +37,14 @@ TARGETS = {
 ARCHITECTURES = sorted(MACOS_TARGETS)
 KEYCHAIN_TIMEOUT = "21600"
 KEYCHAIN_TOOLS = ["/usr/bin/codesign", "/usr/bin/security", "/usr/bin/xcrun"]
-VARIANTS = {
+VARIANTS: dict[str, list[str]] = {
     "windows-x64": ["zip", "exe"],
     "macos-universal": ["tar.xz", "pkg"],
     "ubuntu-24.04-x86_64": ["tar.xz", "deb"],
 }
 
 
-def output(name, value):
+def output(name: str, value: str) -> None:
     path = os.environ.get("GITHUB_OUTPUT")
     if path is None:
         print(f"{name}={value}", flush=True)
@@ -51,11 +53,11 @@ def output(name, value):
         fout.write(f"{name}={value}\n")
 
 
-def build_py(*arguments):
+def build_py(*arguments: str | Path) -> subprocess.CompletedProcess[Any]:
     return run([sys.executable, ROOT / "build.py", *arguments])
 
 
-def setup():
+def setup() -> Platform:
     platform = host_platform()
     if platform == "linux":
         run(["sudo", "add-apt-repository", "--yes", "ppa:obsproject/obs-studio"])
@@ -77,7 +79,7 @@ def setup():
     return platform
 
 
-def import_certificate(args, password):
+def import_certificate(args: argparse.Namespace, password: str) -> None:
     temporary = Path(os.environ["RUNNER_TEMP"])
     certificate = temporary / "build_certificate.p12"
     certificate.write_bytes(base64.b64decode(args.codesign_certificate))
@@ -86,23 +88,21 @@ def import_certificate(args, password):
     run(["security", "create-keychain", "-p", password, keychain])
     run(["security", "set-keychain-settings", "-lut", KEYCHAIN_TIMEOUT, keychain])
     run(["security", "unlock-keychain", "-p", password, keychain])
-    run(
-        [
-            "security",
-            "import",
-            certificate,
-            "-P",
-            args.codesign_certificate_password,
-            "-A",
-            "-t",
-            "cert",
-            "-f",
-            "pkcs12",
-            "-k",
-            keychain,
-        ]
-        + tools,
-    )
+    command: list[str | Path] = [
+        "security",
+        "import",
+        certificate,
+        "-P",
+        args.codesign_certificate_password,
+        "-A",
+        "-t",
+        "cert",
+        "-f",
+        "pkcs12",
+        "-k",
+        keychain,
+    ]
+    run([*command, *tools])
     run(
         [
             "security",
@@ -119,19 +119,19 @@ def import_certificate(args, password):
     run(["security", "list-keychain", "-d", "user", "-s", keychain, "login-keychain"])
 
 
-def codesigning(args):
+def codesigning(args: argparse.Namespace) -> bool:
     import_certificate(args, os.urandom(16).hex())
     return True
 
 
-def style_and_lint(_):
+def style_and_lint(_: argparse.Namespace) -> None:
     setup()
     run([sys.executable, "-m", "pip", "install", "--requirement", ROOT / "requirements.txt"])
     for target in ["style-check", "lint", "spell-check"]:
         run(["make", "--directory", ROOT, target])
 
 
-def build(args):
+def build(args: argparse.Namespace) -> None:
     platform = setup()
     build_py("deps")
     if platform == "macos":
@@ -156,7 +156,7 @@ def build(args):
     output("pluginVersion", VERSION)
 
 
-def release(_):
+def release(_: argparse.Namespace) -> None:
     root = Path(os.environ["GITHUB_WORKSPACE"])
     for variant, variant_suffixes in VARIANTS.items():
         for directory in sorted(root.glob(f"*-{variant}")):
@@ -167,7 +167,7 @@ def release(_):
     output("pluginName", DISPLAY_NAME)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparser = subparsers.add_parser("style_and_lint")

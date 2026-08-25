@@ -11,20 +11,43 @@ import time
 import tomllib
 import urllib.request
 import zipfile
+from collections.abc import Iterable
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
+from typing import Literal
+from typing import TypedDict
+
+Platform = Literal["macos", "windows", "linux"]
+Command = Sequence[str | Path]
+
+
+class DependencySource(TypedDict):
+    url: str
+    sha256: str
+
+
+class Dependency(TypedDict):
+    label: str
+    version: str
+    directory: str
+    strip_root: bool
+    os: dict[str, DependencySource]
+
 
 ROOT = Path(__file__).resolve().parent
 
 
-def read_cargo_package():
+def read_cargo_package() -> dict[str, Any]:
     with open(ROOT / "Cargo.toml", "rb") as fin:
-        return tomllib.load(fin)["package"]
+        package: dict[str, Any] = tomllib.load(fin)["package"]
+        return package
 
 
 CARGO_PACKAGE = read_cargo_package()
-NAME = CARGO_PACKAGE["name"]
+NAME: str = CARGO_PACKAGE["name"]
 DISPLAY_NAME = "Mobcam"
-VERSION = CARGO_PACKAGE["version"]
+VERSION: str = CARGO_PACKAGE["version"]
 BUNDLE_ID = "com.eerimoq.mobcam"
 DEPS_DIR = ROOT / ".deps"
 RELEASE_DIR = ROOT / "release"
@@ -37,7 +60,7 @@ OBS_STUDIO_VERSION = "32.2.2"
 OBS_STUDIO_URL = "https://github.com/obsproject/obs-studio/archive/refs/tags"
 PREBUILT_VERSION = "2026-07-15"
 PREBUILT_URL = "https://github.com/obsproject/obs-deps/releases/download"
-DEPENDENCIES = [
+DEPENDENCIES: list[Dependency] = [
     {
         "label": "OBS sources",
         "version": OBS_STUDIO_VERSION,
@@ -77,7 +100,7 @@ class Error(Exception):
     pass
 
 
-def run(command, **kwargs):
+def run(command: Command, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
     try:
         return subprocess.run(command, check=True, **kwargs)
     except FileNotFoundError:
@@ -86,7 +109,7 @@ def run(command, **kwargs):
         raise Error(f"{command[0]} failed with exit code {error.returncode}")
 
 
-def host_platform():
+def host_platform() -> Platform:
     if sys.platform == "darwin":
         return "macos"
     elif sys.platform == "win32":
@@ -97,7 +120,7 @@ def host_platform():
         raise Error(f"unsupported platform {sys.platform}")
 
 
-def plugin():
+def plugin() -> dict[str, str]:
     return {
         "NAME": NAME,
         "DISPLAY_NAME": "Mobcam",
@@ -111,7 +134,7 @@ def plugin():
     }
 
 
-def render(template, output, **values):
+def render(template: Path, output: Path, **values: object) -> None:
     text = template.read_text(encoding="utf-8")
     for key, value in values.items():
         text = text.replace(f"@{key}@", str(value))
@@ -119,14 +142,14 @@ def render(template, output, **values):
     output.write_text(text, encoding="utf-8")
 
 
-def remove(path):
+def remove(path: Path) -> None:
     if path.is_dir() and not path.is_symlink():
         shutil.rmtree(path)
     elif path.exists() or path.is_symlink():
         path.unlink()
 
 
-def output_name(target_platform):
+def output_name(target_platform: Platform) -> str:
     if target_platform == "macos":
         return f"{NAME}-{VERSION}-macos-universal"
     elif target_platform == "windows":
@@ -135,7 +158,7 @@ def output_name(target_platform):
         return f"{NAME}-{VERSION}-{platform.machine()}-linux-gnu"
 
 
-def download(url, path, sha256):
+def download(url: str, path: Path, sha256: str) -> None:
     digest = hashlib.sha256()
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".part")
@@ -153,7 +176,7 @@ def download(url, path, sha256):
     temporary.replace(path)
 
 
-def extract(archive, destination):
+def extract(archive: Path, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     if archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as zip_file:
@@ -166,7 +189,7 @@ def extract(archive, destination):
                 tar_file.extractall(destination)
 
 
-def extract_stripped(archive, destination):
+def extract_stripped(archive: Path, destination: Path) -> None:
     staging = destination.with_name(destination.name + ".part")
     remove(staging)
     extract(archive, staging)
@@ -175,14 +198,14 @@ def extract_stripped(archive, destination):
     remove(staging)
 
 
-def dependencies(target_platform=None):
+def dependencies(target_platform: Platform | None = None) -> None:
     target_platform = target_platform or host_platform()
     if target_platform == "linux":
         return
     for dependency in DEPENDENCIES:
-        platform = dependency["os"][target_platform]
-        url = platform["url"]
-        sha256 = platform["sha256"]
+        source = dependency["os"][target_platform]
+        url = source["url"]
+        sha256 = source["sha256"]
         directory = DEPS_DIR / dependency["directory"]
         archive = DEPS_DIR / url.rsplit("/", 1)[1]
         marker = DEPS_DIR / f".dependency_{dependency['directory']}.sha256"
@@ -199,12 +222,12 @@ def dependencies(target_platform=None):
         marker.write_text(sha256 + "\n")
 
 
-def cargo_target_dir():
+def cargo_target_dir() -> Path:
     return Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
 
 
-def cargo_executable():
-    directories = []
+def cargo_executable() -> Path:
+    directories: list[Path] = []
     if "CARGO_HOME" in os.environ:
         directories.append(Path(os.environ["CARGO_HOME"]) / "bin")
     directories.append(Path.home() / ".cargo" / "bin")
@@ -224,7 +247,7 @@ def cargo_executable():
     raise Error("cargo not found; install a toolchain from https://rustup.rs")
 
 
-def library_name(target_platform, name):
+def library_name(target_platform: Platform, name: str) -> str:
     if target_platform == "macos":
         return f"lib{name}.dylib"
     elif target_platform == "windows":
@@ -233,17 +256,22 @@ def library_name(target_platform, name):
         return f"lib{name}.so"
 
 
-def cargo_build(target_platform, name, debug, targets):
+def cargo_build(
+    target_platform: Platform,
+    name: str,
+    debug: bool,
+    targets: Sequence[str | None],
+) -> list[Path]:
     profile = "dev" if debug else "release"
     profile_directory = "debug" if debug else "release"
     cargo = cargo_executable()
     environment = dict(os.environ)
-    libraries = []
+    libraries: list[Path] = []
     environment["PATH"] = os.pathsep.join([str(cargo.parent), environment.get("PATH", "")])
     if target_platform == "macos":
         environment["MACOSX_DEPLOYMENT_TARGET"] = MACOS_DEPLOYMENT_TARGET
     for target in targets:
-        command = [cargo, "build", "--locked", "--profile", profile]
+        command: list[str | Path] = [cargo, "build", "--locked", "--profile", profile]
         if target is not None:
             command += ["--target", target]
         run(command, cwd=ROOT, env=environment)
@@ -254,19 +282,26 @@ def cargo_build(target_platform, name, debug, targets):
     return libraries
 
 
-def copy_data(destination):
+def copy_data(destination: Path) -> None:
     shutil.copytree(DATA_DIR, destination, dirs_exist_ok=True)
 
 
-def codesign(path, identity):
+def codesign(path: Path, identity: str) -> None:
     identity = identity or "-"
-    command = ["codesign", "--force", "--sign", identity, "--options", "runtime"]
+    command: list[str | Path] = [
+        "codesign",
+        "--force",
+        "--sign",
+        identity,
+        "--options",
+        "runtime",
+    ]
     if identity != "-":
         command.append("--timestamp")
     run(command + [path])
 
 
-def macos_paths(name):
+def macos_paths(name: str) -> tuple[Path, Path, Path]:
     bundle = INSTALL_DIR / f"{name}.plugin"
     return (
         bundle,
@@ -275,7 +310,7 @@ def macos_paths(name):
     )
 
 
-def build_macos(debug, identity):
+def build_macos(debug: bool, identity: str) -> None:
     bundle, binary, symbols = macos_paths(NAME)
     libraries = cargo_build("macos", NAME, debug, sorted(MACOS_TARGETS.values()))
     remove(bundle)
@@ -295,7 +330,7 @@ def build_macos(debug, identity):
     codesign(bundle, identity)
 
 
-def build_linux(debug):
+def build_linux(debug: bool) -> None:
     (library,) = cargo_build("linux", NAME, debug, [None])
     library_dir = INSTALL_DIR / "lib" / f"{platform.machine()}-linux-gnu" / "obs-plugins"
     remove(INSTALL_DIR / "lib")
@@ -305,7 +340,7 @@ def build_linux(debug):
     copy_data(INSTALL_DIR / "share" / "obs" / "obs-plugins" / NAME)
 
 
-def build_windows(debug):
+def build_windows(debug: bool) -> None:
     (library,) = cargo_build("windows", NAME, debug, [None])
     root = INSTALL_DIR / NAME
     binary_dir = root / "bin" / "64bit"
@@ -318,7 +353,7 @@ def build_windows(debug):
     copy_data(root / "data")
 
 
-def build(args):
+def build(args: argparse.Namespace) -> None:
     target_platform = host_platform()
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     if target_platform == "macos":
@@ -329,7 +364,7 @@ def build(args):
         build_linux(args.debug)
 
 
-def tar_xz(archive, directory, members):
+def tar_xz(archive: Path, directory: Path, members: Iterable[str]) -> None:
     archive.parent.mkdir(parents=True, exist_ok=True)
     remove(archive)
     with tarfile.open(archive, "w:xz") as tar_file:
@@ -337,7 +372,7 @@ def tar_xz(archive, directory, members):
             tar_file.add(directory / member, arcname=member)
 
 
-def package_macos(args):
+def package_macos(args: argparse.Namespace) -> None:
     base = output_name("macos")
     bundle, _, symbols = macos_paths(NAME)
     if not bundle.is_dir():
@@ -350,7 +385,7 @@ def package_macos(args):
         tar_xz(RELEASE_DIR / f"{base}-dSYMs.tar.xz", INSTALL_DIR, [symbols.name])
 
 
-def package_macos_installer(args, base):
+def package_macos_installer(args: argparse.Namespace, base: str) -> None:
     values = plugin()
     name = values["NAME"]
     staging = RELEASE_DIR / "installer"
@@ -408,7 +443,7 @@ def package_macos_installer(args, base):
         notarize(package, name, args)
 
 
-def notarize(package, name, args):
+def notarize(package: Path, name: str, args: argparse.Namespace) -> None:
     user = args.notarization_user
     password = args.notarization_password
     team = args.codesign_application_identity.rpartition("(")[2].rstrip(")")
@@ -446,7 +481,7 @@ def notarize(package, name, args):
     run(["xcrun", "stapler", "staple", package])
 
 
-def package_linux(args):
+def package_linux(args: argparse.Namespace) -> None:
     base = output_name("linux")
     if not (INSTALL_DIR / "lib").is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
@@ -456,7 +491,7 @@ def package_linux(args):
         package_deb(base, NAME)
 
 
-def package_deb(base, name):
+def package_deb(base: str, name: str) -> None:
     values = plugin()
     staging = RELEASE_DIR / "deb"
     remove(staging)
@@ -479,7 +514,7 @@ def package_deb(base, name):
     remove(staging)
 
 
-def source_tarball():
+def source_tarball() -> None:
     values = plugin()
     base = f"{values['NAME']}-{values['VERSION']}-source"
     archive = RELEASE_DIR / f"{base}.tar.xz"
@@ -494,7 +529,7 @@ def source_tarball():
         fout.write(sources)
 
 
-def package_windows(args):
+def package_windows(args: argparse.Namespace) -> None:
     base = output_name("windows")
     if not (INSTALL_DIR / NAME).is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
@@ -509,7 +544,7 @@ def package_windows(args):
         package_windows_installer(base)
 
 
-def find_inno_setup():
+def find_inno_setup() -> str:
     compiler = shutil.which("iscc")
     if compiler:
         return compiler
@@ -523,7 +558,7 @@ def find_inno_setup():
     raise Error("Inno Setup (ISCC.exe) not found; install it from https://jrsoftware.org/isinfo.php")
 
 
-def package_windows_installer(base):
+def package_windows_installer(base: str) -> None:
     values = plugin()
     script = RELEASE_DIR / "installer.iss"
     render(
@@ -539,7 +574,7 @@ def package_windows_installer(base):
     remove(script)
 
 
-def package(args):
+def package(args: argparse.Namespace) -> None:
     target_platform = host_platform()
     if target_platform == "macos":
         package_macos(args)
@@ -549,11 +584,11 @@ def package(args):
         package_linux(args)
 
 
-def install(_):
+def install(_: argparse.Namespace) -> None:
     target_platform = host_platform()
     if target_platform == "macos":
         destination = Path.home() / "Library/Application Support/obs-studio/plugins"
-        source, _, _ = macos_paths(NAME)
+        source = macos_paths(NAME)[0]
         destination.mkdir(parents=True, exist_ok=True)
         remove(destination / source.name)
         shutil.copytree(source, destination / source.name, symlinks=True)
@@ -570,13 +605,13 @@ def install(_):
         raise Error("installing is only supported on macOS and Linux; use the installer instead")
 
 
-def clean(_):
+def clean(_: argparse.Namespace) -> None:
     for path in [RELEASE_DIR, cargo_target_dir()]:
         if path.exists():
             remove(path)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
     deps_parser = subparsers.add_parser("deps")
