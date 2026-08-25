@@ -13,21 +13,23 @@ import urllib.request
 import zipfile
 from collections.abc import Iterable
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from typing import Literal
-from typing import TypedDict
 
 Platform = Literal["macos", "windows", "linux"]
 Command = Sequence[str | Path]
 
 
-class DependencySource(TypedDict):
+@dataclass
+class DependencySource:
     url: str
     sha256: str
 
 
-class Dependency(TypedDict):
+@dataclass
+class Dependency:
     label: str
     version: str
     directory: str
@@ -61,38 +63,38 @@ OBS_STUDIO_URL = "https://github.com/obsproject/obs-studio/archive/refs/tags"
 PREBUILT_VERSION = "2026-07-15"
 PREBUILT_URL = "https://github.com/obsproject/obs-deps/releases/download"
 DEPENDENCIES: list[Dependency] = [
-    {
-        "label": "OBS sources",
-        "version": OBS_STUDIO_VERSION,
-        "directory": "obs-studio",
-        "strip_root": True,
-        "os": {
-            "macos": {
-                "url": f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.tar.gz",
-                "sha256": "35d3cd0979d65664fada7119fdb612eca7c34b61a1623a330caec74bf72626c4",
-            },
-            "windows": {
-                "url": f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.zip",
-                "sha256": "f15f001f1fa526405318835f44f9910046502f496ebc3a30d5296a5018b831aa",
-            },
+    Dependency(
+        label="OBS sources",
+        version=OBS_STUDIO_VERSION,
+        directory="obs-studio",
+        strip_root=True,
+        os={
+            "macos": DependencySource(
+                url=f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.tar.gz",
+                sha256="35d3cd0979d65664fada7119fdb612eca7c34b61a1623a330caec74bf72626c4",
+            ),
+            "windows": DependencySource(
+                url=f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.zip",
+                sha256="f15f001f1fa526405318835f44f9910046502f496ebc3a30d5296a5018b831aa",
+            ),
         },
-    },
-    {
-        "label": "Pre-Built obs-deps",
-        "version": PREBUILT_VERSION,
-        "directory": "prebuilt",
-        "strip_root": False,
-        "os": {
-            "macos": {
-                "url": (f"{PREBUILT_URL}/{PREBUILT_VERSION}/macos-deps-{PREBUILT_VERSION}-universal.tar.xz"),
-                "sha256": "4ecb4c598dfa853168df6c2a0c4e0ffec8495a81fbd1ba051ef88ecd5e0f7e53",
-            },
-            "windows": {
-                "url": (f"{PREBUILT_URL}/{PREBUILT_VERSION}/windows-deps-{PREBUILT_VERSION}-x64.zip"),
-                "sha256": "6f90e9598fa10cff5ad23cdcfae49b87868c07bf896b02cd464582b4ce2f2ba9",
-            },
+    ),
+    Dependency(
+        label="Pre-Built obs-deps",
+        version=PREBUILT_VERSION,
+        directory="prebuilt",
+        strip_root=False,
+        os={
+            "macos": DependencySource(
+                url=f"{PREBUILT_URL}/{PREBUILT_VERSION}/macos-deps-{PREBUILT_VERSION}-universal.tar.xz",
+                sha256="4ecb4c598dfa853168df6c2a0c4e0ffec8495a81fbd1ba051ef88ecd5e0f7e53",
+            ),
+            "windows": DependencySource(
+                url=f"{PREBUILT_URL}/{PREBUILT_VERSION}/windows-deps-{PREBUILT_VERSION}-x64.zip",
+                sha256="6f90e9598fa10cff5ad23cdcfae49b87868c07bf896b02cd464582b4ce2f2ba9",
+            ),
         },
-    },
+    ),
 ]
 
 
@@ -101,12 +103,7 @@ class Error(Exception):
 
 
 def run(command: Command, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-    try:
-        return subprocess.run(command, check=True, **kwargs)
-    except FileNotFoundError:
-        raise Error(f"{command[0]} not found")
-    except subprocess.CalledProcessError as error:
-        raise Error(f"{command[0]} failed with exit code {error.returncode}")
+    return subprocess.run(command, check=True, **kwargs)
 
 
 def host_platform() -> Platform:
@@ -203,19 +200,19 @@ def dependencies(target_platform: Platform | None = None) -> None:
     if target_platform == "linux":
         return
     for dependency in DEPENDENCIES:
-        source = dependency["os"][target_platform]
-        url = source["url"]
-        sha256 = source["sha256"]
-        directory = DEPS_DIR / dependency["directory"]
+        source = dependency.os[target_platform]
+        url = source.url
+        sha256 = source.sha256
+        directory = DEPS_DIR / dependency.directory
         archive = DEPS_DIR / url.rsplit("/", 1)[1]
-        marker = DEPS_DIR / f".dependency_{dependency['directory']}.sha256"
+        marker = DEPS_DIR / f".dependency_{dependency.directory}.sha256"
         if directory.is_dir() and marker.is_file() and marker.read_text().strip() == sha256:
             continue
         if not archive.is_file():
             download(url, archive, sha256)
         remove(marker)
         remove(directory)
-        if dependency["strip_root"]:
+        if dependency.strip_root:
             extract_stripped(archive, directory)
         else:
             extract(archive, directory)
@@ -629,10 +626,7 @@ def main() -> None:
     clean_parser = subparsers.add_parser("clean")
     clean_parser.set_defaults(function=clean)
     args = parser.parse_args()
-    try:
-        args.function(args)
-    except Error as error:
-        sys.exit(f"error: {error}")
+    args.function(args)
 
 
 if __name__ == "__main__":
