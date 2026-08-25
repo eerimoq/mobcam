@@ -66,7 +66,7 @@ fn obsconfig_dir() -> PathBuf {
     dir
 }
 
-fn pkg_config(packages: &[&str], flags: &str) -> Vec<String> {
+fn pkg_config_output(packages: &[&str], flags: &str) -> String {
     let output = Command::new("pkg-config")
         .arg(flags)
         .args(packages)
@@ -78,11 +78,33 @@ fn pkg_config(packages: &[&str], flags: &str) -> Vec<String> {
         packages.join(" "),
         String::from_utf8_lossy(&output.stderr).trim()
     );
-    String::from_utf8(output.stdout)
-        .expect("pkg-config prints UTF-8")
+    String::from_utf8(output.stdout).expect("pkg-config prints UTF-8")
+}
+
+fn pkg_config(packages: &[&str], flags: &str) -> Vec<String> {
+    pkg_config_output(packages, flags)
         .split_whitespace()
         .map(|flag| flag[2..].to_string())
         .collect()
+}
+
+/// The libobs.pc of OBS 31 and later gives `-I${includedir}` even though the
+/// headers are installed in `${includedir}/obs`, and pkg-config drops the flag
+/// entirely when it names a default system directory such as `/usr/include`.
+/// Look for the headers in the `obs` subdirectory of every candidate as well,
+/// the includedir variable of the package included.
+fn obs_include_dir(cflags_dirs: &[PathBuf]) -> PathBuf {
+    let mut candidates = cflags_dirs.to_vec();
+    candidates.push(PathBuf::from(
+        pkg_config_output(&["libobs"], "--variable=includedir").trim(),
+    ));
+    candidates
+        .iter()
+        .flat_map(|dir| [dir.clone(), dir.join("obs")])
+        .find(|dir| dir.join("obs-module.h").is_file())
+        .unwrap_or_else(|| {
+            panic!("obs-module.h is in none of {candidates:?}; install the libobs headers, `libobs-dev` on Debian and Ubuntu")
+        })
 }
 
 fn configure_macos() -> Vec<PathBuf> {
@@ -169,10 +191,15 @@ fn configure_linux() -> Vec<PathBuf> {
     for library in pkg_config(&packages, "--libs-only-l") {
         println!("cargo:rustc-link-lib=dylib={library}");
     }
-    let mut include_dirs: Vec<PathBuf> = pkg_config(&packages, "--cflags-only-I")
+    let cflags_dirs: Vec<PathBuf> = pkg_config(&packages, "--cflags-only-I")
         .into_iter()
         .map(PathBuf::from)
         .collect();
+    let obs_include = obs_include_dir(&cflags_dirs);
+    let mut include_dirs = vec![obs_include.clone()];
+    include_dirs.extend(cflags_dirs.into_iter().filter(|dir| *dir != obs_include));
+    // Only a fallback: the distribution installs an obsconfig.h of its own next
+    // to the headers, and that one comes first.
     include_dirs.push(obsconfig_dir());
     include_dirs
 }
