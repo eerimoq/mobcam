@@ -77,10 +77,6 @@ class Error(Exception):
     pass
 
 
-def log(message):
-    print(f"==> {message}", flush=True)
-
-
 def run(command, **kwargs):
     try:
         return subprocess.run(command, check=True, **kwargs)
@@ -140,7 +136,6 @@ def output_name(target_platform):
 
 
 def download(url, path, sha256):
-    log(f"Downloading {url}")
     digest = hashlib.sha256()
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".part")
@@ -183,7 +178,6 @@ def extract_stripped(archive, destination):
 def dependencies(target_platform=None):
     target_platform = target_platform or host_platform()
     if target_platform == "linux":
-        log("Linux uses the distribution's libobs and FFmpeg; nothing to download")
         return
     for dependency in DEPENDENCIES:
         platform = dependency["os"][target_platform]
@@ -194,11 +188,9 @@ def dependencies(target_platform=None):
         archive = DEPS_DIR / url.rsplit("/", 1)[1]
         marker = DEPS_DIR / f".dependency_{dependency['directory']}.sha256"
         if directory.is_dir() and marker.is_file() and marker.read_text().strip() == sha256:
-            log(f"{label} is up to date")
             continue
         if not archive.is_file():
             download(url, archive, sha256)
-        log(f"Unpacking {label}")
         remove(marker)
         remove(directory)
         if dependency["strip_root"]:
@@ -255,7 +247,6 @@ def cargo_build(target_platform, name, debug, targets):
         command = [cargo, "build", "--locked", "--profile", profile]
         if target is not None:
             command += ["--target", target]
-        log(f"Building {target or 'the plugin'}")
         run(command, cwd=ROOT, env=environment)
         directory = cargo_target_dir()
         if target is not None:
@@ -265,23 +256,18 @@ def cargo_build(target_platform, name, debug, targets):
 
 
 def copy_data(destination):
-    if not DATA_DIR.is_dir():
-        return
     shutil.copytree(DATA_DIR, destination, dirs_exist_ok=True)
 
 
-def codesign(path, identity, entitlements=None):
+def codesign(path, identity):
     identity = identity or "-"
     command = ["codesign", "--force", "--sign", identity, "--options", "runtime"]
     if identity != "-":
         command.append("--timestamp")
-    if entitlements is not None:
-        command += ["--entitlements", entitlements]
     run(command + [path])
 
 
 def macos_paths(name):
-    """The staged bundle, the binary inside it and the separated debug symbols."""
     bundle = INSTALL_DIR / f"{name}.plugin"
     return (
         bundle,
@@ -295,7 +281,6 @@ def build_macos(debug, identity):
     libraries = cargo_build("macos", NAME, debug, sorted(MACOS_TARGETS.values()))
     remove(bundle)
     binary.parent.mkdir(parents=True)
-    log("Creating the universal binary")
     run(["lipo", "-create", *libraries, "-output", binary])
     run(["install_name_tool", "-id", f"@rpath/{NAME}", binary])
     render(
@@ -306,17 +291,10 @@ def build_macos(debug, identity):
     copy_data(bundle / "Contents" / "Resources")
     remove(symbols)
     if not debug:
-        log("Separating the debug symbols")
         run(["dsymutil", binary, "-o", symbols])
         run(["strip", "-x", binary])
-    log("Signing the plugin")
-    codesign(bundle, identity, entitlements=entitlements_file())
+    codesign(bundle, identity)
     return bundle
-
-
-def entitlements_file():
-    entitlements = PACKAGING_DIR / "macos" / "entitlements.plist"
-    return entitlements if entitlements.is_file() else None
 
 
 def build_linux(debug):
@@ -353,11 +331,9 @@ def build(args):
         artifact = build_windows(args.debug)
     else:
         artifact = build_linux(args.debug)
-    log(f"Built {artifact}")
 
 
 def tar_xz(archive, directory, members):
-    log(f"Creating {archive.name}")
     archive.parent.mkdir(parents=True, exist_ok=True)
     remove(archive)
     with tarfile.open(archive, "w:xz") as tar_file:
@@ -387,7 +363,6 @@ def package_macos_installer(args, base):
     remove(staging)
     root.mkdir(parents=True)
     shutil.copytree(bundle, root / bundle.name, symlinks=True)
-    log("Building the installer package")
     run(
         [
             "pkgbuild",
@@ -421,7 +396,6 @@ def package_macos_installer(args, base):
     )
     remove(package)
     if args.codesign_installer_identity:
-        log("Signing the installer package")
         run(
             [
                 "productsign",
@@ -448,7 +422,6 @@ def notarize(package, name, args):
             "and a team in --codesign-application-identity"
         )
     profile = f"{name}-Codesign-Password"
-    log("Notarizing the installer package")
     run(
         [
             "xcrun",
@@ -506,7 +479,6 @@ def package_deb(base, name):
     )
     package = RELEASE_DIR / f"{base}.deb"
     remove(package)
-    log(f"Creating {package.name}")
     run(["dpkg-deb", "--build", "--root-owner-group", staging, package])
     remove(staging)
 
@@ -515,7 +487,6 @@ def source_tarball():
     values = plugin()
     base = f"{values['NAME']}-{values['VERSION']}-source"
     archive = RELEASE_DIR / f"{base}.tar.xz"
-    log(f"Creating {archive.name}")
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
     sources = subprocess.run(
         ["git", "archive", f"--prefix={base}/", "--format=tar", "HEAD"],
@@ -533,7 +504,6 @@ def package_windows(args):
         raise Error("no staged plugin found; run `python3 build.py build` first")
     archive = RELEASE_DIR / f"{base}.zip"
     remove(archive)
-    log(f"Creating {archive.name}")
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for path in sorted((INSTALL_DIR / NAME).rglob("*")):
@@ -569,7 +539,6 @@ def package_windows_installer(base):
         OUTPUT_NAME=f"{base}-Installer",
         **values,
     )
-    log("Building the installer")
     run([find_inno_setup(), script, f"/DReleaseDir={INSTALL_DIR}"])
     remove(script)
 
@@ -592,7 +561,6 @@ def install(_):
         destination.mkdir(parents=True, exist_ok=True)
         remove(destination / source.name)
         shutil.copytree(source, destination / source.name, symlinks=True)
-        log(f"Installed {destination / source.name}")
     elif target_platform == "linux":
         destination = Path.home() / ".config" / "obs-studio" / "plugins" / NAME
         remove(destination)
@@ -602,7 +570,6 @@ def install(_):
             destination / "bin" / "64bit" / f"{NAME}.so",
         )
         copy_data(destination / "data")
-        log(f"Installed {destination}")
     else:
         raise Error("installing is only supported on macOS and Linux; use the installer instead")
 
@@ -610,7 +577,6 @@ def install(_):
 def clean(_):
     for path in [RELEASE_DIR, cargo_target_dir()]:
         if path.exists():
-            log(f"Removing {path}")
             remove(path)
 
 
