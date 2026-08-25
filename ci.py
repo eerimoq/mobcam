@@ -9,12 +9,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-
 from build import DISPLAY_NAME
 from build import MACOS_TARGETS
 from build import NAME
+from build import REPO_ROOT
 from build import VERSION
 from build import Error
 from build import Platform
@@ -54,7 +52,7 @@ def output(name: str, value: str) -> None:
 
 
 def build_py(*arguments: str | Path) -> subprocess.CompletedProcess[Any]:
-    return run([sys.executable, ROOT / "build.py", *arguments])
+    return run([sys.executable, REPO_ROOT / "build.py", *arguments])
 
 
 def setup() -> Platform:
@@ -126,9 +124,9 @@ def codesigning(args: argparse.Namespace) -> bool:
 
 def style_and_lint(_: argparse.Namespace) -> None:
     setup()
-    run([sys.executable, "-m", "pip", "install", "--requirement", ROOT / "requirements.txt"])
+    run([sys.executable, "-m", "pip", "install", "--requirement", REPO_ROOT / "requirements.txt"])
     for target in ["style-check", "lint", "spell-check"]:
-        run(["make", "--directory", ROOT, target])
+        run(["make", "--directory", REPO_ROOT, target])
 
 
 def build(args: argparse.Namespace) -> None:

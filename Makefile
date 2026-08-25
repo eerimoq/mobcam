@@ -1,5 +1,5 @@
 PYTHON_DIRS += build.py
-PYTHON_DIRS += .github/scripts
+PYTHON_DIRS += ci.py
 
 CODE_DIRS += $(PYTHON_DIRS)
 

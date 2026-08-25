@@ -35,11 +35,11 @@ class Dependency(TypedDict):
     os: dict[str, DependencySource]
 
 
-ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parent
 
 
 def read_cargo_package() -> dict[str, Any]:
-    with open(ROOT / "Cargo.toml", "rb") as fin:
+    with open(REPO_ROOT / "Cargo.toml", "rb") as fin:
         package: dict[str, Any] = tomllib.load(fin)["package"]
         return package
 
@@ -49,11 +49,11 @@ NAME: str = CARGO_PACKAGE["name"]
 DISPLAY_NAME = "Mobcam"
 VERSION: str = CARGO_PACKAGE["version"]
 BUNDLE_ID = "com.eerimoq.mobcam"
-DEPS_DIR = ROOT / ".deps"
-RELEASE_DIR = ROOT / "release"
+DEPS_DIR = REPO_ROOT / ".deps"
+RELEASE_DIR = REPO_ROOT / "release"
 INSTALL_DIR = RELEASE_DIR / "install"
-PACKAGING_DIR = ROOT / "packaging"
-DATA_DIR = ROOT / "data"
+PACKAGING_DIR = REPO_ROOT / "packaging"
+DATA_DIR = REPO_ROOT / "data"
 MACOS_DEPLOYMENT_TARGET = "12.0"
 MACOS_TARGETS = {"arm64": "aarch64-apple-darwin", "x86_64": "x86_64-apple-darwin"}
 OBS_STUDIO_VERSION = "32.2.2"
@@ -223,7 +223,7 @@ def dependencies(target_platform: Platform | None = None) -> None:
 
 
 def cargo_target_dir() -> Path:
-    return Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
+    return Path(os.environ.get("CARGO_TARGET_DIR", REPO_ROOT / "target"))
 
 
 def library_name(target_platform: Platform, name: str) -> str:
@@ -248,10 +248,10 @@ def cargo_build(
     if target_platform == "macos":
         environment["MACOSX_DEPLOYMENT_TARGET"] = MACOS_DEPLOYMENT_TARGET
     for target in targets:
-        command: list[str | Path] = ["cargo", "build", "--locked", "--profile", profile]
+        command = ["cargo", "build", "--locked", "--profile", profile]
         if target is not None:
             command += ["--target", target]
-        run(command, cwd=ROOT, env=environment)
+        run(command, cwd=REPO_ROOT, env=environment)
         directory = cargo_target_dir()
         if target is not None:
             directory /= target
@@ -500,7 +500,7 @@ def source_tarball() -> None:
         ["git", "archive", f"--prefix={base}/", "--format=tar", "HEAD"],
         check=True,
         capture_output=True,
-        cwd=ROOT,
+        cwd=REPO_ROOT,
     ).stdout
     with lzma.open(archive, "wb") as fout:
         fout.write(sources)
@@ -541,7 +541,7 @@ def package_windows_installer(base: str) -> None:
     render(
         PACKAGING_DIR / "windows" / "installer.iss.in",
         script,
-        SOURCE_DIR=ROOT,
+        SOURCE_DIR=REPO_ROOT,
         INSTALL_DIR=INSTALL_DIR,
         OUTPUT_DIR=RELEASE_DIR,
         OUTPUT_NAME=f"{base}-Installer",
