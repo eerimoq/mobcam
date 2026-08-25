@@ -456,7 +456,6 @@ def package_linux(args: argparse.Namespace) -> None:
 
 
 def package_deb(base: str, name: str) -> None:
-    values = plugin()
     staging = RELEASE_DIR / "deb"
     remove(staging)
     shutil.copytree(INSTALL_DIR, staging / "usr", symlinks=True)
@@ -470,7 +469,7 @@ def package_deb(base: str, name: str) -> None:
         PACKAGING_DIR / "linux" / "control.in",
         staging / "DEBIAN" / "control",
         ARCHITECTURE=architecture,
-        **values,
+        **plugin(),
     )
     package = RELEASE_DIR / f"{base}.deb"
     remove(package)
@@ -479,13 +478,11 @@ def package_deb(base: str, name: str) -> None:
 
 
 def source_tarball() -> None:
-    values = plugin()
-    base = f"{values['NAME']}-{values['VERSION']}-source"
+    base = f"{NAME}-{VERSION}-source"
     archive = RELEASE_DIR / f"{base}.tar.xz"
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
-    sources = subprocess.run(
+    sources = run(
         ["git", "archive", f"--prefix={base}/", "--format=tar", "HEAD"],
-        check=True,
         capture_output=True,
         cwd=REPO_ROOT,
     ).stdout
