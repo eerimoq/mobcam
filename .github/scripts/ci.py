@@ -133,6 +133,7 @@ def style_and_lint(_):
 
 def build(args):
     platform = setup()
+    build_py("deps")
     if platform == "macos":
         import_certificate(args, os.urandom(16).hex())
         build_py("build", "--codesign-application-identity", args.codesign_application_identity)

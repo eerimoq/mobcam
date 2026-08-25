@@ -345,7 +345,6 @@ def build_windows(debug):
 
 
 def build(args):
-    dependencies()
     target_platform = host_platform()
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     if target_platform == "macos":
