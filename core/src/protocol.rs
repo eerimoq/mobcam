@@ -1,4 +1,4 @@
-use crate::json;
+use serde::Deserialize;
 
 pub const MESSAGE_HEADER_SIZE: usize = 5;
 pub const MAX_MESSAGE_SIZE: u32 = 100 * 1024 * 1024;
@@ -13,6 +13,14 @@ pub const HOST_HELLO_SIZE: usize = 6;
 pub const VIDEO_CODEC_H264: u8 = 0;
 pub const VIDEO_CODEC_HEVC: u8 = 1;
 pub const AUDIO_CODEC_AAC_LC: u8 = 0;
+
+#[derive(Deserialize)]
+struct DeviceHelloJson {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    version: String,
+}
 
 pub struct DeviceHello {
     pub version: u8,
@@ -94,11 +102,12 @@ pub fn unpack_device_hello(payload: &[u8]) -> Option<DeviceHello> {
     }
     let json_size = u32_be(&payload[1..]) as usize;
     let json = payload.get(5..5usize.checked_add(json_size)?)?;
-    let fields = json::string_fields(std::str::from_utf8(json).ok()?)?;
+    let object: serde_json::Map<String, serde_json::Value> = serde_json::from_slice(json).ok()?;
+    let hello: DeviceHelloJson = serde_json::from_value(object.into()).ok()?;
     Some(DeviceHello {
         version: payload[0],
-        name: json::field(&fields, "name"),
-        app_version: json::field(&fields, "version"),
+        name: hello.name,
+        app_version: hello.version,
     })
 }
 

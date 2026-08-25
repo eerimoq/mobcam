@@ -1,6 +1,5 @@
 pub mod decoder;
 pub mod ffmpeg;
-mod json;
 mod logging;
 pub mod panic;
 pub mod protocol;
