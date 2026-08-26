@@ -50,7 +50,6 @@ RELEASE_DIR = REPO_ROOT / "release"
 INSTALL_DIR = RELEASE_DIR / "install"
 MACOS_DEPLOYMENT_TARGET = "12.0"
 MACOS_TARGETS = {"arm64": "aarch64-apple-darwin", "x86_64": "x86_64-apple-darwin"}
-PACKAGE_NAME_RE = re.compile(r"[a-z0-9][a-z0-9+.-]*")
 
 
 def read_workspace_version() -> str:
@@ -546,48 +545,41 @@ def package_linux(args: argparse.Namespace) -> None:
         package_deb(
             VIRTUALCAM,
             virtualcam_base,
-            DEPENDS=linked_packages(VIRTUALCAM.install_dir / "bin" / VIRTUALCAM.module),
+            DEPENDS=shared_library_dependencies(
+                VIRTUALCAM, VIRTUALCAM.install_dir / "bin" / VIRTUALCAM.module
+            ),
         )
 
 
-def linked_packages(binary: Path) -> str:
-    """The Debian packages holding the shared libraries the binary links to.
+def shared_library_dependencies(product: Product, binary: Path) -> str:
+    """What the binary needs, as a Debian dependency field.
 
-    The virtual camera is installed on its own, so nothing else drags FFmpeg
-    in for it the way obs-studio does for the plugin.
+    The virtual camera is installed on its own, so nothing else drags FFmpeg in
+    for it the way obs-studio does for the plugin. dpkg-shlibdeps turns the
+    libraries the binary links to into versioned dependencies; it wants a
+    debian/control next to it, which a package built by hand has no other use
+    for.
     """
 
-    libraries: list[str] = []
-    listing = run(["ldd", binary], capture_output=True, text=True).stdout
-    for line in listing.splitlines():
-        _, _, library = line.rpartition(" => ")
-        library = library.partition(" (")[0].strip()
-        if library.startswith("/"):
-            libraries.append(library)
-    if not libraries:
-        raise Error(f"ldd found no shared libraries for {binary}")
-    owners = subprocess.run(
-        ["dpkg", "--search", *libraries],
-        check=False,
+    staging = RELEASE_DIR / f"shlibdeps-{product.directory}"
+    remove(staging)
+    (staging / "debian").mkdir(parents=True)
+    (staging / "debian" / "control").write_text(
+        f"Source: {product.name}\n\nPackage: {product.name}\nArchitecture: any\n",
+        encoding="utf-8",
+    )
+    substitutions: str = run(
+        ["dpkg-shlibdeps", "-O", binary],
+        cwd=staging,
         capture_output=True,
         text=True,
     ).stdout
-    packages: set[str] = set()
-    for line in owners.splitlines():
-        # "libc6:amd64: /path", or several packages for one path as
-        # "libfoo, libbar: /path". Lines about diverted files look like
-        # "diversion by libc6 from: /path" and are not owner lines at all;
-        # they are dropped by the name check below.
-        names, separator, library = line.rpartition(": ")
-        if not separator or not library.startswith("/"):
-            continue
-        for name in names.split(","):
-            package = name.strip().partition(":")[0]
-            if PACKAGE_NAME_RE.fullmatch(package):
-                packages.add(package)
-    if not packages:
-        raise Error(f"no Debian package owns any of the libraries {binary} links to")
-    return ", ".join(sorted(packages))
+    remove(staging)
+    for line in substitutions.splitlines():
+        field, separator, dependencies = line.partition("=")
+        if separator and field == "shlibs:Depends" and dependencies:
+            return dependencies
+    raise Error(f"dpkg-shlibdeps found no dependencies for {binary}:\n{substitutions.strip()}")
 
 
 def package_deb(product: Product, base: str, **values: object) -> None:

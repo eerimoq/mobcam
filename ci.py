@@ -20,6 +20,7 @@ from build import host_platform
 from build import run
 
 UBUNTU_PACKAGES = [
+    "dpkg-dev",
     "libclang-dev",
     "libobs-dev",
     "libavcodec-dev",
