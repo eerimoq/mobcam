@@ -316,7 +316,7 @@ def copy_data(destination: Path) -> None:
     shutil.copytree(DATA_DIR, destination, dirs_exist_ok=True)
 
 
-def codesign(path: Path, identity: str) -> None:
+def codesign(path: Path, identity: str | None) -> None:
     identity = identity or "-"
     command: list[str | Path] = [
         "codesign",
@@ -341,7 +341,7 @@ def macos_paths() -> tuple[Path, Path, Path]:
     )
 
 
-def build_macos(identity: str) -> None:
+def build_macos(identity: str | None) -> None:
     bundle, binary, symbols = macos_paths()
     libraries = cargo_build_library("macos", OBS_PLUGIN, sorted(MACOS_TARGETS.values()))
     remove(bundle)
@@ -397,15 +397,19 @@ def build_windows() -> None:
     copy_data(root / "data")
 
 
-def build(args: argparse.Namespace) -> None:
+def build_products(codesign_application_identity: str | None = None) -> None:
     target_platform = host_platform()
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     if target_platform == "macos":
-        build_macos(args.codesign_application_identity)
+        build_macos(codesign_application_identity)
     elif target_platform == "windows":
         build_windows()
     else:
         build_linux()
+
+
+def build(args: argparse.Namespace) -> None:
+    build_products(args.codesign_application_identity)
 
 
 def tar_xz(archive: Path, directory: Path, members: Iterable[str]) -> None:
@@ -416,20 +420,38 @@ def tar_xz(archive: Path, directory: Path, members: Iterable[str]) -> None:
             tar_file.add(directory / member, arcname=member)
 
 
-def package_macos(args: argparse.Namespace) -> None:
+def package_macos(
+    installer: bool,
+    codesign_application_identity: str | None,
+    codesign_installer_identity: str | None,
+    notarization_user: str | None,
+    notarization_password: str | None,
+) -> None:
     base = OBS_PLUGIN.output_name("macos")
     bundle, _, symbols = macos_paths()
     if not bundle.is_dir():
         raise Error("no staged plugin found; run `python3 scripts/build.py build` first")
-    if args.installer:
-        package_macos_installer(args, base)
+    if installer:
+        package_macos_installer(
+            base,
+            codesign_application_identity,
+            codesign_installer_identity,
+            notarization_user,
+            notarization_password,
+        )
     else:
         tar_xz(RELEASE_DIR / f"{base}.tar.xz", OBS_PLUGIN.install_dir, [bundle.name])
     if symbols.is_dir():
         tar_xz(RELEASE_DIR / f"{base}-dSYMs.tar.xz", OBS_PLUGIN.install_dir, [symbols.name])
 
 
-def package_macos_installer(args: argparse.Namespace, base: str) -> None:
+def package_macos_installer(
+    base: str,
+    codesign_application_identity: str | None,
+    codesign_installer_identity: str | None,
+    notarization_user: str | None,
+    notarization_password: str | None,
+) -> None:
     staging = RELEASE_DIR / "installer"
     root = staging / "root" / "Library" / "Application Support" / "obs-studio" / "plugins"
     bundle, _, _ = macos_paths()
@@ -472,12 +494,12 @@ def package_macos_installer(args: argparse.Namespace, base: str) -> None:
         ]
     )
     remove(package)
-    if args.codesign_installer_identity:
+    if codesign_installer_identity:
         run(
             [
                 "productsign",
                 "--sign",
-                args.codesign_installer_identity,
+                codesign_installer_identity,
                 unsigned,
                 package,
             ]
@@ -485,14 +507,24 @@ def package_macos_installer(args: argparse.Namespace, base: str) -> None:
     else:
         unsigned.replace(package)
     remove(staging)
-    if args.notarization_user or args.notarization_password:
-        notarize(package, OBS_PLUGIN.name, args)
+    if notarization_user or notarization_password:
+        notarize(
+            package,
+            OBS_PLUGIN.name,
+            codesign_application_identity,
+            notarization_user,
+            notarization_password,
+        )
 
 
-def notarize(package: Path, name: str, args: argparse.Namespace) -> None:
-    user = args.notarization_user
-    password = args.notarization_password
-    team = args.codesign_application_identity.rpartition("(")[2].rstrip(")")
+def notarize(
+    package: Path,
+    name: str,
+    codesign_application_identity: str | None,
+    user: str | None,
+    password: str | None,
+) -> None:
+    team = (codesign_application_identity or "").rpartition("(")[2].rstrip(")")
     if not (user and password and team):
         raise Error(
             "notarization needs --notarization-user, --notarization-password "
@@ -527,13 +559,13 @@ def notarize(package: Path, name: str, args: argparse.Namespace) -> None:
     run(["xcrun", "stapler", "staple", package])
 
 
-def package_linux(args: argparse.Namespace) -> None:
+def package_linux(installer: bool) -> None:
     if not (OBS_PLUGIN.install_dir / "lib").is_dir():
         raise Error("no staged plugin found; run `python3 scripts/build.py build` first")
     plugin_base = OBS_PLUGIN.output_name("linux")
     tar_xz(RELEASE_DIR / f"{plugin_base}.tar.xz", OBS_PLUGIN.install_dir, ["lib", "share"])
     source_tarball()
-    if args.installer:
+    if installer:
         package_deb(OBS_PLUGIN, plugin_base)
 
 
@@ -571,7 +603,7 @@ def source_tarball() -> None:
         fout.write(sources)
 
 
-def package_windows(args: argparse.Namespace) -> None:
+def package_windows(installer: bool) -> None:
     base = OBS_PLUGIN.output_name("windows")
     root = OBS_PLUGIN.install_dir / OBS_PLUGIN.module
     if not root.is_dir():
@@ -583,7 +615,7 @@ def package_windows(args: argparse.Namespace) -> None:
         for path in sorted(root.rglob("*")):
             if path.is_file():
                 zip_file.write(path, path.relative_to(OBS_PLUGIN.install_dir))
-    if args.installer:
+    if installer:
         package_windows_installer(base)
 
 
@@ -618,14 +650,36 @@ def package_windows_installer(base: str) -> None:
     remove(script)
 
 
-def package(args: argparse.Namespace) -> None:
+def package_products(
+    installer: bool = False,
+    codesign_application_identity: str | None = None,
+    codesign_installer_identity: str | None = None,
+    notarization_user: str | None = None,
+    notarization_password: str | None = None,
+) -> None:
     target_platform = host_platform()
     if target_platform == "macos":
-        package_macos(args)
+        package_macos(
+            installer,
+            codesign_application_identity,
+            codesign_installer_identity,
+            notarization_user,
+            notarization_password,
+        )
     elif target_platform == "windows":
-        package_windows(args)
+        package_windows(installer)
     else:
-        package_linux(args)
+        package_linux(installer)
+
+
+def package(args: argparse.Namespace) -> None:
+    package_products(
+        args.installer,
+        args.codesign_application_identity,
+        args.codesign_installer_identity,
+        args.notarization_user,
+        args.notarization_password,
+    )
 
 
 def install_macos() -> None:

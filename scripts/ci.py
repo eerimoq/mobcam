@@ -7,7 +7,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 from build import DISPLAY_NAME
 from build import MACOS_TARGETS
@@ -16,7 +15,10 @@ from build import REPO_ROOT
 from build import VERSION
 from build import Error
 from build import Platform
+from build import build_products
+from build import dependencies
 from build import host_platform
+from build import package_products
 from build import run
 
 UBUNTU_PACKAGES = [
@@ -50,10 +52,6 @@ def output(name: str, value: str) -> None:
         return
     with open(path, "a", encoding="utf-8") as fout:
         fout.write(f"{name}={value}\n")
-
-
-def build_py(*arguments: str) -> subprocess.CompletedProcess[Any]:
-    return run([sys.executable, REPO_ROOT / "scripts" / "build.py", *arguments])
 
 
 def setup() -> Platform:
@@ -124,7 +122,7 @@ def codesigning(args: argparse.Namespace) -> bool:
 
 def style_and_lint(_: argparse.Namespace) -> None:
     setup()
-    build_py("deps")
+    dependencies()
     run([sys.executable, "-m", "pip", "install", "--requirement", REPO_ROOT / "scripts" / "requirements.txt"])
     for target in ["style-check", "lint", "test", "spell-check"]:
         run(["make", "--directory", REPO_ROOT, target])
@@ -132,25 +130,20 @@ def style_and_lint(_: argparse.Namespace) -> None:
 
 def build(args: argparse.Namespace) -> None:
     platform = setup()
-    build_py("deps")
+    dependencies()
     if platform == "macos":
         import_certificate(args, os.urandom(16).hex())
-        build_py("build", "--codesign-application-identity", args.codesign_application_identity)
-        build_py(
-            "package",
-            "--installer",
-            "--codesign-application-identity",
-            args.codesign_application_identity,
-            "--codesign-installer-identity",
-            args.codesign_installer_identity,
-            "--notarization-user",
-            args.notarization_user,
-            "--notarization-password",
-            args.notarization_password,
+        build_products(args.codesign_application_identity)
+        package_products(
+            installer=True,
+            codesign_application_identity=args.codesign_application_identity,
+            codesign_installer_identity=args.codesign_installer_identity,
+            notarization_user=args.notarization_user,
+            notarization_password=args.notarization_password,
         )
     else:
-        build_py("build")
-        build_py("package", "--installer")
+        build_products()
+        package_products(installer=True)
     output("name", PROJECT)
     output("version", VERSION)
 
