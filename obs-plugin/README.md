@@ -3,9 +3,6 @@
 Use an iPhone or iPad running [Moblin](https://github.com/eerimoq/moblin) as a
 low latency camera in OBS Studio over USB.
 
-The same camera outside OBS Studio is the
-[Mobcam virtual camera](../virtualcam/).
-
 ## Requirements
 
 - OBS Studio 32.2 or newer.
@@ -102,7 +99,3 @@ Uninstall the plugin by removing
 
 Start OBS Studio and add a source. The plugin loaded if `Mobcam` is in the list
 of source types.
-
-## Development
-
-See the [development section](../README.md#development) of the repository.

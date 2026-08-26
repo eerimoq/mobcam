@@ -1,14 +1,7 @@
 # Mobcam virtual camera
 
 Use an iPhone or iPad running [Moblin](https://github.com/eerimoq/moblin) as a
-low latency camera and microphone in every program that can use one, over USB,
-without OBS Studio.
-
-It reads the same video and audio over the same USB cable as the
-[Mobcam OBS plugin](../obs-plugin/), but writes them to a
-[v4l2loopback](https://github.com/umlaeute/v4l2loopback) device and a virtual
-microphone instead of into OBS Studio, so every program that can use a camera
-can use the iPhone or iPad, whether or not OBS Studio is running.
+low latency camera and microphone in every program that can use one, over USB.
 
 Linux only.
 
@@ -87,7 +80,6 @@ mobcam-virtualcam
 It picks the first v4l2loopback device, the `Mobcam` sink and the first attached
 iPhone or iPad, waits for Moblin to connect and writes every frame it decodes.
 The camera becomes selectable in other programs once the first frame arrives.
-Stop it with Ctrl-C.
 
 `mobcam-virtualcam --list` prints the attached iPhones and iPads, the
 v4l2loopback devices and the virtual microphones, and `--help` the rest of the
@@ -105,7 +97,3 @@ sudo modprobe snd-aloop
 
 The audio is written to `plughw:CARD=Loopback,DEV=0`, and programs record it
 from `hw:Loopback,1,0`.
-
-## Development
-
-See the [development section](../README.md#development) of the repository.
