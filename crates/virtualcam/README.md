@@ -108,7 +108,8 @@ from `hw:Loopback,1,0`.
 either. Run the script below on it, over `ssh`, and it does all of the above:
 installs the build dependencies, the toolchain and the `v4l2loopback` module,
 builds `snd-aloop` for the BELABOX kernel, which does not ship it, builds and
-installs the binary, and runs it as a service:
+installs the binary, adds the belacoder pipeline that streams the camera, and
+runs it as a service:
 
 ```shell
 curl -fsSL https://raw.githubusercontent.com/eerimoq/mobcam/main/crates/virtualcam/belabox/install.sh | bash
@@ -118,7 +119,11 @@ It is the same script as `crates/virtualcam/belabox/install.sh` in a clone, and
 running it there builds that clone instead of a fresh one.
 
 The camera it creates is `/dev/mobcam`, labelled `Mobcam`, and the microphone
-is the `Mobcam` sound card, which belaUI lists among the audio sources and
-belacoder reads with `alsasrc device="hw:Mobcam"`. Add a belacoder pipeline
-reading from `/dev/mobcam` to stream the camera. Pass `--no-audio` or
-`--no-service` to leave either out, and `--help` to see the rest.
+is the `Mobcam` sound card, which belaUI lists among the audio sources. The
+pipeline, `custom/h265_mobcam` in belaUI, is the `h265_camlink` one of the
+machine with those two devices in it, so it encodes the same way the BELABOX
+already encodes a USB camera. Pick it and `Mobcam` in belaUI and start
+streaming.
+
+Pass `--no-audio`, `--no-pipeline` or `--no-service` to leave any of them out,
+and `--help` to see the rest.

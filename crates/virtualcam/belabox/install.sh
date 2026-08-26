@@ -10,7 +10,8 @@
 # It installs the build dependencies and the v4l2loopback module, builds the
 # FFmpeg and snd-aloop that BELABOX does not have, builds and installs the
 # binary, creates the Mobcam camera and the Mobcam sound card, both loaded at
-# boot, and runs mobcam-virtualcam as a service.
+# boot, adds the belacoder pipeline belaUI streams the camera with, and runs
+# mobcam-virtualcam as a service.
 
 set -euo pipefail
 
@@ -24,6 +25,10 @@ MODPROBE_FILE=/etc/modprobe.d/mobcam.conf
 MODULES_FILE=/etc/modules-load.d/mobcam.conf
 UDEV_FILE=/etc/udev/rules.d/70-mobcam.rules
 VIDEO_DEVICE=/dev/mobcam
+SETUP_FILE=/opt/belaUI/setup.json
+PIPELINES_DIR=/usr/share/belacoder/pipelines
+PIPELINE_TEMPLATE=h265_camlink
+PIPELINE=h265_mobcam
 AUDIO_DEVICE=plughw:CARD=$CARD,DEV=1
 FFMPEG_VERSION=7.1.2
 FFMPEG_PREFIX=/opt/mobcam/ffmpeg
@@ -52,19 +57,21 @@ PACKAGES=(
 )
 
 audio=yes
+pipeline=yes
 service=yes
 sudo=
 
 usage()
 {
     cat <<EOF
-usage: $(basename "$0") [--no-audio] [--no-service] [--help]
+usage: $(basename "$0") [--no-audio] [--no-pipeline] [--no-service] [--help]
 
 Build and install Mobcam Virtual Camera on a BELABOX.
 
-  --no-audio    do not set up the Mobcam sound card, video only
-  --no-service  do not run mobcam-virtualcam as a service
-  --help        print this text and exit
+  --no-audio     do not set up the Mobcam sound card, video only
+  --no-pipeline  do not add the belacoder pipeline belaUI streams with
+  --no-service   do not run mobcam-virtualcam as a service
+  --help         print this text and exit
 
 The source is the clone this script is part of, or a clone of
 $REPOSITORY
@@ -96,6 +103,7 @@ parse_arguments()
     while [ $# -gt 0 ] ; do
         case $1 in
             --no-audio) audio=no ;;
+            --no-pipeline) pipeline=no ;;
             --no-service) service=no ;;
             --help) usage ; exit 0 ;;
             *) usage >&2 ; die "unknown argument $1" ;;
@@ -321,6 +329,60 @@ setup_modules_load()
     } | write_file $MODULES_FILE
 }
 
+setup_value()
+{
+    sed -n "s/.*\"$1\" *: *\"\([^\"]*\)\".*/\1/p" $SETUP_FILE 2>/dev/null
+}
+
+pipelines_dir()
+{
+    local path
+
+    path=$(setup_value belacoder_path)
+    case $path in
+        "") echo $PIPELINES_DIR ;;
+        *) echo "$path/pipeline" ;;
+    esac
+}
+
+install_pipeline()
+{
+    local dir
+    local template
+    local expressions
+
+    dir=$(pipelines_dir)
+    template=$dir/$(setup_value hw)/$PIPELINE_TEMPLATE
+    if [ ! -f "$template" ] ; then
+        warn "no $template to make the pipeline from; skipping it"
+        pipeline=no
+        return
+    fi
+
+    # The template streams a USB camera and its audio, which is the same
+    # pipeline as this one but for the two devices it reads from.
+    step "Installing the $PIPELINE pipeline."
+    expressions=(-e "s|\(v4l2src device=\)[^ ]*|\1$VIDEO_DEVICE|")
+    if [ $audio = yes ] ; then
+        expressions+=(-e "s|\(alsasrc device=\)[^ ]*|\1hw:$CARD|")
+    fi
+    $sudo mkdir -p "$dir/custom"
+    sed "${expressions[@]}" "$template" | write_file "$dir/custom/$PIPELINE"
+}
+
+restart_belaui()
+{
+    if [ ! -f $SETUP_FILE ] || ! systemctl is-active --quiet belaUI ; then
+        return
+    fi
+    if pgrep -x belacoder >/dev/null ; then
+        warn "belaUI is streaming; restart it later to see the pipeline"
+        return
+    fi
+    step "Restarting belaUI, which reads the pipelines when it starts."
+    $sudo systemctl restart belaUI
+}
+
 install_service()
 {
     local arguments
@@ -365,18 +427,33 @@ The camera is $VIDEO_DEVICE, labelled $CARD.
 EOF
     if [ $audio = yes ] ; then
         cat <<EOF
-The microphone is the $CARD sound card, which belaUI lists as an audio source
-and belacoder reads with alsasrc device="hw:$CARD".
+The microphone is the $CARD sound card, which belaUI lists as an audio source.
 EOF
     else
         echo "There is no microphone; the video keeps going without one."
     fi
+    if [ $pipeline = yes ] ; then
+        cat <<EOF
+The pipeline that streams them is custom/$PIPELINE, in
+$(pipelines_dir)/custom.
+EOF
+    fi
     cat <<EOF
 
 Set the stream URL in Moblin to mobcam://localhost:7790, connect the iPhone or
-iPad to the BELABOX with a USB cable, unlock it and tap Trust. Then add a
-belacoder pipeline reading from $VIDEO_DEVICE to stream it.
+iPad to the BELABOX with a USB cable, unlock it and tap Trust.
 EOF
+    if [ $pipeline = yes ] && [ $audio = yes ] ; then
+        cat <<EOF
+Then pick custom/$PIPELINE in belaUI, with $CARD as the audio source, and
+start streaming.
+EOF
+    elif [ $pipeline = yes ] ; then
+        cat <<EOF
+Then pick custom/$PIPELINE in belaUI, pick an audio source of its own, and
+start streaming.
+EOF
+    fi
     if [ $service = yes ] ; then
         cat <<EOF
 
@@ -410,8 +487,14 @@ main()
         setup_microphone
     fi
     setup_modules_load
+    if [ $pipeline = yes ] ; then
+        install_pipeline
+    fi
     if [ $service = yes ] ; then
         install_service
+    fi
+    if [ $pipeline = yes ] ; then
+        restart_belaui
     fi
     summary
 }
