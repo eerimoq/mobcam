@@ -96,20 +96,6 @@ fn pkg_config(packages: &[&str], flags: &str) -> Vec<String> {
         .collect()
 }
 
-fn obs_include_dir(cflags_dirs: &[PathBuf]) -> PathBuf {
-    let mut candidates = cflags_dirs.to_vec();
-    candidates.push(PathBuf::from(
-        pkg_config_output(&["libobs"], "--variable=includedir").trim(),
-    ));
-    candidates
-        .iter()
-        .flat_map(|dir| [dir.clone(), dir.join("obs")])
-        .find(|dir| dir.join("obs-module.h").is_file())
-        .unwrap_or_else(|| {
-            panic!("obs-module.h is in none of {candidates:?}; install the libobs headers, `libobs-dev` on Debian and Ubuntu")
-        })
-}
-
 fn configure_macos() -> Vec<PathBuf> {
     let dependencies = dependencies_dir();
     let obs_include = require(dependencies.join("obs-studio").join("libobs"));
@@ -194,17 +180,11 @@ fn configure_linux() -> Vec<PathBuf> {
     for library in pkg_config(&packages, "--libs-only-l") {
         println!("cargo:rustc-link-lib=dylib={library}");
     }
-    let cflags_dirs: Vec<PathBuf> = pkg_config(&packages, "--cflags-only-I")
-        .into_iter()
-        .map(PathBuf::from)
-        .collect();
-    let obs_include = obs_include_dir(&cflags_dirs);
-    let mut include_dirs = vec![obs_include.clone()];
-    include_dirs.extend(cflags_dirs.into_iter().filter(|dir| *dir != obs_include));
-    // Only a fallback: the distribution installs an obsconfig.h of its own next
-    // to the headers, and that one comes first.
-    include_dirs.push(obsconfig_dir());
-    include_dirs
+    // The headers of the oldest supported OBS Studio, not the ones the
+    // distribution installs, so that the plugin loads in every newer one as
+    // well.
+    let obs_include = require(dependencies_dir().join("obs-studio").join("libobs"));
+    vec![obs_include, obsconfig_dir()]
 }
 
 fn builder(include_dirs: &[PathBuf]) -> bindgen::Builder {

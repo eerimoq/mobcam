@@ -123,7 +123,7 @@ VIRTUALCAM = Product(
     directory="virtualcam",
 )
 DATA_DIR = OBS_PLUGIN.root / "data"
-OBS_STUDIO_VERSION = "32.2.2"
+OBS_STUDIO_VERSION = "28.0.0"
 OBS_STUDIO_URL = "https://github.com/obsproject/obs-studio/archive/refs/tags"
 PREBUILT_VERSION = "2026-07-15"
 PREBUILT_URL = "https://github.com/obsproject/obs-deps/releases/download"
@@ -136,11 +136,15 @@ DEPENDENCIES: list[Dependency] = [
         os={
             "macos": DependencySource(
                 url=f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.tar.gz",
-                sha256="35d3cd0979d65664fada7119fdb612eca7c34b61a1623a330caec74bf72626c4",
+                sha256="412a1a26699a6861dbbe93346310d002369c62e00626e8c3a77c127e5e1c06e8",
             ),
             "windows": DependencySource(
                 url=f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.zip",
-                sha256="f15f001f1fa526405318835f44f9910046502f496ebc3a30d5296a5018b831aa",
+                sha256="2f54f6f658b7cada48279293c3d5b972835303accddc4e2a739c9e88cdd500cf",
+            ),
+            "linux": DependencySource(
+                url=f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.tar.gz",
+                sha256="412a1a26699a6861dbbe93346310d002369c62e00626e8c3a77c127e5e1c06e8",
             ),
         },
     ),
@@ -246,10 +250,10 @@ def extract_stripped(archive: Path, destination: Path) -> None:
 
 def dependencies(target_platform: Platform | None = None) -> None:
     target_platform = target_platform or host_platform()
-    if target_platform == "linux":
-        return
     for dependency in DEPENDENCIES:
-        source = dependency.os[target_platform]
+        source = dependency.os.get(target_platform)
+        if source is None:
+            continue
         url = source.url
         sha256 = source.sha256
         directory = DEPS_DIR / dependency.directory
