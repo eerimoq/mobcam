@@ -1,4 +1,4 @@
-# Mobcam virtual camera
+# Mobcam Virtual Camera
 
 <p align="center">
   <img src="../../logo/logo-mobcam-no-background.png" alt="Mobcam logo" width="200">

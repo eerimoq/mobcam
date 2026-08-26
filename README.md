@@ -11,8 +11,8 @@ This repository holds two products doing that in two different ways:
 
 | Product | What it is |
 | --- | --- |
-| [Mobcam OBS plugin](crates/obs-plugin/) | A source type in OBS Studio. macOS, Windows and Linux. |
-| [Mobcam virtual camera](crates/virtualcam/) | A v4l2loopback camera and a virtual microphone, for every program that is not OBS Studio. Linux. |
+| [Mobcam OBS Plugin](crates/obs-plugin/) | A source type in OBS Studio. macOS, Windows and Linux. |
+| [Mobcam Virtual Camera](crates/virtualcam/) | A v4l2loopback camera and a virtual microphone, for every program that is not OBS Studio. Linux. |
 
 ## Development
 
