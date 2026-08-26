@@ -13,13 +13,16 @@ fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by cargo"))
 }
 
-fn configure_prebuilt() {
-    let libraries = manifest_dir()
+fn repo_root() -> PathBuf {
+    manifest_dir()
         .parent()
+        .and_then(|crates| crates.parent())
         .expect("the crate lives in the repository")
-        .join(".deps")
-        .join("prebuilt")
-        .join("lib");
+        .to_path_buf()
+}
+
+fn configure_prebuilt() {
+    let libraries = repo_root().join(".deps").join("prebuilt").join("lib");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", libraries.display());
 }
 

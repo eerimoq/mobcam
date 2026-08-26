@@ -38,13 +38,14 @@ class Dependency:
     os: dict[str, DependencySource]
 
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
 PROJECT = "mobcam"
 DISPLAY_NAME = "Mobcam"
 AUTHOR = "Erik Moqvist"
 EMAIL = "erik.moqvist@gmail.com"
 WEBSITE = "https://github.com/eerimoq/mobcam"
 BUNDLE_ID = "com.eerimoq.mobcam"
+CRATES_DIR = REPO_ROOT / "crates"
 DEPS_DIR = REPO_ROOT / ".deps"
 RELEASE_DIR = REPO_ROOT / "release"
 INSTALL_DIR = RELEASE_DIR / "install"
@@ -71,7 +72,7 @@ class Product:
 
     @property
     def root(self) -> Path:
-        return REPO_ROOT / self.directory
+        return CRATES_DIR / self.directory
 
     @property
     def packaging_dir(self) -> Path:
@@ -415,7 +416,7 @@ def package_macos(args: argparse.Namespace) -> None:
     base = OBS_PLUGIN.output_name("macos")
     bundle, _, symbols = macos_paths()
     if not bundle.is_dir():
-        raise Error("no staged plugin found; run `python3 build.py build` first")
+        raise Error("no staged plugin found; run `python3 scripts/build.py build` first")
     if args.installer:
         package_macos_installer(args, base)
     else:
@@ -524,7 +525,7 @@ def notarize(package: Path, name: str, args: argparse.Namespace) -> None:
 
 def package_linux(args: argparse.Namespace) -> None:
     if not (OBS_PLUGIN.install_dir / "lib").is_dir():
-        raise Error("no staged plugin found; run `python3 build.py build` first")
+        raise Error("no staged plugin found; run `python3 scripts/build.py build` first")
     plugin_base = OBS_PLUGIN.output_name("linux")
     tar_xz(RELEASE_DIR / f"{plugin_base}.tar.xz", OBS_PLUGIN.install_dir, ["lib", "share"])
     source_tarball()
@@ -570,7 +571,7 @@ def package_windows(args: argparse.Namespace) -> None:
     base = OBS_PLUGIN.output_name("windows")
     root = OBS_PLUGIN.install_dir / OBS_PLUGIN.module
     if not root.is_dir():
-        raise Error("no staged plugin found; run `python3 build.py build` first")
+        raise Error("no staged plugin found; run `python3 scripts/build.py build` first")
     archive = RELEASE_DIR / f"{base}.zip"
     remove(archive)
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)

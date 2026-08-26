@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Style and lint
-        run: ./ci.py style_and_lint
+        run: ./scripts/ci.py style_and_lint
   macos-build:
     name: Build for macOS
     runs-on: macos-26
@@ -30,7 +30,7 @@ jobs:
       - name: Build
         id: build
         run: |
-          ./ci.py build \
+          ./scripts/ci.py build \
             --codesign-application-identity "${{ secrets.MACOS_SIGNING_APPLICATION_IDENTITY }}" \
             --codesign-installer-identity "${{ secrets.MACOS_SIGNING_INSTALLER_IDENTITY }}" \
             --codesign-certificate "${{ secrets.MACOS_SIGNING_CERT }}" \
@@ -54,7 +54,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Build
         id: build
-        run: ./ci.py build
+        run: ./scripts/ci.py build
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -70,7 +70,7 @@ jobs:
       - name: Build
         id: build
         shell: pwsh
-        run: python ci.py build
+        run: python scripts/ci.py build
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -89,7 +89,7 @@ jobs:
         uses: actions/download-artifact@v8
       - name: Collect Release Assets
         id: assets
-        run: ./ci.py release
+        run: ./scripts/ci.py release
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:

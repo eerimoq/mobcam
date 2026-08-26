@@ -1,6 +1,6 @@
 ; Inno Setup script for the @DISPLAY_NAME@ OBS plugin.
 ;
-; build.py fills the @...@ placeholders in and writes the result next to the
+; scripts/build.py fills the @...@ placeholders in and writes the result next to the
 ; staged install tree, which it passes to ISCC as /DReleaseDir=<path>.
 
 #define MyAppName "@DISPLAY_NAME@"

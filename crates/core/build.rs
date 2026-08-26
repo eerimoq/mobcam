@@ -6,6 +6,14 @@ fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by cargo"))
 }
 
+fn repo_root() -> PathBuf {
+    manifest_dir()
+        .parent()
+        .and_then(|crates| crates.parent())
+        .expect("the core crate lives in the repository")
+        .to_path_buf()
+}
+
 fn out_dir() -> PathBuf {
     PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is set by cargo"))
 }
@@ -19,14 +27,10 @@ fn target_os() -> String {
 }
 
 fn prebuilt_dir() -> PathBuf {
-    let path = manifest_dir()
-        .parent()
-        .expect("the core crate lives in the repository")
-        .join(".deps")
-        .join("prebuilt");
+    let path = repo_root().join(".deps").join("prebuilt");
     assert!(
         path.exists(),
-        "{} is missing; run `python3 build.py deps` to download the dependencies",
+        "{} is missing; run `python3 scripts/build.py deps` to download the dependencies",
         path.display()
     );
     path

@@ -53,7 +53,7 @@ def output(name: str, value: str) -> None:
 
 
 def build_py(*arguments: str) -> subprocess.CompletedProcess[Any]:
-    return run([sys.executable, REPO_ROOT / "build.py", *arguments])
+    return run([sys.executable, REPO_ROOT / "scripts" / "build.py", *arguments])
 
 
 def setup() -> Platform:
@@ -124,7 +124,7 @@ def codesigning(args: argparse.Namespace) -> bool:
 
 def style_and_lint(_: argparse.Namespace) -> None:
     setup()
-    run([sys.executable, "-m", "pip", "install", "--requirement", REPO_ROOT / "requirements.txt"])
+    run([sys.executable, "-m", "pip", "install", "--requirement", REPO_ROOT / "scripts" / "requirements.txt"])
     for target in ["style-check", "lint", "test", "spell-check"]:
         run(["make", "--directory", REPO_ROOT, target])
 

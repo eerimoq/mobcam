@@ -11,8 +11,8 @@ This repository holds two products doing that in two different ways:
 
 | Product | What it is |
 | --- | --- |
-| [Mobcam OBS plugin](obs-plugin/) | A source type in OBS Studio. macOS, Windows and Linux. |
-| [Mobcam virtual camera](virtualcam/) | A v4l2loopback camera and a virtual microphone, for every program that is not OBS Studio. Linux. |
+| [Mobcam OBS plugin](crates/obs-plugin/) | A source type in OBS Studio. macOS, Windows and Linux. |
+| [Mobcam virtual camera](crates/virtualcam/) | A v4l2loopback camera and a virtual microphone, for every program that is not OBS Studio. Linux. |
 
 ## Development
 
@@ -22,17 +22,17 @@ build the second architecture of the macOS universal binary.
 
 ```shell
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
-python3 build.py build
-python3 build.py install
+python3 scripts/build.py build
+python3 scripts/build.py install
 ```
 
 ### Layout
 
 ```
-core/         mobcam-core, the USB transport, the Moblin protocol and the decoding
-obs-plugin/   mobcam-obs-plugin, the OBS Studio plugin and everything it is packaged from
-virtualcam/   mobcam-virtualcam, the virtual camera and microphone
-logo/         the logo
-build.py      builds and installs both products, and packages the OBS plugin
-ci.py         what the GitHub Actions workflow runs
+crates/core/         mobcam-core, the USB transport, the Moblin protocol and the decoding
+crates/obs-plugin/   mobcam-obs-plugin, the OBS Studio plugin and everything it is packaged from
+crates/virtualcam/   mobcam-virtualcam, the virtual camera and microphone
+logo/                the logo
+scripts/             build.py builds and installs both products, and packages the
+                     OBS plugin, and ci.py is what the GitHub Actions workflow runs
 ```

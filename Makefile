@@ -1,5 +1,5 @@
-PYTHON_DIRS += build.py
-PYTHON_DIRS += ci.py
+PYTHON_DIRS += scripts/build.py
+PYTHON_DIRS += scripts/ci.py
 
 CODE_DIRS += $(PYTHON_DIRS)
 
@@ -8,14 +8,17 @@ CONFIG_DIR = .config
 default:
 
 build:
-	python build.py deps
-	python build.py build
+	python scripts/build.py deps
+	python scripts/build.py build
 
 package:
-	python build.py package --installer
+	python scripts/build.py package --installer
 
 install:
-	python build.py install
+	python scripts/build.py install
+
+clean:
+	python scripts/build.py clean
 
 test:
 	cargo test --workspace

@@ -36,17 +36,22 @@ fn target() -> String {
     env::var("TARGET").expect("TARGET is set by cargo")
 }
 
-fn dependencies_dir() -> PathBuf {
+fn repo_root() -> PathBuf {
     manifest_dir()
         .parent()
+        .and_then(|crates| crates.parent())
         .expect("the crate lives in the repository")
-        .join(".deps")
+        .to_path_buf()
+}
+
+fn dependencies_dir() -> PathBuf {
+    repo_root().join(".deps")
 }
 
 fn require(path: PathBuf) -> PathBuf {
     assert!(
         path.exists(),
-        "{} is missing; run `python3 build.py deps` to download the dependencies",
+        "{} is missing; run `python3 scripts/build.py deps` to download the dependencies",
         path.display()
     );
     path
