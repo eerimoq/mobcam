@@ -1,0 +1,17 @@
+Package: @PRODUCT@
+Version: @VERSION@
+Architecture: @ARCHITECTURE@
+Maintainer: @AUTHOR@ <@EMAIL@>
+Section: video
+Priority: optional
+Homepage: @WEBSITE@
+Depends: @DEPENDS@
+Recommends: v4l2loopback-dkms, pulseaudio-utils
+Conflicts: mobcam
+Replaces: mobcam
+Description: @DISPLAY_NAME@
+ Feed an iPhone or iPad running Moblin into a v4l2loopback device and the audio
+ into a PulseAudio, PipeWire or ALSA virtual microphone, over the USB cable, so
+ that every program that can use a camera can use the device.
+ .
+ The same camera inside OBS Studio is in the @OBS_PLUGIN@ package.

@@ -1,4 +1,4 @@
-Package: @NAME@
+Package: @PRODUCT@
 Version: @VERSION@
 Architecture: @ARCHITECTURE@
 Maintainer: @AUTHOR@ <@EMAIL@>
@@ -6,9 +6,10 @@ Section: video
 Priority: optional
 Homepage: @WEBSITE@
 Depends: obs-studio
-Recommends: v4l2loopback-dkms, pulseaudio-utils
+Conflicts: mobcam
+Replaces: mobcam
 Description: @DISPLAY_NAME@ plugin for OBS Studio
  Use an iPhone or iPad running Moblin as a low latency camera in OBS Studio,
- over the USB cable. Also installs mobcam-virtualcam, which feeds the same
- camera into a v4l2loopback device and the audio into a PulseAudio, PipeWire or
- ALSA virtual microphone for every other program.
+ over the USB cable.
+ .
+ The same camera without OBS Studio is in the @VIRTUALCAM@ package.

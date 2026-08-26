@@ -37,7 +37,10 @@ fn target() -> String {
 }
 
 fn dependencies_dir() -> PathBuf {
-    manifest_dir().join(".deps")
+    manifest_dir()
+        .parent()
+        .expect("the crate lives in the repository")
+        .join(".deps")
 }
 
 fn require(path: PathBuf) -> PathBuf {

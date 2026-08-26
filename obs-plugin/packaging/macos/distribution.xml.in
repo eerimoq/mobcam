@@ -15,7 +15,7 @@
     <choice id="obs-plugin" title="@DISPLAY_NAME@" description="">
         <pkg-ref id="@BUNDLE_ID@" />
     </choice>
-    <pkg-ref id="@BUNDLE_ID@" version="@VERSION@">#@NAME@.pkg</pkg-ref>
+    <pkg-ref id="@BUNDLE_ID@" version="@VERSION@">#@MODULE@.pkg</pkg-ref>
     <installation-check script="installCheck();" />
     <script>
         function installCheck() {

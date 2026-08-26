@@ -7,13 +7,13 @@
 	<key>CFBundleDisplayName</key>
 	<string>@DISPLAY_NAME@</string>
 	<key>CFBundleExecutable</key>
-	<string>@NAME@</string>
+	<string>@MODULE@</string>
 	<key>CFBundleIdentifier</key>
 	<string>@BUNDLE_ID@</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>@NAME@</string>
+	<string>@MODULE@</string>
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>

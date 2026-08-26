@@ -3,6 +3,7 @@ import hashlib
 import lzma
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -38,27 +39,97 @@ class Dependency:
 
 
 REPO_ROOT = Path(__file__).resolve().parent
-
-
-def read_cargo_manifest() -> dict[str, Any]:
-    with open(REPO_ROOT / "Cargo.toml", "rb") as fin:
-        manifest: dict[str, Any] = tomllib.load(fin)
-        return manifest
-
-
-CARGO_MANIFEST = read_cargo_manifest()
-NAME: str = CARGO_MANIFEST["package"]["name"]
+PROJECT = "mobcam"
 DISPLAY_NAME = "Mobcam"
-VERSION: str = CARGO_MANIFEST["workspace"]["package"]["version"]
-VIRTUALCAM_NAME = f"{NAME}-virtualcam"
+AUTHOR = "Erik Moqvist"
+EMAIL = "erik.moqvist@gmail.com"
+WEBSITE = "https://github.com/eerimoq/mobcam"
 BUNDLE_ID = "com.eerimoq.mobcam"
 DEPS_DIR = REPO_ROOT / ".deps"
 RELEASE_DIR = REPO_ROOT / "release"
 INSTALL_DIR = RELEASE_DIR / "install"
-PACKAGING_DIR = REPO_ROOT / "packaging"
-DATA_DIR = REPO_ROOT / "data"
 MACOS_DEPLOYMENT_TARGET = "12.0"
 MACOS_TARGETS = {"arm64": "aarch64-apple-darwin", "x86_64": "x86_64-apple-darwin"}
+
+
+def read_workspace_version() -> str:
+    with open(REPO_ROOT / "Cargo.toml", "rb") as fin:
+        manifest: dict[str, Any] = tomllib.load(fin)
+        version: str = manifest["workspace"]["package"]["version"]
+        return version
+
+
+VERSION = read_workspace_version()
+
+
+@dataclass(frozen=True)
+class Product:
+    """One of the products in this repository.
+
+    ``name`` is the cargo package, the Debian package and the base of every
+    release archive. ``module`` is what the built file is called: the OBS
+    plugin keeps the plain ``mobcam`` name it has always had, while the
+    virtual camera binary is called after the product itself.
+    """
+
+    name: str
+    module: str
+    display_name: str
+    directory: str
+
+    @property
+    def root(self) -> Path:
+        return REPO_ROOT / self.directory
+
+    @property
+    def packaging_dir(self) -> Path:
+        return self.root / "packaging"
+
+    @property
+    def install_dir(self) -> Path:
+        return INSTALL_DIR / self.directory
+
+    def output_name(self, target_platform: Platform) -> str:
+        if target_platform == "macos":
+            return f"{self.name}-{VERSION}-macos-universal"
+        elif target_platform == "windows":
+            return f"{self.name}-{VERSION}-windows-x64"
+        else:
+            return f"{self.name}-{VERSION}-{platform.machine()}-linux-gnu"
+
+    def values(self, **extra: object) -> dict[str, object]:
+        return {
+            "PRODUCT": self.name,
+            "MODULE": self.module,
+            "DISPLAY_NAME": self.display_name,
+            "VERSION": VERSION,
+            "AUTHOR": AUTHOR,
+            "EMAIL": EMAIL,
+            "WEBSITE": WEBSITE,
+            "BUNDLE_ID": BUNDLE_ID,
+            "DEPLOYMENT_TARGET": MACOS_DEPLOYMENT_TARGET,
+            "YEAR": time.strftime("%Y"),
+            "OBS_PLUGIN": OBS_PLUGIN_NAME,
+            "VIRTUALCAM": VIRTUALCAM_NAME,
+            **extra,
+        }
+
+
+OBS_PLUGIN_NAME = f"{PROJECT}-obs-plugin"
+VIRTUALCAM_NAME = f"{PROJECT}-virtualcam"
+OBS_PLUGIN = Product(
+    name=OBS_PLUGIN_NAME,
+    module=PROJECT,
+    display_name=DISPLAY_NAME,
+    directory="obs-plugin",
+)
+VIRTUALCAM = Product(
+    name=VIRTUALCAM_NAME,
+    module=VIRTUALCAM_NAME,
+    display_name=f"{DISPLAY_NAME} virtual camera",
+    directory="virtualcam",
+)
+DATA_DIR = OBS_PLUGIN.root / "data"
 OBS_STUDIO_VERSION = "32.2.2"
 OBS_STUDIO_URL = "https://github.com/obsproject/obs-studio/archive/refs/tags"
 PREBUILT_VERSION = "2026-07-15"
@@ -118,24 +189,13 @@ def host_platform() -> Platform:
         raise Error(f"unsupported platform {sys.platform}")
 
 
-def plugin() -> dict[str, str]:
-    return {
-        "NAME": NAME,
-        "DISPLAY_NAME": "Mobcam",
-        "VERSION": VERSION,
-        "AUTHOR": "Erik Moqvist",
-        "EMAIL": "erik.moqvist@gmail.com",
-        "WEBSITE": "https://github.com/eerimoq/obs-mobcam-plugin",
-        "BUNDLE_ID": BUNDLE_ID,
-        "DEPLOYMENT_TARGET": MACOS_DEPLOYMENT_TARGET,
-        "YEAR": time.strftime("%Y"),
-    }
-
-
 def render(template: Path, output: Path, **values: object) -> None:
     text = template.read_text(encoding="utf-8")
     for key, value in values.items():
         text = text.replace(f"@{key}@", str(value))
+    missing = sorted(set(re.findall(r"@[A-Z_]+@", text)))
+    if missing:
+        raise Error(f"{template} has placeholders nothing filled in: {', '.join(missing)}")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(text, encoding="utf-8")
 
@@ -147,13 +207,8 @@ def remove(path: Path) -> None:
         path.unlink()
 
 
-def output_name(target_platform: Platform) -> str:
-    if target_platform == "macos":
-        return f"{NAME}-{VERSION}-macos-universal"
-    elif target_platform == "windows":
-        return f"{NAME}-{VERSION}-windows-x64"
-    else:
-        return f"{NAME}-{VERSION}-{platform.machine()}-linux-gnu"
+def source_name() -> str:
+    return f"{PROJECT}-{VERSION}-source"
 
 
 def download(url: str, path: Path, sha256: str) -> None:
@@ -233,29 +288,31 @@ def library_name(target_platform: Platform, name: str) -> str:
         return f"lib{name}.so"
 
 
-def cargo_build(target_platform: Platform, name: str, targets: Sequence[str | None]) -> list[Path]:
+def cargo_build_library(
+    target_platform: Platform, product: Product, targets: Sequence[str | None]
+) -> list[Path]:
     environment = dict(os.environ)
     libraries: list[Path] = []
     if target_platform == "macos":
         environment["MACOSX_DEPLOYMENT_TARGET"] = MACOS_DEPLOYMENT_TARGET
     for target in targets:
-        command = ["cargo", "build", "--locked", "--profile", "release"]
+        command = ["cargo", "build", "--locked", "--profile", "release", "--package", product.name]
         if target is not None:
             command += ["--target", target]
         run(command, cwd=REPO_ROOT, env=environment)
         directory = cargo_target_dir()
         if target is not None:
             directory /= target
-        libraries.append(directory / "release" / library_name(target_platform, name))
+        libraries.append(directory / "release" / library_name(target_platform, product.module))
     return libraries
 
 
-def cargo_build_binary(package: str) -> Path:
+def cargo_build_binary(product: Product) -> Path:
     run(
-        ["cargo", "build", "--locked", "--profile", "release", "--package", package],
+        ["cargo", "build", "--locked", "--profile", "release", "--package", product.name],
         cwd=REPO_ROOT,
     )
-    return cargo_target_dir() / "release" / package
+    return cargo_target_dir() / "release" / product.module
 
 
 def copy_data(destination: Path) -> None:
@@ -277,26 +334,27 @@ def codesign(path: Path, identity: str) -> None:
     run(command + [path])
 
 
-def macos_paths(name: str) -> tuple[Path, Path, Path]:
-    bundle = INSTALL_DIR / f"{name}.plugin"
+def macos_paths() -> tuple[Path, Path, Path]:
+    module = OBS_PLUGIN.module
+    bundle = OBS_PLUGIN.install_dir / f"{module}.plugin"
     return (
         bundle,
-        bundle / "Contents" / "MacOS" / name,
-        INSTALL_DIR / f"{name}.plugin.dSYM",
+        bundle / "Contents" / "MacOS" / module,
+        OBS_PLUGIN.install_dir / f"{module}.plugin.dSYM",
     )
 
 
 def build_macos(identity: str) -> None:
-    bundle, binary, symbols = macos_paths(NAME)
-    libraries = cargo_build("macos", NAME, sorted(MACOS_TARGETS.values()))
+    bundle, binary, symbols = macos_paths()
+    libraries = cargo_build_library("macos", OBS_PLUGIN, sorted(MACOS_TARGETS.values()))
     remove(bundle)
     binary.parent.mkdir(parents=True)
     run(["lipo", "-create", *libraries, "-output", binary])
-    run(["install_name_tool", "-id", f"@rpath/{NAME}", binary])
+    run(["install_name_tool", "-id", f"@rpath/{OBS_PLUGIN.module}", binary])
     render(
-        PACKAGING_DIR / "macos" / "Info.plist.in",
+        OBS_PLUGIN.packaging_dir / "macos" / "Info.plist.in",
         bundle / "Contents" / "Info.plist",
-        **plugin(),
+        **OBS_PLUGIN.values(),
     )
     copy_data(bundle / "Contents" / "Resources")
     remove(symbols)
@@ -305,31 +363,40 @@ def build_macos(identity: str) -> None:
     codesign(bundle, identity)
 
 
-def build_linux() -> None:
-    (library,) = cargo_build("linux", NAME, [None])
-    virtualcam = cargo_build_binary(VIRTUALCAM_NAME)
-    library_dir = INSTALL_DIR / "lib" / f"{platform.machine()}-linux-gnu" / "obs-plugins"
-    binary_dir = INSTALL_DIR / "bin"
-    remove(INSTALL_DIR / "bin")
-    remove(INSTALL_DIR / "lib")
-    remove(INSTALL_DIR / "share")
+def build_linux_obs_plugin() -> None:
+    (library,) = cargo_build_library("linux", OBS_PLUGIN, [None])
+    install = OBS_PLUGIN.install_dir
+    remove(install)
+    library_dir = install / "lib" / f"{platform.machine()}-linux-gnu" / "obs-plugins"
     library_dir.mkdir(parents=True)
-    shutil.copy2(library, library_dir / f"{NAME}.so")
+    shutil.copy2(library, library_dir / f"{OBS_PLUGIN.module}.so")
+    copy_data(install / "share" / "obs" / "obs-plugins" / OBS_PLUGIN.module)
+
+
+def build_linux_virtualcam() -> None:
+    binary = cargo_build_binary(VIRTUALCAM)
+    install = VIRTUALCAM.install_dir
+    remove(install)
+    binary_dir = install / "bin"
     binary_dir.mkdir(parents=True)
-    shutil.copy2(virtualcam, binary_dir / VIRTUALCAM_NAME)
-    copy_data(INSTALL_DIR / "share" / "obs" / "obs-plugins" / NAME)
+    shutil.copy2(binary, binary_dir / VIRTUALCAM.module)
+
+
+def build_linux() -> None:
+    build_linux_obs_plugin()
+    build_linux_virtualcam()
 
 
 def build_windows() -> None:
-    (library,) = cargo_build("windows", NAME, [None])
-    root = INSTALL_DIR / NAME
+    (library,) = cargo_build_library("windows", OBS_PLUGIN, [None])
+    root = OBS_PLUGIN.install_dir / OBS_PLUGIN.module
     binary_dir = root / "bin" / "64bit"
     remove(root)
     binary_dir.mkdir(parents=True)
-    shutil.copy2(library, binary_dir / f"{NAME}.dll")
+    shutil.copy2(library, binary_dir / f"{OBS_PLUGIN.module}.dll")
     symbols = library.with_suffix(".pdb")
     if symbols.is_file():
-        shutil.copy2(symbols, binary_dir / f"{NAME}.pdb")
+        shutil.copy2(symbols, binary_dir / f"{OBS_PLUGIN.module}.pdb")
     copy_data(root / "data")
 
 
@@ -353,22 +420,22 @@ def tar_xz(archive: Path, directory: Path, members: Iterable[str]) -> None:
 
 
 def package_macos(args: argparse.Namespace) -> None:
-    base = output_name("macos")
-    bundle, _, symbols = macos_paths(NAME)
+    base = OBS_PLUGIN.output_name("macos")
+    bundle, _, symbols = macos_paths()
     if not bundle.is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
     if args.installer:
         package_macos_installer(args, base)
     else:
-        tar_xz(RELEASE_DIR / f"{base}.tar.xz", INSTALL_DIR, [bundle.name])
+        tar_xz(RELEASE_DIR / f"{base}.tar.xz", OBS_PLUGIN.install_dir, [bundle.name])
     if symbols.is_dir():
-        tar_xz(RELEASE_DIR / f"{base}-dSYMs.tar.xz", INSTALL_DIR, [symbols.name])
+        tar_xz(RELEASE_DIR / f"{base}-dSYMs.tar.xz", OBS_PLUGIN.install_dir, [symbols.name])
 
 
 def package_macos_installer(args: argparse.Namespace, base: str) -> None:
     staging = RELEASE_DIR / "installer"
     root = staging / "root" / "Library" / "Application Support" / "obs-studio" / "plugins"
-    bundle, _, _ = macos_paths(NAME)
+    bundle, _, _ = macos_paths()
     remove(staging)
     root.mkdir(parents=True)
     shutil.copytree(bundle, root / bundle.name, symlinks=True)
@@ -381,16 +448,20 @@ def package_macos_installer(args: argparse.Namespace, base: str) -> None:
             VERSION,
             "--root",
             staging / "root",
-            staging / f"{NAME}.pkg",
+            staging / f"{OBS_PLUGIN.module}.pkg",
         ]
     )
     distribution = staging / "distribution.xml"
-    render(PACKAGING_DIR / "macos" / "distribution.xml.in", distribution, **plugin())
+    render(
+        OBS_PLUGIN.packaging_dir / "macos" / "distribution.xml.in",
+        distribution,
+        **OBS_PLUGIN.values(),
+    )
     resources = staging / "resources"
     resources.mkdir(parents=True)
-    shutil.copy2(PACKAGING_DIR / "macos" / "background.png", resources / "background.png")
+    shutil.copy2(OBS_PLUGIN.packaging_dir / "macos" / "background.png", resources / "background.png")
     package = RELEASE_DIR / f"{base}.pkg"
-    unsigned = staging / f"{NAME}-distribution.pkg"
+    unsigned = staging / f"{OBS_PLUGIN.module}-distribution.pkg"
     run(
         [
             "productbuild",
@@ -418,7 +489,7 @@ def package_macos_installer(args: argparse.Namespace, base: str) -> None:
         unsigned.replace(package)
     remove(staging)
     if args.notarization_user or args.notarization_password:
-        notarize(package, NAME, args)
+        notarize(package, OBS_PLUGIN.name, args)
 
 
 def notarize(package: Path, name: str, args: argparse.Namespace) -> None:
@@ -460,19 +531,56 @@ def notarize(package: Path, name: str, args: argparse.Namespace) -> None:
 
 
 def package_linux(args: argparse.Namespace) -> None:
-    base = output_name("linux")
-    if not (INSTALL_DIR / "lib").is_dir():
+    if not (OBS_PLUGIN.install_dir / "lib").is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
-    tar_xz(RELEASE_DIR / f"{base}.tar.xz", INSTALL_DIR, ["bin", "lib", "share"])
+    if not (VIRTUALCAM.install_dir / "bin").is_dir():
+        raise Error("no staged virtual camera found; run `python3 build.py build` first")
+    plugin_base = OBS_PLUGIN.output_name("linux")
+    virtualcam_base = VIRTUALCAM.output_name("linux")
+    tar_xz(RELEASE_DIR / f"{plugin_base}.tar.xz", OBS_PLUGIN.install_dir, ["lib", "share"])
+    tar_xz(RELEASE_DIR / f"{virtualcam_base}.tar.xz", VIRTUALCAM.install_dir, ["bin"])
     source_tarball()
     if args.installer:
-        package_deb(base, NAME)
+        package_deb(OBS_PLUGIN, plugin_base)
+        package_deb(
+            VIRTUALCAM,
+            virtualcam_base,
+            DEPENDS=linked_packages(VIRTUALCAM.install_dir / "bin" / VIRTUALCAM.module),
+        )
 
 
-def package_deb(base: str, name: str) -> None:
-    staging = RELEASE_DIR / "deb"
+def linked_packages(binary: Path) -> str:
+    """The Debian packages holding the shared libraries the binary links to.
+
+    The virtual camera is installed on its own, so nothing else drags FFmpeg
+    in for it the way obs-studio does for the plugin.
+    """
+
+    libraries: list[str] = []
+    listing = run(["ldd", binary], capture_output=True, text=True).stdout
+    for line in listing.splitlines():
+        _, _, library = line.rpartition(" => ")
+        library = library.partition(" (")[0].strip()
+        if library.startswith("/"):
+            libraries.append(library)
+    if not libraries:
+        raise Error(f"ldd found no shared libraries for {binary}")
+    owners = subprocess.run(
+        ["dpkg", "--search", *libraries],
+        check=False,
+        capture_output=True,
+        text=True,
+    ).stdout
+    packages = {line.partition(":")[0] for line in owners.splitlines() if ":" in line}
+    if not packages:
+        raise Error(f"no Debian package owns any of the libraries {binary} links to")
+    return ", ".join(sorted(packages))
+
+
+def package_deb(product: Product, base: str, **values: object) -> None:
+    staging = RELEASE_DIR / f"deb-{product.directory}"
     remove(staging)
-    shutil.copytree(INSTALL_DIR, staging / "usr", symlinks=True)
+    shutil.copytree(product.install_dir, staging / "usr", symlinks=True)
     architecture = subprocess.run(
         ["dpkg", "--print-architecture"],
         check=True,
@@ -480,10 +588,9 @@ def package_deb(base: str, name: str) -> None:
         text=True,
     ).stdout.strip()
     render(
-        PACKAGING_DIR / "linux" / "control.in",
+        product.packaging_dir / "linux" / "control.in",
         staging / "DEBIAN" / "control",
-        ARCHITECTURE=architecture,
-        **plugin(),
+        **product.values(ARCHITECTURE=architecture, **values),
     )
     package = RELEASE_DIR / f"{base}.deb"
     remove(package)
@@ -492,7 +599,7 @@ def package_deb(base: str, name: str) -> None:
 
 
 def source_tarball() -> None:
-    base = f"{NAME}-{VERSION}-source"
+    base = source_name()
     archive = RELEASE_DIR / f"{base}.tar.xz"
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
     sources = run(
@@ -505,16 +612,17 @@ def source_tarball() -> None:
 
 
 def package_windows(args: argparse.Namespace) -> None:
-    base = output_name("windows")
-    if not (INSTALL_DIR / NAME).is_dir():
+    base = OBS_PLUGIN.output_name("windows")
+    root = OBS_PLUGIN.install_dir / OBS_PLUGIN.module
+    if not root.is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
     archive = RELEASE_DIR / f"{base}.zip"
     remove(archive)
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        for path in sorted((INSTALL_DIR / NAME).rglob("*")):
+        for path in sorted(root.rglob("*")):
             if path.is_file():
-                zip_file.write(path, path.relative_to(INSTALL_DIR))
+                zip_file.write(path, path.relative_to(OBS_PLUGIN.install_dir))
     if args.installer:
         package_windows_installer(base)
 
@@ -536,15 +644,17 @@ def find_inno_setup() -> str:
 def package_windows_installer(base: str) -> None:
     script = RELEASE_DIR / "installer.iss"
     render(
-        PACKAGING_DIR / "windows" / "installer.iss.in",
+        OBS_PLUGIN.packaging_dir / "windows" / "installer.iss.in",
         script,
-        SOURCE_DIR=REPO_ROOT,
-        INSTALL_DIR=INSTALL_DIR,
-        OUTPUT_DIR=RELEASE_DIR,
-        OUTPUT_NAME=f"{base}-Installer",
-        **plugin(),
+        **OBS_PLUGIN.values(
+            SOURCE_DIR=REPO_ROOT,
+            PACKAGING_DIR=OBS_PLUGIN.packaging_dir,
+            INSTALL_DIR=OBS_PLUGIN.install_dir,
+            OUTPUT_DIR=RELEASE_DIR,
+            OUTPUT_NAME=f"{base}-Installer",
+        ),
     )
-    run([find_inno_setup(), script, f"/DReleaseDir={INSTALL_DIR}"])
+    run([find_inno_setup(), script, f"/DReleaseDir={OBS_PLUGIN.install_dir}"])
     remove(script)
 
 
@@ -558,26 +668,38 @@ def package(args: argparse.Namespace) -> None:
         package_linux(args)
 
 
+def install_macos() -> None:
+    destination = Path.home() / "Library/Application Support/obs-studio/plugins"
+    source = macos_paths()[0]
+    destination.mkdir(parents=True, exist_ok=True)
+    remove(destination / source.name)
+    shutil.copytree(source, destination / source.name, symlinks=True)
+
+
+def install_linux() -> None:
+    destination = Path.home() / ".config" / "obs-studio" / "plugins" / OBS_PLUGIN.module
+    remove(destination)
+    (destination / "bin" / "64bit").mkdir(parents=True)
+    shutil.copy2(
+        OBS_PLUGIN.install_dir
+        / "lib"
+        / f"{platform.machine()}-linux-gnu"
+        / "obs-plugins"
+        / f"{OBS_PLUGIN.module}.so",
+        destination / "bin" / "64bit" / f"{OBS_PLUGIN.module}.so",
+    )
+    copy_data(destination / "data")
+    binaries = Path.home() / ".local" / "bin"
+    binaries.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(VIRTUALCAM.install_dir / "bin" / VIRTUALCAM.module, binaries / VIRTUALCAM.module)
+
+
 def install(_: argparse.Namespace) -> None:
     target_platform = host_platform()
     if target_platform == "macos":
-        destination = Path.home() / "Library/Application Support/obs-studio/plugins"
-        source = macos_paths(NAME)[0]
-        destination.mkdir(parents=True, exist_ok=True)
-        remove(destination / source.name)
-        shutil.copytree(source, destination / source.name, symlinks=True)
+        install_macos()
     elif target_platform == "linux":
-        destination = Path.home() / ".config" / "obs-studio" / "plugins" / NAME
-        remove(destination)
-        (destination / "bin" / "64bit").mkdir(parents=True)
-        shutil.copy2(
-            INSTALL_DIR / "lib" / f"{platform.machine()}-linux-gnu" / "obs-plugins" / f"{NAME}.so",
-            destination / "bin" / "64bit" / f"{NAME}.so",
-        )
-        copy_data(destination / "data")
-        binaries = Path.home() / ".local" / "bin"
-        binaries.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(INSTALL_DIR / "bin" / VIRTUALCAM_NAME, binaries / VIRTUALCAM_NAME)
+        install_linux()
     else:
         raise Error("installing is only supported on macOS and Linux")
 

@@ -11,7 +11,7 @@ from typing import Any
 
 from build import DISPLAY_NAME
 from build import MACOS_TARGETS
-from build import NAME
+from build import PROJECT
 from build import REPO_ROOT
 from build import VERSION
 from build import Error
@@ -148,8 +148,8 @@ def build(args: argparse.Namespace) -> None:
     else:
         build_py("build")
         build_py("package", "--installer")
-    output("pluginName", NAME)
-    output("pluginVersion", VERSION)
+    output("name", PROJECT)
+    output("version", VERSION)
 
 
 def release(_: argparse.Namespace) -> None:
@@ -160,7 +160,7 @@ def release(_: argparse.Namespace) -> None:
                 for path in sorted(directory.glob(f"*.{suffix}")):
                     print(f"    {path.relative_to(root)}")
                     shutil.move(path, root / path.name)
-    output("pluginDisplayName", DISPLAY_NAME)
+    output("displayName", DISPLAY_NAME)
 
 
 def main() -> None:

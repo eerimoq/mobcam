@@ -1,5 +1,5 @@
 [workspace]
-members = ["core", "virtualcam"]
+members = ["core", "obs-plugin", "virtualcam"]
 resolver = "3"
 
 [workspace.package]
@@ -8,30 +8,6 @@ edition = "2024"
 rust-version = "1.98"
 license = "GPL-2.0-or-later"
 publish = false
-
-[package]
-name = "mobcam"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-publish.workspace = true
-
-[lib]
-name = "mobcam"
-path = "src/lib.rs"
-crate-type = ["cdylib"]
-test = false
-doctest = false
-
-[dependencies]
-mobcam-core = { path = "core" }
-
-[build-dependencies]
-bindgen = "0.72"
-
-[target.'cfg(windows)'.build-dependencies]
-cc = "1"
 
 [profile.release]
 panic = "unwind"

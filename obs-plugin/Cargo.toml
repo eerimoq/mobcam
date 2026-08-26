@@ -1,0 +1,23 @@
+[package]
+name = "mobcam-obs-plugin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "mobcam"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+mobcam-core = { path = "../core" }
+
+[build-dependencies]
+bindgen = "0.72"
+
+[target.'cfg(windows)'.build-dependencies]
+cc = "1"

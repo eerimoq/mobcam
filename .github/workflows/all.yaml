@@ -27,7 +27,7 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
-      - name: Build Plugin
+      - name: Build
         id: build
         run: |
           ./ci.py build \
@@ -40,42 +40,42 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal
-          path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal.*
+          name: ${{ steps.build.outputs.name }}-${{ steps.build.outputs.version }}-macos-universal
+          path: ${{ github.workspace }}/release/*-macos-universal.*
       - name: Upload Debug Symbol Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-dSYMs
-          path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-macos-universal-dSYMs.*
+          name: ${{ steps.build.outputs.name }}-${{ steps.build.outputs.version }}-macos-universal-dSYMs
+          path: ${{ github.workspace }}/release/*-macos-universal-dSYMs.*
   ubuntu-build:
     name: Build for Ubuntu
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - name: Build Plugin
+      - name: Build
         id: build
         run: ./ci.py build
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-ubuntu-24.04-x86_64
+          name: ${{ steps.build.outputs.name }}-${{ steps.build.outputs.version }}-ubuntu-24.04-x86_64
           path: |
-            ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-x86_64*.*
-            ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-source.*
+            ${{ github.workspace }}/release/*-x86_64-linux-gnu.*
+            ${{ github.workspace }}/release/*-source.*
   windows-build:
     name: Build for Windows
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v7
-      - name: Build Plugin
+      - name: Build
         id: build
         shell: pwsh
         run: python ci.py build
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-windows-x64
-          path: ${{ github.workspace }}/release/${{ steps.build.outputs.pluginName }}-${{ steps.build.outputs.pluginVersion }}-windows-x64*.*
+          name: ${{ steps.build.outputs.name }}-${{ steps.build.outputs.version }}-windows-x64
+          path: ${{ github.workspace }}/release/*-windows-x64*.*
   create-release:
     name: Create Release
     if: github.ref_type == 'tag'
@@ -95,7 +95,7 @@ jobs:
         with:
           draft: false
           tag_name: ${{ github.ref_name }}
-          name: ${{ steps.assets.outputs.pluginDisplayName }} ${{ github.ref_name }}
+          name: ${{ steps.assets.outputs.displayName }} ${{ github.ref_name }}
           files: |
             ${{ github.workspace }}/*.exe
             ${{ github.workspace }}/*.zip

@@ -4,17 +4,17 @@
 ; staged install tree, which it passes to ISCC as /DReleaseDir=<path>.
 
 #define MyAppName "@DISPLAY_NAME@"
-#define MyPluginName "@NAME@"
+#define MyPluginName "@MODULE@"
 #define MyAppVersion "@VERSION@"
 #define MyAppPublisher "@AUTHOR@"
 #define MyAppURL "@WEBSITE@"
 
 ; Moblin's default logo, rendered to a multi resolution icon. It is the icon
 ; of the installer and of the uninstall entry in Apps & features.
-#define MyIconFile "@SOURCE_DIR@\packaging\windows\@NAME@.ico"
+#define MyIconFile "@PACKAGING_DIR@\windows\@MODULE@.ico"
 
 ; The directory the 0.7.0 and older installers installed into.
-#define MyLegacyDir "{commonappdata}\obs-studio\plugins\@NAME@"
+#define MyLegacyDir "{commonappdata}\obs-studio\plugins\@MODULE@"
 
 #ifndef ReleaseDir
   #define ReleaseDir "@INSTALL_DIR@"
