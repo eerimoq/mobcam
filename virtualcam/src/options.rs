@@ -17,8 +17,6 @@ Programs then record from the monitor of that sink. An ALSA loopback device,
 from `sudo modprobe snd-aloop`, is used instead on machines without PulseAudio
 or PipeWire.";
 
-/// The virtual microphone to play the audio into. Only the backends the binary
-/// was built with are there to pick.
 #[derive(Clone, Copy, Eq, PartialEq, ValueEnum)]
 pub enum AudioBackend {
     /// the first of the ones below that the machine has
