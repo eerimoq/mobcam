@@ -192,8 +192,8 @@ impl Sink for Output<'_> {
             height,
             colorspace: colorspace(frame),
             quantization: match frame.is_full_range() {
-                true => v4l2::QUANTIZATION_FULL_RANGE,
-                false => v4l2::QUANTIZATION_LIM_RANGE,
+                true => v4l2::Quantization::FullRange,
+                false => v4l2::Quantization::LimitedRange,
             },
         };
         if let Err(error) = self.device.write_frame(picture, self.buffer) {
@@ -221,10 +221,10 @@ impl Handler for Output<'_> {
     }
 }
 
-fn colorspace(frame: &ffmpeg::Frame) -> u32 {
+fn colorspace(frame: &ffmpeg::Frame) -> v4l2::Colorspace {
     match frame.colorspace() {
-        av::AVCOL_SPC_BT470BG | av::AVCOL_SPC_SMPTE170M => v4l2::COLORSPACE_SMPTE170M,
-        av::AVCOL_SPC_BT2020_NCL => v4l2::COLORSPACE_BT2020,
-        _ => v4l2::COLORSPACE_REC709,
+        av::AVCOL_SPC_BT470BG | av::AVCOL_SPC_SMPTE170M => v4l2::Colorspace::Smpte170m,
+        av::AVCOL_SPC_BT2020_NCL => v4l2::Colorspace::Rec2020,
+        _ => v4l2::Colorspace::Rec709,
     }
 }
