@@ -64,14 +64,6 @@ VERSION = read_workspace_version()
 
 @dataclass(frozen=True)
 class Product:
-    """One of the products in this repository.
-
-    ``name`` is the cargo package, the Debian package and the base of every
-    release archive. ``module`` is what the built file is called: the OBS
-    plugin keeps the plain ``mobcam`` name it has always had, while the
-    virtual camera binary is called after the product itself.
-    """
-
     name: str
     module: str
     display_name: str
@@ -533,56 +525,14 @@ def notarize(package: Path, name: str, args: argparse.Namespace) -> None:
 def package_linux(args: argparse.Namespace) -> None:
     if not (OBS_PLUGIN.install_dir / "lib").is_dir():
         raise Error("no staged plugin found; run `python3 build.py build` first")
-    if not (VIRTUALCAM.install_dir / "bin").is_dir():
-        raise Error("no staged virtual camera found; run `python3 build.py build` first")
     plugin_base = OBS_PLUGIN.output_name("linux")
-    virtualcam_base = VIRTUALCAM.output_name("linux")
     tar_xz(RELEASE_DIR / f"{plugin_base}.tar.xz", OBS_PLUGIN.install_dir, ["lib", "share"])
-    tar_xz(RELEASE_DIR / f"{virtualcam_base}.tar.xz", VIRTUALCAM.install_dir, ["bin"])
     source_tarball()
     if args.installer:
         package_deb(OBS_PLUGIN, plugin_base)
-        package_deb(
-            VIRTUALCAM,
-            virtualcam_base,
-            DEPENDS=shared_library_dependencies(
-                VIRTUALCAM, VIRTUALCAM.install_dir / "bin" / VIRTUALCAM.module
-            ),
-        )
 
 
-def shared_library_dependencies(product: Product, binary: Path) -> str:
-    """What the binary needs, as a Debian dependency field.
-
-    The virtual camera is installed on its own, so nothing else drags FFmpeg in
-    for it the way obs-studio does for the plugin. dpkg-shlibdeps turns the
-    libraries the binary links to into versioned dependencies; it wants a
-    debian/control next to it, which a package built by hand has no other use
-    for.
-    """
-
-    staging = RELEASE_DIR / f"shlibdeps-{product.directory}"
-    remove(staging)
-    (staging / "debian").mkdir(parents=True)
-    (staging / "debian" / "control").write_text(
-        f"Source: {product.name}\n\nPackage: {product.name}\nArchitecture: any\n",
-        encoding="utf-8",
-    )
-    substitutions: str = run(
-        ["dpkg-shlibdeps", "-O", binary],
-        cwd=staging,
-        capture_output=True,
-        text=True,
-    ).stdout
-    remove(staging)
-    for line in substitutions.splitlines():
-        field, separator, dependencies = line.partition("=")
-        if separator and field == "shlibs:Depends" and dependencies:
-            return dependencies
-    raise Error(f"dpkg-shlibdeps found no dependencies for {binary}:\n{substitutions.strip()}")
-
-
-def package_deb(product: Product, base: str, **values: object) -> None:
+def package_deb(product: Product, base: str) -> None:
     staging = RELEASE_DIR / f"deb-{product.directory}"
     remove(staging)
     shutil.copytree(product.install_dir, staging / "usr", symlinks=True)
@@ -595,7 +545,7 @@ def package_deb(product: Product, base: str, **values: object) -> None:
     render(
         product.packaging_dir / "linux" / "control.in",
         staging / "DEBIAN" / "control",
-        **product.values(ARCHITECTURE=architecture, **values),
+        **product.values(ARCHITECTURE=architecture),
     )
     package = RELEASE_DIR / f"{base}.deb"
     remove(package)

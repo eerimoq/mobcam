@@ -33,6 +33,6 @@ core/         mobcam-core, the USB transport, the Moblin protocol and the decodi
 obs-plugin/   mobcam-obs-plugin, the OBS Studio plugin and everything it is packaged from
 virtualcam/   mobcam-virtualcam, the virtual camera and microphone
 logo/         the logo
-build.py      builds, packages and installs both products
+build.py      builds and installs both products, and packages the OBS plugin
 ci.py         what the GitHub Actions workflow runs
 ```

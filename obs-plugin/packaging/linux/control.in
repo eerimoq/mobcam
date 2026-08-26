@@ -12,4 +12,4 @@ Description: @DISPLAY_NAME@ plugin for OBS Studio
  Use an iPhone or iPad running Moblin as a low latency camera in OBS Studio,
  over the USB cable.
  .
- The same camera without OBS Studio is in the @VIRTUALCAM@ package.
+ The same camera without OBS Studio is the @VIRTUALCAM@ virtual camera.

@@ -18,35 +18,34 @@ Linux only.
 - PulseAudio, PipeWire or ALSA, for the microphone. The video keeps going
   without any of them.
 
-## Install
+## Build and install
 
-Every release is on the
-[releases page](https://github.com/eerimoq/mobcam/releases). On Debian and
-Ubuntu, download `mobcam-virtualcam-<version>-x86_64-linux-gnu.deb` and install
-it:
+Install a [rustup](https://rustup.rs) toolchain, the build dependencies and
+`usbmuxd`, then connect the device once, unlock it and tap Trust:
 
 ```shell
-sudo apt install ./mobcam-virtualcam-<version>-x86_64-linux-gnu.deb
+sudo apt install build-essential pkg-config libclang-dev libavcodec-dev \
+    libavutil-dev usbmuxd
 ```
 
-On other distributions, download
-`mobcam-virtualcam-<version>-x86_64-linux-gnu.tar.xz` and unpack it into `/usr`:
+Build it, either from a clone of the repository or from the
+`mobcam-<version>-source.tar.xz` tarball on the
+[releases page](https://github.com/eerimoq/mobcam/releases):
 
 ```shell
-sudo tar -xf mobcam-virtualcam-<version>-x86_64-linux-gnu.tar.xz -C /usr
+cargo build --locked --release --package mobcam-virtualcam
 ```
 
-Install `usbmuxd` as well, connect the device once, unlock it and tap Trust:
+The binary ends up in `target/release/mobcam-virtualcam`. Copy it wherever it
+is wanted:
 
 ```shell
-sudo apt install usbmuxd
+sudo install -m 755 target/release/mobcam-virtualcam /usr/local/bin
 ```
 
-Uninstall the package with `sudo apt remove mobcam-virtualcam`, or, for the
-tarball, remove `/usr/bin/mobcam-virtualcam`.
-
-Earlier releases shipped the virtual camera and the OBS Studio plugin together
-in one `mobcam` package. Installing this one replaces it.
+Uninstall it by removing the binary again. An earlier `mobcam-virtualcam` or
+`mobcam` package from a release that still shipped a binary is removed with
+`sudo apt remove mobcam-virtualcam mobcam`.
 
 ## Setting up the camera and the microphone
 
