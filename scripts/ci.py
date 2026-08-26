@@ -124,6 +124,7 @@ def codesigning(args: argparse.Namespace) -> bool:
 
 def style_and_lint(_: argparse.Namespace) -> None:
     setup()
+    build_py("deps")
     run([sys.executable, "-m", "pip", "install", "--requirement", REPO_ROOT / "scripts" / "requirements.txt"])
     for target in ["style-check", "lint", "test", "spell-check"]:
         run(["make", "--directory", REPO_ROOT, target])
