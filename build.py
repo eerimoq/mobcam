@@ -50,6 +50,7 @@ RELEASE_DIR = REPO_ROOT / "release"
 INSTALL_DIR = RELEASE_DIR / "install"
 MACOS_DEPLOYMENT_TARGET = "12.0"
 MACOS_TARGETS = {"arm64": "aarch64-apple-darwin", "x86_64": "x86_64-apple-darwin"}
+PACKAGE_NAME_RE = re.compile(r"[a-z0-9][a-z0-9+.-]*")
 
 
 def read_workspace_version() -> str:
@@ -571,7 +572,19 @@ def linked_packages(binary: Path) -> str:
         capture_output=True,
         text=True,
     ).stdout
-    packages = {line.partition(":")[0] for line in owners.splitlines() if ":" in line}
+    packages: set[str] = set()
+    for line in owners.splitlines():
+        # "libc6:amd64: /path", or several packages for one path as
+        # "libfoo, libbar: /path". Lines about diverted files look like
+        # "diversion by libc6 from: /path" and are not owner lines at all;
+        # they are dropped by the name check below.
+        names, separator, library = line.rpartition(": ")
+        if not separator or not library.startswith("/"):
+            continue
+        for name in names.split(","):
+            package = name.strip().partition(":")[0]
+            if PACKAGE_NAME_RE.fullmatch(package):
+                packages.add(package)
     if not packages:
         raise Error(f"no Debian package owns any of the libraries {binary} links to")
     return ", ".join(sorted(packages))
