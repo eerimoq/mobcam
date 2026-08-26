@@ -1,9 +1,3 @@
-//! Playing audio into an ALSA loopback device.
-//!
-//! The snd-aloop module pairs its devices up the way v4l2loopback pairs its
-//! nodes: what is written to device 0 of the Loopback card is what everything
-//! else records from device 1 of it.
-
 use crate::audio::{LATENCY_US, Spec};
 use crate::dynlib::Library;
 use std::ffi::CStr;
@@ -24,8 +18,6 @@ const FORMAT_S16_LE: c_int = 2;
 const ACCESS_RW_INTERLEAVED: c_int = 3;
 const SOFT_RESAMPLE: c_int = 1;
 const BLOCKING: c_int = 0;
-/// One recovered underrun per write is plenty; more than that is a device that
-/// is not taking the samples at all.
 const WRITE_ATTEMPTS: usize = 3;
 
 type Open = unsafe extern "C" fn(*mut *mut c_void, *const c_char, c_int, c_int) -> c_int;
@@ -76,13 +68,10 @@ fn api() -> Option<&'static Api> {
     API.get_or_init(Api::load).as_ref()
 }
 
-/// Whether libasound is installed.
 pub fn available() -> bool {
     api().is_some()
 }
 
-/// The loopback cards snd-aloop has created, as the device to write to and the
-/// name the card goes by.
 pub fn loopback_devices() -> Vec<(String, String)> {
     let Ok(cards) = std::fs::read_to_string(CARDS) else {
         return Vec::new();
@@ -101,9 +90,6 @@ fn loopback_cards(cards: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// One card of `/proc/asound/cards`, whose lines look like
-/// ` 1 [Loopback       ]: Loopback - Loopback`, followed by an indented line
-/// of details that this skips by insisting on the card index.
 fn card(line: &str) -> Option<(String, String)> {
     let (index, rest) = line.split_once('[')?;
     index.trim().parse::<u32>().ok()?;

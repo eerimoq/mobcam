@@ -1,5 +1,3 @@
-//! Use an iPhone or iPad running Moblin as a camera in any program, over USB.
-
 #[cfg(target_os = "linux")]
 mod alsa;
 #[cfg(target_os = "linux")]

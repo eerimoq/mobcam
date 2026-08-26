@@ -1,8 +1,3 @@
-//! Playing audio into a PulseAudio or PipeWire sink.
-//!
-//! Only the simple API is used, so a chunk of samples is one blocking write,
-//! and libpulse paces the writes to the sink's clock.
-
 use crate::audio::{LATENCY_US, Spec};
 use crate::dynlib::Library;
 use std::ffi::CStr;
@@ -18,7 +13,6 @@ const APPLICATION: &CStr = c"Mobcam";
 const STREAM: &CStr = c"camera";
 const STREAM_PLAYBACK: c_int = 1;
 const SAMPLE_S16LE: c_int = 3;
-/// `(uint32_t) -1`, which is what libpulse takes as "the server decides".
 const DEFAULT: u32 = u32::MAX;
 
 unsafe extern "C" {
@@ -71,7 +65,6 @@ impl Api {
                 new: library.symbol(c"pa_simple_new")?,
                 write: library.symbol(c"pa_simple_write")?,
                 free: library.symbol(c"pa_simple_free")?,
-                // Lives in libpulse, which libpulse-simple pulls in.
                 strerror: library.symbol(c"pa_strerror"),
             }
         })
@@ -101,8 +94,6 @@ fn socket() -> PathBuf {
     runtime_dir.join("pulse").join("native")
 }
 
-/// Whether libpulse is installed and a sound server is listening. PipeWire
-/// answers on the same socket, through pipewire-pulse.
 pub fn available() -> bool {
     api().is_some() && (std::env::var_os("PULSE_SERVER").is_some() || socket().exists())
 }

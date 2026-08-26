@@ -1,9 +1,3 @@
-//! Loading libpulse and libasound at runtime.
-//!
-//! Neither is needed to build `mobcam-virtualcam`, and a machine that has only
-//! one of them, or neither, still runs it; the backends that cannot be loaded
-//! are simply not offered.
-
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::ffi::c_char;
@@ -17,8 +11,6 @@ unsafe extern "C" {
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
 }
 
-/// A shared library, kept loaded for the rest of the process; nothing here ever
-/// calls `dlclose`, so the symbols taken out of it stay valid.
 pub struct Library(*mut c_void);
 
 impl Library {

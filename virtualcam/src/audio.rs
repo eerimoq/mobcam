@@ -1,22 +1,11 @@
-//! Turns decoded audio into a virtual microphone every program can record from.
-//!
-//! The samples are interleaved into 16 bit PCM, which every backend takes, and
-//! played into a PulseAudio or PipeWire sink or an ALSA loopback device.
-
 use crate::alsa;
 use crate::options::AudioBackend;
 use crate::pulse;
 use mobcam_core::ffmpeg::{self, sys as av};
 use mobcam_core::{Level, log};
 
-/// How much audio a backend buffers, in microseconds. Short enough to keep the
-/// audio next to the video, long enough to ride out a hiccup.
 pub const LATENCY_US: u32 = 100_000;
-
-/// The sink `mobcam-virtualcam` plays into unless told otherwise, and the name
-/// the README has the user create it under.
 pub const DEFAULT_SINK: &str = "Mobcam";
-
 const MAX_CHANNELS: i32 = 8;
 const BYTES_PER_SAMPLE: usize = size_of::<i16>();
 
@@ -36,12 +25,10 @@ impl Spec {
         })
     }
 
-    /// The size of one sample of every channel, in bytes.
     pub fn frame_size(&self) -> usize {
         BYTES_PER_SAMPLE * usize::from(self.channels)
     }
 
-    /// How many bytes the given number of microseconds of audio takes.
     pub fn bytes_for(&self, microseconds: u32) -> u32 {
         let bytes = u64::from(self.rate) * u64::from(microseconds) / 1_000_000 * self.frame_size() as u64;
         u32::try_from(bytes).unwrap_or(u32::MAX)
@@ -62,8 +49,6 @@ impl Backend {
         }
     }
 
-    /// What to tell the user when the device cannot be opened; both backends
-    /// need something set up before there is anything to play into.
     fn hint(self, device: &str) -> String {
         match self {
             Self::Pulse => format!("create it with `pactl load-module module-null-sink sink_name={device}`"),
@@ -93,7 +78,6 @@ impl Playback {
     }
 }
 
-/// The sample formats a decoder hands out, all of which narrow to 16 bit.
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Sample {
     U8,
@@ -125,7 +109,6 @@ impl Sample {
         }
     }
 
-    /// The samples come out of the decoder in the machine's byte order.
     fn read(self, bytes: &[u8]) -> i16 {
         match self {
             Self::U8 => i16::from(bytes[0]).wrapping_sub(128) << 8,
@@ -141,8 +124,6 @@ fn scale(sample: f64) -> i16 {
     (sample.clamp(-1.0, 1.0) * f64::from(i16::MAX)) as i16
 }
 
-/// Lays the planes out as one plane per channel, or a single plane of samples
-/// of every channel in turn.
 fn planes(frame: &ffmpeg::Frame, spec: Spec, sample: Sample) -> Option<Vec<&[u8]>> {
     let samples = usize::try_from(frame.samples()).ok()?;
     let channels = usize::from(spec.channels);
@@ -189,8 +170,6 @@ pub struct Audio {
 }
 
 impl Audio {
-    /// Picks the backend and the device to play into, or nothing at all when
-    /// the machine has no virtual microphone to offer.
     pub fn open(backend: AudioBackend, device: Option<&str>) -> Option<Self> {
         let (backend, device) = resolve(backend, device)?;
         log!(Level::Info, "playing audio into {}", backend.describe(&device));
@@ -205,8 +184,6 @@ impl Audio {
         })
     }
 
-    /// Lets a device that has come back, or a sink that has been created since,
-    /// be tried again on the next connection.
     pub fn reset(&mut self) {
         self.failed = false;
     }
@@ -279,8 +256,6 @@ impl Audio {
         }
     }
 
-    /// Says what went wrong once and gives up on the audio until the device
-    /// connects again; the video keeps going either way.
     fn fail(&mut self, message: String) {
         log!(Level::Warning, "{message}");
         self.playback = None;
@@ -308,7 +283,6 @@ fn resolve(backend: AudioBackend, device: Option<&str>) -> Option<(Backend, Stri
     }
 }
 
-/// The virtual microphones `--list` prints.
 pub fn devices() -> Vec<String> {
     let mut devices = Vec::new();
     if pulse::available() {

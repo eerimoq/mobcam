@@ -1,8 +1,3 @@
-//! Just enough Video4Linux2 to push frames into a v4l2loopback device.
-//!
-//! Only the video output side is used, in the read/write mode v4l2loopback
-//! offers, so a frame is one `write` of a whole I420 image.
-
 use std::ffi::c_int;
 use std::ffi::c_ulong;
 use std::ffi::c_void;

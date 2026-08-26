@@ -1,5 +1,3 @@
-//! Turns a decoded frame into the I420 image a v4l2loopback device is fed.
-
 use mobcam_core::ffmpeg::{self, sys as av};
 
 struct Grid {

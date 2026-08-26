@@ -1,6 +1,3 @@
-//! Every device a source has seen, remembered in its settings so that the device list
-//! also contains devices that are not attached right now.
-
 use crate::obs::{Data, DataArray, OwnedData};
 use std::ffi::CStr;
 
