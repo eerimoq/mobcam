@@ -25,14 +25,3 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 make build
 make install
 ```
-
-### Layout
-
-```
-crates/core/         mobcam-core, the USB transport, the Moblin protocol and the decoding
-crates/obs-plugin/   mobcam-obs-plugin, the OBS Studio plugin and everything it is packaged from
-crates/virtualcam/   mobcam-virtualcam, the virtual camera and microphone
-logo/                the logo
-scripts/             build.py builds and installs both products, and packages the
-                     OBS plugin, and ci.py is what the GitHub Actions workflow runs
-```
