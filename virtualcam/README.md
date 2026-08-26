@@ -43,9 +43,7 @@ is wanted:
 sudo install -m 755 target/release/mobcam-virtualcam /usr/local/bin
 ```
 
-Uninstall it by removing the binary again. An earlier `mobcam-virtualcam` or
-`mobcam` package from a release that still shipped a binary is removed with
-`sudo apt remove mobcam-virtualcam mobcam`.
+Uninstall it by removing the binary again.
 
 ## Setting up the camera and the microphone
 
@@ -63,8 +61,7 @@ is the name the camera shows up under.
 Create the sink the audio is played into:
 
 ```shell
-pactl load-module module-null-sink sink_name=Mobcam \
-    sink_properties=device.description=Mobcam
+pactl load-module module-null-sink sink_name=Mobcam sink_properties=device.description=Mobcam
 ```
 
 PulseAudio and PipeWire both take that, and both then offer `Monitor of Mobcam`
