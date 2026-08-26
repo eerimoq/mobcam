@@ -48,6 +48,12 @@ fn dependencies_dir() -> PathBuf {
     repo_root().join(".deps")
 }
 
+fn obs_sources_hash() -> String {
+    let marker = dependencies_dir().join(".dependency_obs-studio.sha256");
+    println!("cargo:rerun-if-changed={}", marker.display());
+    fs::read_to_string(&marker).unwrap_or_default().trim().to_string()
+}
+
 fn require(path: PathBuf) -> PathBuf {
     assert!(
         path.exists(),
@@ -205,7 +211,11 @@ fn builder(include_dirs: &[PathBuf]) -> bindgen::Builder {
 fn generate(name: &str, header: &str, builder: bindgen::Builder) -> PathBuf {
     let path = out_dir().join(format!("{name}.rs"));
     let stamp_path = out_dir().join(format!("{name}.stamp"));
-    let stamp = format!("{}\n{header}", builder.command_line_flags().join(" "));
+    let stamp = format!(
+        "{}\n{header}\n{}",
+        builder.command_line_flags().join(" "),
+        obs_sources_hash()
+    );
     if path.exists() && fs::read_to_string(&stamp_path).is_ok_and(|old| old == stamp) {
         return path;
     }
@@ -248,6 +258,7 @@ fn generate_obs(include_dirs: &[PathBuf]) -> PathBuf {
 }
 
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
     let platform = Platform::current();
     let include_dirs = match platform {
         Platform::Macos => configure_macos(),
