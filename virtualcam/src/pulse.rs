@@ -1,24 +1,28 @@
-use crate::audio::{LATENCY_US, Spec};
-use crate::dynlib::Library;
-use std::ffi::CStr;
-use std::ffi::CString;
-use std::ffi::c_char;
-use std::ffi::c_int;
-use std::ffi::c_void;
+#[cfg(pulse)]
+use crate::audio::LATENCY_US;
+use crate::audio::Spec;
+#[cfg(pulse)]
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
-const LIBRARY: &str = "libpulse-simple.so.0";
+#[cfg(pulse)]
 const APPLICATION: &CStr = c"Mobcam";
+#[cfg(pulse)]
 const STREAM: &CStr = c"camera";
+#[cfg(pulse)]
 const STREAM_PLAYBACK: c_int = 1;
+#[cfg(pulse)]
 const SAMPLE_S16LE: c_int = 3;
+#[cfg(pulse)]
 const DEFAULT: u32 = u32::MAX;
+#[cfg(not(pulse))]
+const UNSUPPORTED: &str = "mobcam-virtualcam was built without PulseAudio support";
 
 unsafe extern "C" {
     fn getuid() -> u32;
 }
 
+#[cfg(pulse)]
 #[repr(C)]
 struct SampleSpec {
     format: c_int,
@@ -26,6 +30,7 @@ struct SampleSpec {
     channels: u8,
 }
 
+#[cfg(pulse)]
 #[repr(C)]
 struct BufferAttr {
     maxlength: u32,
@@ -35,56 +40,31 @@ struct BufferAttr {
     fragsize: u32,
 }
 
-type New = unsafe extern "C" fn(
-    *const c_char,
-    *const c_char,
-    c_int,
-    *const c_char,
-    *const c_char,
-    *const SampleSpec,
-    *const c_void,
-    *const BufferAttr,
-    *mut c_int,
-) -> *mut c_void;
-type Write = unsafe extern "C" fn(*mut c_void, *const c_void, usize, *mut c_int) -> c_int;
-type Free = unsafe extern "C" fn(*mut c_void);
-type StrError = unsafe extern "C" fn(c_int) -> *const c_char;
-
-struct Api {
-    new: New,
-    write: Write,
-    free: Free,
-    strerror: Option<StrError>,
+#[cfg(pulse)]
+unsafe extern "C" {
+    fn pa_simple_new(
+        server: *const c_char,
+        name: *const c_char,
+        direction: c_int,
+        device: *const c_char,
+        stream: *const c_char,
+        spec: *const SampleSpec,
+        map: *const c_void,
+        attributes: *const BufferAttr,
+        error: *mut c_int,
+    ) -> *mut c_void;
+    fn pa_simple_write(simple: *mut c_void, data: *const c_void, bytes: usize, error: *mut c_int) -> c_int;
+    fn pa_simple_free(simple: *mut c_void);
+    fn pa_strerror(error: c_int) -> *const c_char;
 }
 
-impl Api {
-    fn load() -> Option<Self> {
-        let library = Library::open(LIBRARY)?;
-        Some(unsafe {
-            Self {
-                new: library.symbol(c"pa_simple_new")?,
-                write: library.symbol(c"pa_simple_write")?,
-                free: library.symbol(c"pa_simple_free")?,
-                strerror: library.symbol(c"pa_strerror"),
-            }
-        })
+#[cfg(pulse)]
+fn message(error: c_int) -> String {
+    let message = unsafe { pa_strerror(error) };
+    match message.is_null() {
+        true => format!("error {error}"),
+        false => unsafe { CStr::from_ptr(message) }.to_string_lossy().into_owned(),
     }
-
-    fn message(&self, error: c_int) -> String {
-        let Some(strerror) = self.strerror else {
-            return format!("error {error}");
-        };
-        let message = unsafe { strerror(error) };
-        match message.is_null() {
-            true => format!("error {error}"),
-            false => unsafe { CStr::from_ptr(message) }.to_string_lossy().into_owned(),
-        }
-    }
-}
-
-fn api() -> Option<&'static Api> {
-    static API: OnceLock<Option<Api>> = OnceLock::new();
-    API.get_or_init(Api::load).as_ref()
 }
 
 fn socket() -> PathBuf {
@@ -95,17 +75,17 @@ fn socket() -> PathBuf {
 }
 
 pub fn available() -> bool {
-    api().is_some() && (std::env::var_os("PULSE_SERVER").is_some() || socket().exists())
+    cfg!(pulse) && (std::env::var_os("PULSE_SERVER").is_some() || socket().exists())
 }
 
+#[cfg(pulse)]
 pub struct Stream {
-    api: &'static Api,
     handle: *mut c_void,
 }
 
+#[cfg(pulse)]
 impl Stream {
     pub fn open(sink: &str, spec: Spec) -> Result<Self, String> {
-        let api = api().ok_or_else(|| format!("{LIBRARY} is not installed"))?;
         let sink = CString::new(sink).map_err(|_| String::from("the sink name contains a nul byte"))?;
         let sample_spec = SampleSpec {
             format: SAMPLE_S16LE,
@@ -121,7 +101,7 @@ impl Stream {
         };
         let mut error = 0;
         let handle = unsafe {
-            (api.new)(
+            pa_simple_new(
                 std::ptr::null(),
                 APPLICATION.as_ptr(),
                 STREAM_PLAYBACK,
@@ -134,23 +114,39 @@ impl Stream {
             )
         };
         match handle.is_null() {
-            true => Err(api.message(error)),
-            false => Ok(Self { api, handle }),
+            true => Err(message(error)),
+            false => Ok(Self { handle }),
         }
     }
 
     pub fn write(&mut self, pcm: &[u8]) -> Result<(), String> {
         let mut error = 0;
-        let result = unsafe { (self.api.write)(self.handle, pcm.as_ptr().cast(), pcm.len(), &raw mut error) };
+        let result = unsafe { pa_simple_write(self.handle, pcm.as_ptr().cast(), pcm.len(), &raw mut error) };
         match result < 0 {
-            true => Err(self.api.message(error)),
+            true => Err(message(error)),
             false => Ok(()),
         }
     }
 }
 
+#[cfg(pulse)]
 impl Drop for Stream {
     fn drop(&mut self) {
-        unsafe { (self.api.free)(self.handle) }
+        unsafe { pa_simple_free(self.handle) }
+    }
+}
+
+/// There is no stream to open when libpulse-simple was not found when building.
+#[cfg(not(pulse))]
+pub enum Stream {}
+
+#[cfg(not(pulse))]
+impl Stream {
+    pub fn open(_sink: &str, _spec: Spec) -> Result<Self, String> {
+        Err(String::from(UNSUPPORTED))
+    }
+
+    pub fn write(&mut self, _pcm: &[u8]) -> Result<(), String> {
+        match *self {}
     }
 }

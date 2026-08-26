@@ -15,8 +15,8 @@ Linux only.
 - Moblin's audio codec set to AAC.
 - `usbmuxd`, to talk to the iPhone or iPad over the USB cable.
 - The `v4l2loopback` kernel module.
-- PulseAudio, PipeWire or ALSA, for the microphone. The video keeps going
-  without any of them.
+- PulseAudio, PipeWire or ALSA, for the microphone, and its development
+  package when building. The video keeps going without any of them.
 
 ## Build and install
 
@@ -25,8 +25,12 @@ Install a [rustup](https://rustup.rs) toolchain, the build dependencies and
 
 ```shell
 sudo apt install build-essential pkg-config libclang-dev libavcodec-dev \
-    libavutil-dev usbmuxd
+    libavutil-dev libpulse-dev libasound2-dev usbmuxd
 ```
+
+`libpulse-dev` and `libasound2-dev` are what the microphone is built against.
+Whichever of them `pkg-config` finds is linked in, and a machine that has
+neither builds a camera without a microphone.
 
 Build it, either from a clone of the repository or from the
 `mobcam-<version>-source.tar.xz` tarball on the
@@ -87,9 +91,9 @@ options, `--device`, `--udid` and `--audio-device` among them to pick which of
 each to use.
 
 The video keeps going on its own if the audio cannot be played: nothing is set
-up, the sink was never created, or `--no-audio` was passed. A machine without
-PulseAudio or PipeWire falls back to an ALSA loopback device, which
-`--audio-backend alsa` also picks outright:
+up, the sink was never created, `--no-audio` was passed, or neither library was
+there to build against. A machine without PulseAudio or PipeWire falls back to
+an ALSA loopback device, which `--audio-backend alsa` also picks outright:
 
 ```shell
 sudo modprobe snd-aloop

@@ -25,6 +25,8 @@ UBUNTU_PACKAGES = [
     "libavcodec-dev",
     "libavutil-dev",
     "libsimde-dev",
+    "libpulse-dev",
+    "libasound2-dev",
     "pkg-config",
 ]
 TARGETS: dict[Platform, list[str]] = {

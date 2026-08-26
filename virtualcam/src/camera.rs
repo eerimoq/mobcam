@@ -79,11 +79,7 @@ fn list() -> ExitCode {
     println!("Virtual microphones:");
     let microphones = audio::devices();
     if microphones.is_empty() {
-        println!(
-            "  none; create a sink with `pactl load-module module-null-sink sink_name={}` \
-             or load the module with `sudo modprobe snd-aloop`",
-            audio::DEFAULT_SINK
-        );
+        println!("  none; {}", audio::hint());
     }
     for microphone in &microphones {
         println!("  {microphone}");
@@ -111,10 +107,8 @@ fn run(options: Options) -> Result<(), String> {
     if options.audio && audio.is_none() {
         log!(
             Level::Info,
-            "no virtual microphone; create a sink with \
-             `pactl load-module module-null-sink sink_name={}` or load the module with \
-             `sudo modprobe snd-aloop`, and the audio plays into it",
-            audio::DEFAULT_SINK
+            "no virtual microphone; {}, and the audio plays into it",
+            audio::hint()
         );
     }
     let mut decoder = Decoder::new().ok_or("failed to create the decoder")?;

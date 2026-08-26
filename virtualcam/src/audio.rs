@@ -1,3 +1,7 @@
+// Some of the plumbing here is only ever used by one of the backends, and a
+// backend whose library was not found when building is not part of the binary.
+#![cfg_attr(any(not(alsa), not(pulse)), allow(dead_code))]
+
 use crate::alsa;
 use crate::options::AudioBackend;
 use crate::pulse;
@@ -280,6 +284,24 @@ fn resolve(backend: AudioBackend, device: Option<&str>) -> Option<(Backend, Stri
         AudioBackend::Auto => pulse().or_else(alsa),
         AudioBackend::Pulse => pulse(),
         AudioBackend::Alsa => alsa(),
+    }
+}
+
+/// What the machine still needs for a virtual microphone, which is another thing
+/// when the binary was built without both of the libraries.
+pub fn hint() -> String {
+    let mut hints = Vec::new();
+    if cfg!(pulse) {
+        hints.push(format!(
+            "create a sink with `pactl load-module module-null-sink sink_name={DEFAULT_SINK}`"
+        ));
+    }
+    if cfg!(alsa) {
+        hints.push(String::from("load the module with `sudo modprobe snd-aloop`"));
+    }
+    match hints.is_empty() {
+        true => String::from("install libpulse-dev or libasound2-dev and build mobcam-virtualcam again"),
+        false => hints.join(" or "),
     }
 }
 

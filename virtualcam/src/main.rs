@@ -7,8 +7,6 @@ mod camera;
 #[cfg(unix)]
 mod convert;
 #[cfg(unix)]
-mod dynlib;
-#[cfg(unix)]
 mod options;
 #[cfg(unix)]
 mod pulse;

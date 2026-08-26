@@ -1,78 +1,61 @@
-use crate::audio::{LATENCY_US, Spec};
-use crate::dynlib::Library;
-use std::ffi::CStr;
-use std::ffi::CString;
-use std::ffi::c_char;
-use std::ffi::c_int;
-use std::ffi::c_long;
-use std::ffi::c_uint;
-use std::ffi::c_ulong;
-use std::ffi::c_void;
-use std::sync::OnceLock;
+#[cfg(alsa)]
+use crate::audio::LATENCY_US;
+use crate::audio::Spec;
+#[cfg(alsa)]
+use std::ffi::{CStr, CString, c_char, c_int, c_long, c_uint, c_ulong, c_void};
 
-const LIBRARY: &str = "libasound.so.2";
 const CARDS: &str = "/proc/asound/cards";
 const LOOPBACK_CARD: &str = "Loopback";
+#[cfg(alsa)]
 const STREAM_PLAYBACK: c_int = 0;
+#[cfg(alsa)]
 const FORMAT_S16_LE: c_int = 2;
+#[cfg(alsa)]
 const ACCESS_RW_INTERLEAVED: c_int = 3;
+#[cfg(alsa)]
 const SOFT_RESAMPLE: c_int = 1;
+#[cfg(alsa)]
 const BLOCKING: c_int = 0;
+#[cfg(alsa)]
 const WRITE_ATTEMPTS: usize = 3;
+#[cfg(not(alsa))]
+const UNSUPPORTED: &str = "mobcam-virtualcam was built without ALSA support";
 
-type Open = unsafe extern "C" fn(*mut *mut c_void, *const c_char, c_int, c_int) -> c_int;
-type SetParams = unsafe extern "C" fn(*mut c_void, c_int, c_int, c_uint, c_uint, c_int, c_uint) -> c_int;
-type WriteInterleaved = unsafe extern "C" fn(*mut c_void, *const c_void, c_ulong) -> c_long;
-type Recover = unsafe extern "C" fn(*mut c_void, c_int, c_int) -> c_int;
-type Close = unsafe extern "C" fn(*mut c_void) -> c_int;
-type StrError = unsafe extern "C" fn(c_int) -> *const c_char;
-
-struct Api {
-    open: Open,
-    set_params: SetParams,
-    write: WriteInterleaved,
-    recover: Recover,
-    close: Close,
-    strerror: Option<StrError>,
+#[cfg(alsa)]
+unsafe extern "C" {
+    fn snd_pcm_open(pcm: *mut *mut c_void, name: *const c_char, stream: c_int, mode: c_int) -> c_int;
+    fn snd_pcm_set_params(
+        pcm: *mut c_void,
+        format: c_int,
+        access: c_int,
+        channels: c_uint,
+        rate: c_uint,
+        soft_resample: c_int,
+        latency: c_uint,
+    ) -> c_int;
+    fn snd_pcm_writei(pcm: *mut c_void, buffer: *const c_void, frames: c_ulong) -> c_long;
+    fn snd_pcm_recover(pcm: *mut c_void, error: c_int, silent: c_int) -> c_int;
+    fn snd_pcm_close(pcm: *mut c_void) -> c_int;
+    fn snd_strerror(error: c_int) -> *const c_char;
 }
 
-impl Api {
-    fn load() -> Option<Self> {
-        let library = Library::open(LIBRARY)?;
-        Some(unsafe {
-            Self {
-                open: library.symbol(c"snd_pcm_open")?,
-                set_params: library.symbol(c"snd_pcm_set_params")?,
-                write: library.symbol(c"snd_pcm_writei")?,
-                recover: library.symbol(c"snd_pcm_recover")?,
-                close: library.symbol(c"snd_pcm_close")?,
-                strerror: library.symbol(c"snd_strerror"),
-            }
-        })
+#[cfg(alsa)]
+fn message(error: c_int) -> String {
+    let message = unsafe { snd_strerror(error) };
+    match message.is_null() {
+        true => format!("error {error}"),
+        false => unsafe { CStr::from_ptr(message) }.to_string_lossy().into_owned(),
     }
-
-    fn message(&self, error: c_int) -> String {
-        let Some(strerror) = self.strerror else {
-            return format!("error {error}");
-        };
-        let message = unsafe { strerror(error) };
-        match message.is_null() {
-            true => format!("error {error}"),
-            false => unsafe { CStr::from_ptr(message) }.to_string_lossy().into_owned(),
-        }
-    }
-}
-
-fn api() -> Option<&'static Api> {
-    static API: OnceLock<Option<Api>> = OnceLock::new();
-    API.get_or_init(Api::load).as_ref()
 }
 
 pub fn available() -> bool {
-    api().is_some()
+    cfg!(alsa)
 }
 
 pub fn loopback_devices() -> Vec<(String, String)> {
+    if !available() {
+        return Vec::new();
+    }
     let Ok(cards) = std::fs::read_to_string(CARDS) else {
         return Vec::new();
     };
@@ -98,28 +81,27 @@ fn card(line: &str) -> Option<(String, String)> {
     Some((id.trim().to_string(), name.trim().to_string()))
 }
 
+#[cfg(alsa)]
 pub struct Device {
-    api: &'static Api,
     handle: *mut c_void,
     frame_size: usize,
 }
 
+#[cfg(alsa)]
 impl Device {
     pub fn open(name: &str, spec: Spec) -> Result<Self, String> {
-        let api = api().ok_or_else(|| format!("{LIBRARY} is not installed"))?;
         let name = CString::new(name).map_err(|_| String::from("the device name contains a nul byte"))?;
         let mut handle = std::ptr::null_mut();
-        let result = unsafe { (api.open)(&raw mut handle, name.as_ptr(), STREAM_PLAYBACK, BLOCKING) };
+        let result = unsafe { snd_pcm_open(&raw mut handle, name.as_ptr(), STREAM_PLAYBACK, BLOCKING) };
         if result < 0 {
-            return Err(api.message(result));
+            return Err(message(result));
         }
         let device = Self {
-            api,
             handle,
             frame_size: spec.frame_size(),
         };
         let result = unsafe {
-            (api.set_params)(
+            snd_pcm_set_params(
                 handle,
                 FORMAT_S16_LE,
                 ACCESS_RW_INTERLEAVED,
@@ -130,7 +112,7 @@ impl Device {
             )
         };
         match result < 0 {
-            true => Err(api.message(result)),
+            true => Err(message(result)),
             false => Ok(device),
         }
     }
@@ -143,11 +125,11 @@ impl Device {
                 return Ok(());
             }
             let frames = (rest.len() / self.frame_size) as c_ulong;
-            let result = unsafe { (self.api.write)(self.handle, rest.as_ptr().cast(), frames) };
+            let result = unsafe { snd_pcm_writei(self.handle, rest.as_ptr().cast(), frames) };
             if result < 0 {
-                let recovered = unsafe { (self.api.recover)(self.handle, result as c_int, 1) };
+                let recovered = unsafe { snd_pcm_recover(self.handle, result as c_int, 1) };
                 if recovered < 0 {
-                    return Err(self.api.message(recovered));
+                    return Err(message(recovered));
                 }
                 continue;
             }
@@ -160,9 +142,25 @@ impl Device {
     }
 }
 
+#[cfg(alsa)]
 impl Drop for Device {
     fn drop(&mut self) {
-        unsafe { (self.api.close)(self.handle) };
+        unsafe { snd_pcm_close(self.handle) };
+    }
+}
+
+/// There is no device to open when libasound was not found when building.
+#[cfg(not(alsa))]
+pub enum Device {}
+
+#[cfg(not(alsa))]
+impl Device {
+    pub fn open(_name: &str, _spec: Spec) -> Result<Self, String> {
+        Err(String::from(UNSUPPORTED))
+    }
+
+    pub fn write(&mut self, _pcm: &[u8]) -> Result<(), String> {
+        match *self {}
     }
 }
 
