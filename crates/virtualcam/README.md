@@ -101,3 +101,24 @@ sudo modprobe snd-aloop
 
 The audio is written to `plughw:CARD=Loopback,DEV=0`, and programs record it
 from `hw:Loopback,1,0`.
+
+## BELABOX
+
+[BELABOX](https://belabox.net) has none of this set up, and no Rust toolchain
+either. Run the script below on it, over `ssh`, and it does all of the above:
+installs the build dependencies, the toolchain and the `v4l2loopback` module,
+builds `snd-aloop` for the BELABOX kernel, which does not ship it, builds and
+installs the binary, and runs it as a service:
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/eerimoq/mobcam/main/crates/virtualcam/belabox/install.sh | bash
+```
+
+It is the same script as `crates/virtualcam/belabox/install.sh` in a clone, and
+running it there builds that clone instead of a fresh one.
+
+The camera it creates is `/dev/mobcam`, labelled `Mobcam`, and the microphone
+is the `Mobcam` sound card, which belaUI lists among the audio sources and
+belacoder reads with `alsasrc device="hw:Mobcam"`. Add a belacoder pipeline
+reading from `/dev/mobcam` to stream the camera. Pass `--no-audio` or
+`--no-service` to leave either out, and `--help` to see the rest.

@@ -2,6 +2,7 @@ PYTHON_DIRS += scripts/build.py
 PYTHON_DIRS += scripts/ci.py
 
 CODE_DIRS += $(PYTHON_DIRS)
+CODE_DIRS += crates/virtualcam/belabox/install.sh
 
 CONFIG_DIR = .config
 
