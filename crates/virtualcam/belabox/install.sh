@@ -403,6 +403,7 @@ install_service()
 Description=Mobcam Virtual Camera
 Documentation=https://github.com/eerimoq/mobcam
 After=systemd-modules-load.service usbmuxd.service
+Wants=usbmuxd.service
 
 [Service]
 ExecStartPre=/bin/sh -c '$present'
