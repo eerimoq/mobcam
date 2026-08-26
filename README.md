@@ -9,10 +9,10 @@ low latency camera on the computer, over a USB cable.
 
 This repository holds two products doing that in two different ways:
 
-| Product | Where | What it is |
-| --- | --- | --- |
-| [Mobcam OBS plugin](obs-plugin/) | `obs-plugin/` | A source type in OBS Studio. macOS, Windows and Linux. |
-| [Mobcam virtual camera](virtualcam/) | `virtualcam/` | A v4l2loopback camera and a virtual microphone, for every program that is not OBS Studio. Linux. |
+| Product | What it is |
+| --- | --- |
+| [Mobcam OBS plugin](obs-plugin/) | A source type in OBS Studio. macOS, Windows and Linux. |
+| [Mobcam virtual camera](virtualcam/) | A v4l2loopback camera and a virtual microphone, for every program that is not OBS Studio. Linux. |
 
 ## Development
 
