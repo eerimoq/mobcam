@@ -1,8 +1,8 @@
+# Mobcam OBS plugin
+
 <p align="center">
   <img src="../logo/logo-mobcam-no-background.png" alt="Mobcam logo" width="200">
 </p>
-
-# Mobcam OBS plugin
 
 Use an iPhone or iPad running [Moblin](https://github.com/eerimoq/moblin) as a
 low latency camera in OBS Studio over USB.

@@ -1,8 +1,8 @@
+# Mobcam
+
 <p align="center">
   <img src="logo/logo-mobcam-no-background.png" alt="Mobcam logo" width="200">
 </p>
-
-# Mobcam
 
 Use an iPhone or iPad running [Moblin](https://github.com/eerimoq/moblin) as a
 low latency camera on the computer, over a USB cable.
