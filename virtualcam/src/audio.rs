@@ -282,7 +282,9 @@ fn resolve(backend: AudioBackend, device: Option<&str>) -> Option<(Backend, Stri
     };
     match backend {
         AudioBackend::Auto => pulse().or_else(alsa),
+        #[cfg(pulse)]
         AudioBackend::Pulse => pulse(),
+        #[cfg(alsa)]
         AudioBackend::Alsa => alsa(),
     }
 }
