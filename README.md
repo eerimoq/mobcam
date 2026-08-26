@@ -22,8 +22,8 @@ build the second architecture of the macOS universal binary.
 
 ```shell
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
-python3 scripts/build.py build
-python3 scripts/build.py install
+make build
+make install
 ```
 
 ### Layout
