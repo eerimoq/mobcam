@@ -3,25 +3,27 @@ PYTHON_DIRS += ci.py
 
 CODE_DIRS += $(PYTHON_DIRS)
 
+CONFIG_DIR = .config
+
 default:
 
 style:
-	cargo fmt
-	isort $(PYTHON_DIRS)
-	ruff format $(PYTHON_DIRS)
+	cargo fmt -- --config-path $(CONFIG_DIR)/rustfmt.toml
+	isort --settings-path $(CONFIG_DIR)/isort.cfg $(PYTHON_DIRS)
+	ruff format --config $(CONFIG_DIR)/ruff.toml $(PYTHON_DIRS)
 
 style-check:
-	cargo fmt --check
-	isort $(PYTHON_DIRS) --check
-	ruff format $(PYTHON_DIRS) --check
+	cargo fmt --check -- --config-path $(CONFIG_DIR)/rustfmt.toml
+	isort --settings-path $(CONFIG_DIR)/isort.cfg $(PYTHON_DIRS) --check
+	ruff format --config $(CONFIG_DIR)/ruff.toml $(PYTHON_DIRS) --check
 
 lint:
 	cargo clippy --workspace --all-targets -- --deny warnings
-	ruff check $(PYTHON_DIRS)
-	mypy $(PYTHON_DIRS)
+	ruff check --config $(CONFIG_DIR)/ruff.toml $(PYTHON_DIRS)
+	mypy --config-file $(CONFIG_DIR)/mypy.ini $(PYTHON_DIRS)
 
 test:
 	cargo test --workspace
 
 spell-check:
-	codespell $(CODE_DIRS)
+	codespell --config $(CONFIG_DIR)/codespellrc $(CODE_DIRS)
