@@ -1,5 +1,3 @@
-// Some of the plumbing here is only ever used by one of the backends, and a
-// backend whose library was not found when building is not part of the binary.
 #![cfg_attr(any(not(alsa), not(pulse)), allow(dead_code))]
 
 use crate::alsa;
@@ -289,8 +287,6 @@ fn resolve(backend: AudioBackend, device: Option<&str>) -> Option<(Backend, Stri
     }
 }
 
-/// What the machine still needs for a virtual microphone, which is another thing
-/// when the binary was built without both of the libraries.
 pub fn hint() -> String {
     let mut hints = Vec::new();
     if cfg!(pulse) {

@@ -17,11 +17,10 @@ pub const INPUT_BUFFER_PADDING: usize = sys::AV_INPUT_BUFFER_PADDING_SIZE as usi
 const AVERROR_EOF: i32 = -((b'E' as i32) | ((b'O' as i32) << 8) | ((b'F' as i32) << 16) | ((b' ' as i32) << 24));
 
 const fn eagain() -> i32 {
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
-    return -35;
-
-    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-    return -11;
+    match cfg!(any(target_os = "macos", target_os = "ios")) {
+        true => -35,
+        false => -11,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

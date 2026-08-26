@@ -1,16 +1,12 @@
 use plist::{Dictionary, Value};
 use std::io::{ErrorKind, Read, Write};
-#[cfg(windows)]
-use std::net::TcpStream;
-#[cfg(unix)]
-use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
+#[cfg_attr(unix, path = "usbmux/unix.rs")]
+#[cfg_attr(windows, path = "usbmux/windows.rs")]
+mod socket;
+
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
-#[cfg(unix)]
-const USBMUXD_PATH: &str = "/var/run/usbmuxd";
-#[cfg(windows)]
-const USBMUXD_ADDRESS: &str = "127.0.0.1:27015";
 const HEADER_SIZE: usize = 16;
 const VERSION_PLIST: u32 = 1;
 const TYPE_PLIST: u32 = 8;
@@ -18,10 +14,7 @@ const MAX_REPLY_SIZE: u32 = 4 * 1024 * 1024;
 const CLIENT_NAME: &str = "obs-mobcam";
 
 pub struct Stream {
-    #[cfg(unix)]
-    inner: UnixStream,
-    #[cfg(windows)]
-    inner: TcpStream,
+    inner: socket::Socket,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -43,14 +36,7 @@ impl<F: Fn() -> bool> Abort for F {
 
 impl Stream {
     pub fn connect_usbmuxd() -> Option<Self> {
-        #[cfg(unix)]
-        let inner = UnixStream::connect(USBMUXD_PATH).ok()?;
-        #[cfg(windows)]
-        let inner = {
-            let inner = TcpStream::connect(USBMUXD_ADDRESS).ok()?;
-            let _ = inner.set_nodelay(true);
-            inner
-        };
+        let inner = socket::connect()?;
         inner.set_read_timeout(Some(POLL_INTERVAL)).ok()?;
         Some(Self { inner })
     }
