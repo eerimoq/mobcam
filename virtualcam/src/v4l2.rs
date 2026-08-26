@@ -13,7 +13,6 @@ const CAP_VIDEO_OUTPUT: u32 = 0x0000_0002;
 const BUF_TYPE_VIDEO_OUTPUT: u32 = 2;
 const FIELD_NONE: u32 = 1;
 const PIX_FMT_YUV420: u32 = u32::from_le_bytes(*b"YU12");
-// The values of the enums in linux/videodev2.h.
 pub const COLORSPACE_SMPTE170M: u32 = 1;
 pub const COLORSPACE_REC709: u32 = 3;
 pub const COLORSPACE_BT2020: u32 = 10;

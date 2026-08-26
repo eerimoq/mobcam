@@ -1,27 +1,33 @@
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 mod alsa;
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 mod audio;
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 mod camera;
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 mod convert;
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 mod dynlib;
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 mod options;
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 mod pulse;
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 mod v4l2;
 
-#[cfg(target_os = "linux")]
+const UNSUPPORTED: &str = "mobcam-virtualcam is only supported on Linux";
+
+#[cfg(unix)]
 fn main() -> std::process::ExitCode {
+    if !cfg!(target_os = "linux") {
+        eprintln!("{UNSUPPORTED}");
+        return std::process::ExitCode::FAILURE;
+    }
     camera::main()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(unix))]
 fn main() -> std::process::ExitCode {
-    eprintln!("mobcam-virtualcam is only supported on Linux");
+    eprintln!("{UNSUPPORTED}");
     std::process::ExitCode::FAILURE
 }
