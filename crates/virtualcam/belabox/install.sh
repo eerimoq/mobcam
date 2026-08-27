@@ -43,6 +43,7 @@ MPP_PREFIX=/opt/mobcam/mpp
 MPP_REPOSITORY=${MOBCAM_MPP_REPOSITORY:-https://github.com/nyanmisaka/mpp.git}
 MPP_BRANCH=${MOBCAM_MPP_BRANCH:-jellyfin-mpp}
 BUILD_DIR=${MOBCAM_BUILD_DIR:-$HOME/.cache/mobcam}
+TMP_DIR=$BUILD_DIR/tmp
 KERNEL=$(uname -r)
 KERNEL_HEADERS=/lib/modules/$KERNEL/build
 ALOOP_VERSION=${KERNEL%%-*}
@@ -142,6 +143,14 @@ check_machine()
             die "sudo is needed to install"
         fi
     fi
+}
+
+setup_tmp_dir()
+{
+    # /tmp is mounted noexec on a BELABOX, which neither the rustup installer
+    # nor the FFmpeg configure can run from.
+    mkdir -p "$TMP_DIR"
+    export TMPDIR=$TMP_DIR
 }
 
 write_file()
@@ -246,9 +255,6 @@ build_ffmpeg()
     clone "$FFMPEG_REPOSITORY" "$FFMPEG_BRANCH" "$directory"
     (
         cd "$directory"
-        # /tmp is noexec on a BELABOX, which configure cannot work with.
-        mkdir -p tmp
-        export TMPDIR=$directory/tmp
         export PKG_CONFIG_PATH=$MPP_PREFIX/lib/pkgconfig
         ./configure \
             --prefix=$FFMPEG_PREFIX \
@@ -551,6 +557,7 @@ main()
 {
     parse_arguments "$@"
     check_machine
+    setup_tmp_dir
     stop_service
     if [ $packages = yes ] ; then
         install_packages
