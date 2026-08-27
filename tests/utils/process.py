@@ -59,7 +59,7 @@ class ManagedProcess:
             text=True,
         )
         log_output(self._process.stdout, self._logger, self._log_level, self._observer)
-        log_output(self._process.stderr, self._logger, self._log_level)
+        log_output(self._process.stderr, self._logger, self._log_level, self._observer)
         if self._ready is not None:
             try:
                 self._ready()

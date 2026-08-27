@@ -1,101 +1,111 @@
-All commands below are run from the repository root.
+# System tests
+
+The tests stream from an iPhone or iPad running Moblin to
+[Mobcam Virtual Camera](../crates/virtualcam), record the camera and the microphone it creates with
+FFmpeg and validate the recording.
+
+They run on the Linux machine the device is connected to with a USB cable, a
+[BELABOX](https://belabox.net) in particular, and drive Moblin over its remote control. All commands
+below are run from the root of a clone of the repository.
+
+```
+ iPhone (Moblin)                     Linux machine (mobcam-virtualcam)
+      |                                          |
+      |  mobcam://localhost:7790 over USB ------>|  /dev/mobcam and the Mobcam sound card
+      |                                          |         |
+      |<----- remote control over the network ---|      ffmpeg records both
+```
 
 # Prerequisites
 
-Install Python dependencies and various tools. You might have to add ffmpeg to PATH.
+Mobcam Virtual Camera has to be installed on the machine already, which
+[crates/virtualcam/belabox/install.sh](../crates/virtualcam/belabox/install.sh) does on a BELABOX.
+The tests need `sudo` without a password, as they stop the `mobcam-virtualcam` service and run the
+binary themselves.
+
+Set the rest up with
 
 ```bash
-pip install -r requirements.txt
-brew install mediamtx ffmpeg-full qrtool ltc-tools
+./tests/belabox/setup.sh
 ```
+
+It installs FFmpeg and the Python the tests run on, puts the user in the `video` and `audio` groups,
+which is what makes the camera and the microphone readable, and creates `.venv`. Log out and in
+again afterwards for the new groups to take.
 
 # Configuration
 
-Copy `tests/config.example.toml` to `tests/config.toml` and modify it to match your test
-setup.
+`tests/belabox/setup.sh` copies `tests/config.example.toml` to `tests/config.toml`. Edit it to match
+the machine. `tests/config.toml` is used if it exists, otherwise
+`$XDG_CONFIG_HOME/mobcam/tests/config.toml`.
 
-```bash
-cp tests/config.example.toml tests/config.toml
-```
-
-`tests/config.toml` is used if it exists, otherwise `$XDG_CONFIG_HOME/moblin/tests/config.toml`.
+`tester-ip-address` is the address of the machine itself, the one Moblin's remote control connects
+back to. The `[virtualcam]` section is the binary, the service and the devices it is started with;
+`audio-playback-device` is what `mobcam-virtualcam` plays into and `audio-capture-device` the other
+half of the same loopback, which the tests record from.
 
 # Moblin device configuration
 
-## Via clipboard
-
-1. Generate settings into clipboard.
-   ```bash
-   make test-generate-device-settings-clipboard
-   ```
-2. Import the generated settings from clipboard into Moblin.
-
-## Via standard output
-
-1. Generate settings to standard output.
+1. Generate the settings.
    ```bash
    make test-generate-device-settings-stdout
    ```
-2. Import the generated settings somehow.
+2. Import them into Moblin, on the device.
+3. Connect the device to the machine with a USB cable, unlock it and tap Trust.
+
+Each test imports the stream it needs on top of these settings, so the stream URL, the codec, the
+resolution and the frame rate do not have to be set by hand.
 
 # Run the tests
 
-```bash
-make test TEST_ARGS="--device macpro"
-make test TEST_ARGS="--device macpro Talkback"
-```
-
-# Run the stability test
+On the machine:
 
 ```bash
-make test-stability TEST_ARGS="--device macpro"
-make test-stability TEST_ARGS="--device macpro --duration 0.5"
+make test TEST_ARGS="--device iphone16pro"
+make test TEST_ARGS="--device iphone16pro StreamH265-1920x1080@60"
 ```
 
-# Watch the stability test
+From another machine, which copies the working tree over and runs the tests there:
 
 ```bash
-python -m tests.watch grid
+make test-remote TEST_ARGS="--device iphone16pro"
+make test-remote BELABOX=user@belabox.local TEST_ARGS="--device iphone16pro"
 ```
 
-# Traffic shaping
+Everything a run captured is left in `tests/files`, one WAV and one JPEG per second per test, and
+the log in `logs/test.log`. `make test-remote` copies both back from the machine.
 
-The stability test can simulate bad networks, with separate impairments for the outgoing
-stream and the ingests. Shaping is done by a separate Linux machine placed in the media
-path. It relays the media with `socat` and shapes it with `tc netem`, both controlled over
-SSH by the test machine. The remote control connection between the device and the test
-machine is never shaped.
+# What is validated
 
+Every test streams for ten seconds and then checks that
+
+- the camera delivers I420 or NV12 frames of the resolution Moblin is streaming,
+- the frames keep coming at close to the frame rate Moblin is streaming, in every half second of the
+  ten,
+- the microphone delivers the sample rate and the channel count `mobcam-virtualcam` logged, for the
+  whole ten seconds,
+- the audio is neither silent nor interrupted, and the video is not black, and
+- `mobcam-virtualcam` logged no errors or warnings.
+
+The frame rate is measured by a capture that only counts frames, never encodes: encoding 1080p60 in
+software costs the BELABOX around eight frames a second, which is more than the rate being measured
+can afford. A second capture, running at the same time, writes the audio and one JPEG a second,
+which is what the silence and the black checks read.
+
+The frame rate is only checked to be in the neighbourhood of the one Moblin streams, never to be
+exactly it. The camera of the device delivers fewer frames than it is asked for in dim light, 55 of
+60 in a normally lit room, and how many is nothing the tests can control. A regression that drops
+every other frame is still caught.
+
+# Troubleshooting
+
+`mobcam-virtualcam stopped: error: /dev/mobcam cannot be written to as a camera` means the
+v4l2loopback device is held by something else, or was left behind by a program that was killed while
+writing to it. Reload the module:
+
+```bash
+sudo systemctl stop mobcam-virtualcam
+sudo modprobe -r v4l2loopback
+sudo modprobe v4l2loopback
+sudo systemctl start mobcam-virtualcam
 ```
- device (Moblin)                shaper (Linux)                 tester
-      |                                |                          |
-      |  stream  srt :8890 ----------->| socat udp 8890 --------->| ffmpeg
-      |<---------------- rtmp :11935 --| socat tcp 11935 <--------| ffmpeg
-      |<----------------- srt :4000 ---| socat udp 4000 <---------| ffmpeg
-      |<---------------- rist :6500 ---| socat udp 6500 <---------| ffmpeg
-      |  whep :8889 and :8189 -------->| socat tcp 8889, udp 8189 |
-      |                                                           |
-      |========== remote control, never shaped ===================|
-```
-
-## Traffic shaper machine configuration
-
-1. Install the dependencies.
-   ```bash
-   sudo apt install socat iproute2
-   ```
-2. Allow the test machine to log in with an SSH key without a password.
-3. Allow passwordless sudo, for example by adding the following line with `sudo visudo`.
-   ```
-   erik ALL=(ALL) NOPASSWD: ALL
-   ```
-4. Add the machine to `tests/config.toml`.
-   ```toml
-   [shaper]
-   user = "erik"
-   ip-address = "shaper.home"
-   interface = "eth0"
-   ```
-
-The device may not be the test machine, as only traffic that transits the traffic shaper
-can be shaped.

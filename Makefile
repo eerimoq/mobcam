@@ -1,10 +1,16 @@
-PYTHON_DIRS += scripts/build.py
-PYTHON_DIRS += scripts/ci.py
+MYPY_DIRS += scripts/build.py
+MYPY_DIRS += scripts/ci.py
+
+PYTHON_DIRS += $(MYPY_DIRS)
+PYTHON_DIRS += tests
 
 CODE_DIRS += $(PYTHON_DIRS)
 CODE_DIRS += crates/virtualcam/belabox/install.sh
+CODE_DIRS += tests/belabox/setup.sh
 
 CONFIG_DIR = .config
+PYTHON = python
+BELABOX = user@belabox.local
 
 default:
 
@@ -25,13 +31,30 @@ unit-test:
 	cargo test --workspace
 
 test:
-	python -m tests.test $(TEST_ARGS)
+	$(PYTHON) -m tests.test $(TEST_ARGS)
+
+test-remote:
+	rsync -a --delete \
+	    --exclude .git \
+	    --exclude .venv \
+	    --exclude .deps \
+	    --exclude target \
+	    --exclude release \
+	    --exclude logs \
+	    --exclude tests/config.toml \
+	    --exclude tests/files \
+	    ./ $(BELABOX):mobcam/
+	status=0 ; \
+	ssh $(BELABOX) 'cd mobcam && make test PYTHON=.venv/bin/python TEST_ARGS="$(TEST_ARGS)"' || status=$$? ; \
+	rsync -a $(BELABOX):mobcam/logs/ logs/ ; \
+	rsync -a $(BELABOX):mobcam/tests/files/ tests/files/ ; \
+	exit $$status
 
 test-generate-device-settings-clipboard:
-	python -m tests.generate_device_settings $(TEST_ARGS)
+	$(PYTHON) -m tests.generate_device_settings $(TEST_ARGS)
 
 test-generate-device-settings-stdout:
-	python -m tests.generate_device_settings --force-stdout $(TEST_ARGS)
+	$(PYTHON) -m tests.generate_device_settings --force-stdout $(TEST_ARGS)
 
 style:
 	cargo fmt -- --config-path $(CONFIG_DIR)/rustfmt.toml
@@ -46,7 +69,7 @@ style-check:
 lint:
 	cargo clippy --workspace --all-targets -- --deny warnings
 	ruff check --config $(CONFIG_DIR)/ruff.toml $(PYTHON_DIRS)
-	mypy --config-file $(CONFIG_DIR)/mypy.ini $(PYTHON_DIRS)
+	mypy --config-file $(CONFIG_DIR)/mypy.ini $(MYPY_DIRS)
 
 spell-check:
 	codespell --config $(CONFIG_DIR)/codespellrc $(CODE_DIRS)

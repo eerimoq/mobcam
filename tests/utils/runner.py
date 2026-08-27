@@ -10,7 +10,6 @@ from .config import Config
 from .dependencies import check_dependencies
 from .moblin import Moblin
 from .utils import FILES_DIR
-from .utils import TEST_DIR
 
 MakeTests = Callable[[Moblin, argparse.Namespace], list]
 
@@ -30,14 +29,13 @@ def create_parser(description: str) -> argparse.ArgumentParser:
     return parser
 
 
-def _remove_previous_run_artifacts(name: str):
+def _remove_previous_run_artifacts():
     shutil.rmtree(FILES_DIR, ignore_errors=True)
     FILES_DIR.mkdir(parents=True)
-    (TEST_DIR / "logs" / f"{name}.log").unlink(missing_ok=True)
 
 
 def run(name: str, parser: argparse.ArgumentParser, make_tests: MakeTests):
-    _remove_previous_run_artifacts(name)
+    _remove_previous_run_artifacts()
     sequencer = systest.setup(name, parser, add_date_to_log_filename=False)
     sequencer.remove_filtered_testcases = True
     sequencer.compact_output = True
@@ -46,13 +44,8 @@ def run(name: str, parser: argparse.ArgumentParser, make_tests: MakeTests):
     logging.getLogger("urllib3.connectionpool").setLevel(logging.INFO)
     logging.getLogger("websockets.client").setLevel(logging.INFO)
     config = Config()
-    moblin = Moblin(
-        config,
-        args.device
-    )
+    moblin = Moblin(config, args.device)
     with moblin:
         moblin.end()
-        moblin.stop_recording()
-        moblin.delete_all_recordings()
         sequencer.run(*make_tests(moblin, args))
     sequencer.report_and_exit(json=False, dot=False)

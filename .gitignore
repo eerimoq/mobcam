@@ -3,3 +3,6 @@ release
 target
 __pycache__
 logs
+.venv
+tests/config.toml
+tests/files
