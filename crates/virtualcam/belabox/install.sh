@@ -65,6 +65,7 @@ PACKAGES=(
 )
 
 audio=yes
+packages=yes
 pipeline=yes
 service=yes
 sudo=
@@ -72,11 +73,13 @@ sudo=
 usage()
 {
     cat <<EOF
-usage: $(basename "$0") [--no-audio] [--no-pipeline] [--no-service] [--help]
+usage: $(basename "$0") [--no-audio] [--no-packages] [--no-pipeline]
+       [--no-service] [--help]
 
 Build and install Mobcam Virtual Camera on a BELABOX.
 
   --no-audio     do not set up the Mobcam sound card, video only
+  --no-packages  do not install the build dependencies, they are already there
   --no-pipeline  do not add the belacoder pipeline belaUI streams with
   --no-service   do not run mobcam-virtualcam as a service
   --help         print this text and exit
@@ -113,6 +116,7 @@ parse_arguments()
     while [ $# -gt 0 ] ; do
         case $1 in
             --no-audio) audio=no ;;
+            --no-packages) packages=no ;;
             --no-pipeline) pipeline=no ;;
             --no-service) service=no ;;
             --help) usage ; exit 0 ;;
@@ -548,7 +552,9 @@ main()
     parse_arguments "$@"
     check_machine
     stop_service
-    install_packages
+    if [ $packages = yes ] ; then
+        install_packages
+    fi
     install_rust
     setup_ffmpeg
     find_source

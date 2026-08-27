@@ -4,7 +4,7 @@ mod frame;
 mod hardware;
 mod packet;
 pub mod sys;
-pub use codec::{Codec, Context};
+pub use codec::{Acceleration, Codec, Context};
 pub use format::{pixel_format_name, sample_format_name};
 pub use frame::Frame;
 pub use hardware::Device;

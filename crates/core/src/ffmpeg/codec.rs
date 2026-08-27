@@ -2,15 +2,17 @@ use super::sys;
 use super::{Device, Frame, INPUT_BUFFER_PADDING, Packet, Status};
 use std::ptr;
 
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Acceleration {
+    Software,
+    Accelerated,
+    Hardware,
+}
+
 #[derive(Clone, Copy)]
 pub struct Codec(*const sys::AVCodec);
 
 impl Codec {
-    pub fn find(id: sys::AVCodecID) -> Option<Self> {
-        let codec = unsafe { sys::avcodec_find_decoder(id) };
-        (!codec.is_null()).then_some(Self(codec))
-    }
-
     pub fn decoders() -> impl Iterator<Item = Self> {
         let mut opaque = ptr::null_mut();
         std::iter::from_fn(move || {
@@ -26,11 +28,33 @@ impl Codec {
         })
     }
 
+    pub fn decoders_for(id: sys::AVCodecID, hardware: bool) -> Vec<Self> {
+        let mut codecs: Vec<Self> = Self::decoders()
+            .filter(|codec| codec.id() == id)
+            .filter(|codec| hardware || codec.acceleration() != Acceleration::Hardware)
+            .collect();
+        codecs.sort_by(|left, right| match hardware {
+            true => right.acceleration().cmp(&left.acceleration()),
+            false => left.acceleration().cmp(&right.acceleration()),
+        });
+        codecs
+    }
+
     pub fn id(self) -> sys::AVCodecID {
         unsafe { (*self.0).id }
     }
 
-    pub fn is_hardware(self) -> bool {
+    pub fn acceleration(self) -> Acceleration {
+        if self.is_hardware() {
+            Acceleration::Hardware
+        } else if self.hardware_device_types().next().is_some() {
+            Acceleration::Accelerated
+        } else {
+            Acceleration::Software
+        }
+    }
+
+    fn is_hardware(self) -> bool {
         unsafe { (*self.0).capabilities as u32 & sys::AV_CODEC_CAP_HARDWARE != 0 }
     }
 

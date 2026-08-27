@@ -50,7 +50,7 @@ pub fn main() -> ExitCode {
     if options.list {
         return list();
     }
-    log_decoders();
+    log_decoders(options.hardware_decode);
     match run(options) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
@@ -60,20 +60,29 @@ pub fn main() -> ExitCode {
     }
 }
 
-/// What libavcodec was built with, which is the first thing to look at when a
-/// stream will not decode or a decoder with hardware of its own is missing.
-fn log_decoders() {
-    log!(Level::Info, "available decoders:");
-    for codec in ffmpeg::Codec::decoders() {
-        let name = match codec.long_name() {
-            Some(long_name) => format!("{} ({long_name})", codec.name()),
-            None => codec.name(),
-        };
-        let hardware = match codec.is_hardware() {
-            true => " [hardware]",
-            false => "",
-        };
-        log!(Level::Info, "  {} {name}{hardware}", codec.media_type_name());
+fn log_decoders(hardware: bool) {
+    let codecs = [("H.264", av::AV_CODEC_ID_H264), ("HEVC", av::AV_CODEC_ID_HEVC)];
+    for (name, id) in codecs {
+        log!(Level::Info, "Available {name} decoders, highest priority first:");
+        let decoders = ffmpeg::Codec::decoders_for(id, hardware);
+        if decoders.is_empty() {
+            log!(Level::Info, "  none available");
+        }
+        for decoder in decoders {
+            let name = match decoder.long_name() {
+                Some(long_name) => format!("{} ({long_name})", decoder.name()),
+                None => decoder.name(),
+            };
+            log!(Level::Info, "  {name}{}", acceleration_name(decoder));
+        }
+    }
+}
+
+fn acceleration_name(codec: ffmpeg::Codec) -> &'static str {
+    match codec.acceleration() {
+        ffmpeg::Acceleration::Hardware => " [hardware]",
+        ffmpeg::Acceleration::Accelerated => " [hardware accelerated]",
+        ffmpeg::Acceleration::Software => " [software]",
     }
 }
 

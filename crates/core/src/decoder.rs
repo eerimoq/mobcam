@@ -22,8 +22,8 @@ struct Stream {
     packet: Packet,
     frame: ffmpeg::Frame,
     codec: u8,
+    name: String,
     record: Vec<u8>,
-    hardware_requested: bool,
 }
 
 enum Received {
@@ -40,15 +40,15 @@ impl Stream {
             packet: Packet::new()?,
             frame: ffmpeg::Frame::new()?,
             codec: 0,
+            name: String::new(),
             record: Vec::new(),
-            hardware_requested: false,
         })
     }
 
-    pub fn get_decoder_name(&self) -> String {
+    fn decoder_name(&self) -> String {
         match self.hardware.as_ref() {
-            Some(hardware) => hardware.device.name(),
-            None => String::from("software"),
+            Some(hardware) => format!("{} on {}", self.name, hardware.device.name()),
+            None => self.name.clone(),
         }
     }
 
@@ -56,13 +56,14 @@ impl Stream {
         self.context.as_ref().is_some_and(Context::is_open)
     }
 
-    fn configured(&self, codec: u8, hardware: bool, record: &[u8]) -> bool {
-        self.is_open() && self.codec == codec && self.hardware_requested == hardware && self.record == record
+    fn configured(&self, codec: u8, record: &[u8]) -> bool {
+        self.is_open() && self.codec == codec && self.record == record
     }
 
     fn close(&mut self) {
         self.context = None;
         self.hardware = None;
+        self.name.clear();
         self.record.clear();
     }
 
@@ -81,7 +82,7 @@ impl Stream {
         Some(self.context.insert(context))
     }
 
-    fn open(&mut self, codec: Codec, wire_codec: u8, hardware: bool, record: &[u8]) -> bool {
+    fn open(&mut self, codec: Codec, wire_codec: u8, record: &[u8]) -> bool {
         let Some(context) = self.context.as_mut() else {
             return false;
         };
@@ -90,7 +91,7 @@ impl Stream {
             return false;
         }
         self.codec = wire_codec;
-        self.hardware_requested = hardware;
+        self.name = codec.name();
         self.record = record.to_vec();
         true
     }
@@ -202,36 +203,40 @@ impl Decoder {
                 return false;
             }
         };
-        if self.video.configured(config.codec, self.hardware, config.record) {
+        if self.video.configured(config.codec, config.record) {
             return true;
         }
         self.video.close();
         self.got_keyframe = false;
-        let Some(codec) = Codec::find(codec_id) else {
-            log!(Level::Error, "no {} decoder available", config.video_codec_name());
-            return false;
-        };
-        let Some(context) = self.video.begin(codec, config.record) else {
-            return false;
-        };
-        context.set_size(i32::from(config.width), i32::from(config.height));
-        context.set_low_latency();
-        if self.hardware {
-            self.video.attach_hardware(codec);
-        }
-        if !self.video.open(codec, config.codec, self.hardware, config.record) {
-            log!(Level::Error, "failed to open the {} decoder", config.video_codec_name());
-            return false;
+        for codec in Codec::decoders_for(codec_id, self.hardware) {
+            let Some(context) = self.video.begin(codec, config.record) else {
+                return false;
+            };
+            context.set_size(i32::from(config.width), i32::from(config.height));
+            context.set_low_latency();
+            if self.hardware {
+                self.video.attach_hardware(codec);
+            }
+            if !self.video.open(codec, config.codec, config.record) {
+                log!(Level::Warning, "failed to open the {} decoder", codec.name());
+                continue;
+            }
+            log!(
+                Level::Info,
+                "decoding {} {}x{} in {}",
+                config.video_codec_name(),
+                config.width,
+                config.height,
+                self.video.decoder_name()
+            );
+            return true;
         }
         log!(
-            Level::Info,
-            "decoding {} {}x{} in {}",
-            config.video_codec_name(),
-            config.width,
-            config.height,
-            self.video.get_decoder_name()
+            Level::Error,
+            "no working {} decoder available",
+            config.video_codec_name()
         );
-        true
+        false
     }
 
     pub fn configure_audio(&mut self, config: &AudioConfig<'_>) -> bool {
@@ -245,30 +250,35 @@ impl Decoder {
                 return false;
             }
         };
-        if self.audio.configured(config.codec, false, config.record) {
+        if self.audio.configured(config.codec, config.record) {
             return true;
         }
         self.audio.close();
-        let Some(codec) = Codec::find(codec_id) else {
-            log!(Level::Error, "no {} decoder available", config.audio_codec_name());
-            return false;
-        };
-        let Some(context) = self.audio.begin(codec, config.record) else {
-            return false;
-        };
-        context.set_audio(config.sample_rate, i32::from(config.channels));
-        if !self.audio.open(codec, config.codec, false, config.record) {
-            log!(Level::Error, "failed to open the {} decoder", config.audio_codec_name());
-            return false;
+        for codec in Codec::decoders_for(codec_id, false) {
+            let Some(context) = self.audio.begin(codec, config.record) else {
+                return false;
+            };
+            context.set_audio(config.sample_rate, i32::from(config.channels));
+            if !self.audio.open(codec, config.codec, config.record) {
+                log!(Level::Warning, "failed to open the {} decoder", codec.name());
+                continue;
+            }
+            log!(
+                Level::Info,
+                "decoding {} {} Hz {} channel in {}",
+                config.audio_codec_name(),
+                config.sample_rate,
+                config.channels,
+                self.audio.decoder_name()
+            );
+            return true;
         }
         log!(
-            Level::Info,
-            "decoding {} {} Hz {} channel",
-            config.audio_codec_name(),
-            config.sample_rate,
-            config.channels
+            Level::Error,
+            "no working {} decoder available",
+            config.audio_codec_name()
         );
-        true
+        false
     }
 
     pub fn decode_video(&mut self, frame: &VideoFrame<'_>, sink: &mut dyn Sink) -> bool {
