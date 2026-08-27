@@ -25,6 +25,18 @@ impl Device {
     pub fn name(&self) -> String {
         super::name(unsafe { sys::av_hwdevice_get_type_name(self.kind) }).unwrap_or_else(|| String::from("hardware"))
     }
+
+    /// Whether the frames of this device are cheaper to map than to copy out.
+    ///
+    /// Mapping hands back a pointer into the buffer the decoder wrote, which
+    /// costs nothing at all, but only pays off where that buffer is ordinary
+    /// cached memory. The rest map into memory the processor reads slowly, so
+    /// reading a whole frame out of it is dearer than the copy it saves. The
+    /// kinds are matched by name because the ones worth mapping are not all in
+    /// every build of FFmpeg.
+    pub fn maps_cheaply(&self) -> bool {
+        matches!(self.name().as_str(), "rkmpp" | "drm")
+    }
 }
 
 impl Drop for Device {

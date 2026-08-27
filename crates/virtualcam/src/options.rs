@@ -29,6 +29,14 @@ pub enum AudioBackend {
     Alsa,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq, ValueEnum)]
+pub enum PixelFormat {
+    /// the one the decoder produces, when the camera takes it
+    Auto,
+    /// I420 always, for programs that read nothing else
+    I420,
+}
+
 #[derive(Parser)]
 #[command(version, about = ABOUT)]
 pub struct Options {
@@ -60,6 +68,10 @@ pub struct Options {
     /// decode in software even when the machine can do it in hardware
     #[arg(long = "no-hardware-decode", action = ArgAction::SetFalse)]
     pub hardware_decode: bool,
+
+    /// pixel format to write to the camera
+    #[arg(long, value_name = "FORMAT", default_value = "auto")]
+    pub pixel_format: PixelFormat,
 
     /// list the attached iPhones and iPads, the v4l2loopback devices and the
     /// virtual microphones, and exit

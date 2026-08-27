@@ -15,7 +15,11 @@ impl Device {
         match *self {}
     }
 
-    pub fn write_frame(&mut self, _picture: Picture, _data: &[u8]) -> Result<(), String> {
+    pub fn takes_nv12(&self) -> bool {
+        match *self {}
+    }
+
+    pub fn write_frame(&mut self, _picture: Picture, _lay_out: impl FnOnce(&mut [u8]) -> bool) -> Result<(), String> {
         match *self {}
     }
 }

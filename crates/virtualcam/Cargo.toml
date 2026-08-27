@@ -15,4 +15,5 @@ clap = { version = "4.6.6", features = ["derive"] }
 mobcam-core = { path = "../core" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
 v4l = "0.14.0"
