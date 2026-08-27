@@ -104,10 +104,6 @@ from `hw:Loopback,1,0`.
 
 ## BELABOX
 
-> [!WARNING]
-> The BELABOX install script does not work yet. It is experimental and unfinished,
-> and running it will not give a working camera.
-
 [BELABOX](https://belabox.net) has none of this set up, and no Rust toolchain
 either. Run the script below on it, over `ssh`, and it does all of the above:
 installs the build dependencies, the toolchain and the `v4l2loopback` module,
