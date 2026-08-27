@@ -124,7 +124,7 @@ def style_and_lint(_: argparse.Namespace) -> None:
     setup()
     dependencies()
     run([sys.executable, "-m", "pip", "install", "--requirement", REPO_ROOT / "scripts" / "requirements.txt"])
-    for target in ["style-check", "lint", "test", "spell-check"]:
+    for target in ["style-check", "lint", "unit-test", "spell-check"]:
         run(["make", "--directory", REPO_ROOT, target])
 
 

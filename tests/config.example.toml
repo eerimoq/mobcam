@@ -1,5 +1,5 @@
 [general]
-tester-ip-address = "belabox.home"
+tester-ip-address = "belabox.local"
 remote-control-port = 2345
 
 [virtualcam]

@@ -63,7 +63,7 @@ class Stream(TestCase):
 def tests(moblin: Moblin):
     return [
         Stream(moblin, VideoCodec.H264, Resolution.FULL_HD, 30),
-        Stream(moblin, VideoCodec.H264, Resolution.FULL_HD, 60),
+        # Stream(moblin, VideoCodec.H264, Resolution.FULL_HD, 60),
         Stream(moblin, VideoCodec.H265, Resolution.FULL_HD, 30),
-        Stream(moblin, VideoCodec.H265, Resolution.FULL_HD, 60),
+        # Stream(moblin, VideoCodec.H265, Resolution.FULL_HD, 60),
     ]

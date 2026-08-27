@@ -41,7 +41,6 @@ test-remote:
 	    --exclude target \
 	    --exclude release \
 	    --exclude logs \
-	    --exclude tests/config.toml \
 	    --exclude tests/files \
 	    ./ $(BELABOX):mobcam/
 	status=0 ; \
