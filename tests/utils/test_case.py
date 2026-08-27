@@ -27,6 +27,7 @@ SILENCE_NOISE_DB = -60.0
 MAXIMUM_SILENCE = 0.5
 MAXIMUM_AUDIO_LENGTH_DIFFERENCE = 0.5
 PTS_DELTA_TOLERANCE_RATIO = 0.2
+PTS_DELTA_SETTLE_SECONDS = 0.25
 WORST_PTS_DELTAS = 5
 
 
@@ -51,9 +52,8 @@ class TestCase(systest.TestCase):
     ):
         self._assert_camera_format(recording, width, height)
         self._assert_camera_frames(recording, fps)
-        self._log_pts_deltas(recording, fps)
+        self._assert_pts_deltas(recording, fps)
         self._assert_recorded_file(recording, width, height, audio)
-        self._log_distinct_frames(recording)
         self._assert_camera_audio(recording, audio)
 
     def _assert_camera_format(self, recording: Recording, width: int, height: int):
@@ -84,21 +84,23 @@ class TestCase(systest.TestCase):
         self.assert_less(recording.fps(), MAXIMUM_FPS_RATIO * fps)
         self.assert_greater(slowest, MINIMUM_WINDOW_FPS_RATIO * fps)
 
-    def _log_pts_deltas(self, recording: Recording, fps: int):
+    def _assert_pts_deltas(self, recording: Recording, fps: int):
         deltas = recording.pts_deltas()
         if len(deltas) == 0:
             return
         expected = 1 / fps
         tolerance = PTS_DELTA_TOLERANCE_RATIO * expected
         start = recording.timestamps[0]
+        offsets = [timestamp - start for timestamp in recording.timestamps[1:]]
         outliers = [
-            (delta, timestamp - start)
-            for delta, timestamp in zip(deltas, recording.timestamps)
-            if abs(delta - expected) > tolerance
+            (delta, offset)
+            for delta, offset in zip(deltas, offsets)
+            if abs(delta - expected) > tolerance and offset > PTS_DELTA_SETTLE_SECONDS
         ]
         LOGGER.debug(
             "PTS delta expected %.2f ms, mean %.2f ms, median %.2f ms, min %.2f ms, max %.2f ms, "
-            "standard deviation %.2f ms, %s of %s deltas more than %.0f %% off",
+            "standard deviation %.2f ms, %s of %s deltas more than %.0f %% off after the first "
+            "%.2f s",
             1000 * expected,
             1000 * statistics.mean(deltas),
             1000 * statistics.median(deltas),
@@ -108,21 +110,12 @@ class TestCase(systest.TestCase):
             len(outliers),
             len(deltas),
             100 * PTS_DELTA_TOLERANCE_RATIO,
+            PTS_DELTA_SETTLE_SECONDS,
         )
         worst = sorted(outliers, key=lambda outlier: -abs(outlier[0] - expected))
         for delta, offset in worst[:WORST_PTS_DELTAS]:
             LOGGER.info("PTS delta %.2f ms at %.3f s into the recording", 1000 * delta, offset)
-
-    def _log_distinct_frames(self, recording: Recording):
-        LOGGER.debug(
-            "%s distinct frames in %.3f s, %.2f distinct fps, %.1f %% of the %s frames captured "
-            "are frames the camera repeated",
-            recording.distinct_frames,
-            recording.distinct_duration,
-            recording.distinct_fps(),
-            100 * recording.duplicate_ratio(),
-            recording.frames,
-        )
+        self.assert_equal(len(outliers), 0)
 
     def _assert_recorded_file(
         self,

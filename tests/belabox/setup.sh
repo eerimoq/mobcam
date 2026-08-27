@@ -13,8 +13,8 @@
 #
 # The tests record the camera and the microphone with the FFmpeg in
 # /opt/mobcam/ffmpeg, which crates/virtualcam/belabox/install.sh builds, as that
-# is the one that encodes video in the RK3588 hardware, reads ALSA and has the
-# mpdecimate filter. The FFmpeg of the machine reads what came out.
+# is the one that encodes video in the RK3588 hardware and reads ALSA. The
+# FFmpeg of the machine reads what came out.
 
 set -euo pipefail
 

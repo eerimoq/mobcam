@@ -21,10 +21,9 @@
 # The ffmpeg and ffprobe command line tools are built along with the libraries,
 # with the Rockchip encoders, the V4L2 and ALSA input devices, the AAC encoder
 # and the MP4 muxer, so ffmpeg records a camera and a microphone into an MP4
-# file, the video in hardware, and with the mpdecimate filter, which finds the
-# frames a camera repeated. They are installed in /opt/mobcam, which is not in
-# the path, and the ffmpeg of the machine stays the one that runs when ffmpeg is
-# typed.
+# file, the video in hardware. They are installed in /opt/mobcam, which is not
+# in the path, and the ffmpeg of the machine stays the one that runs when ffmpeg
+# is typed.
 
 set -euo pipefail
 
@@ -39,6 +38,7 @@ MODULES_FILE=/etc/modules-load.d/mobcam.conf
 UDEV_FILE=/etc/udev/rules.d/70-mobcam.rules
 MPP_UDEV_FILE=/etc/udev/rules.d/71-mobcam-mpp.rules
 VIDEO_DEVICE=/dev/mobcam
+CAMERA_BUFFERS=8
 SETUP_FILE=/opt/belaUI/setup.json
 PIPELINES_DIR=/usr/share/belacoder/pipelines
 PIPELINE_TEMPLATE=h265_camlink
@@ -214,8 +214,7 @@ ffmpeg_is_installed()
         && ffmpeg_supports encoders aac \
         && ffmpeg_supports devices v4l2 \
         && ffmpeg_supports devices alsa \
-        && ffmpeg_supports muxers mp4 \
-        && ffmpeg_supports filters mpdecimate
+        && ffmpeg_supports muxers mp4
 }
 
 clone()
@@ -299,7 +298,7 @@ build_ffmpeg()
             --enable-muxer=mp4,null \
             --enable-indev=v4l2,alsa \
             --enable-protocol=file,pipe \
-            --enable-filter=format,scale,fps,copy,hwupload,hwdownload,null,anull,aformat,aresample,mpdecimate \
+            --enable-filter=format,scale,fps,copy,hwupload,hwdownload,null,anull,aformat,aresample \
             --enable-bsf=extract_extradata,h264_mp4toannexb,hevc_mp4toannexb \
             --extra-ldflags="-Wl,-rpath,$MPP_PREFIX/lib"
         make -j"$(nproc)"
@@ -313,8 +312,7 @@ setup_ffmpeg()
     # with the Rockchip decoders and encoders of the RK3588 whatever the machine
     # has. Only the libraries are used by mobcam-virtualcam; the ffmpeg and
     # ffprobe tools are there to record a camera and a microphone into an MP4
-    # file, the video in hardware, and to look at what came out, mpdecimate
-    # included.
+    # file, the video in hardware, and to look at what came out.
     if ! ffmpeg_is_installed ; then
         step "This machine has no FFmpeg that decodes and encodes in the RK3588 hardware."
         setup_mpp
@@ -365,7 +363,7 @@ setup_camera()
 {
     step "Setting up the $CARD camera."
     write_file $MODPROBE_FILE <<EOF
-options v4l2loopback card_label=$CARD exclusive_caps=1
+options v4l2loopback card_label=$CARD exclusive_caps=1 max_buffers=$CAMERA_BUFFERS
 options snd-aloop id=$CARD
 EOF
     write_file $UDEV_FILE <<EOF

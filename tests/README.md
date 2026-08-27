@@ -21,8 +21,8 @@ below are run from the root of a clone of the repository.
 Mobcam Virtual Camera has to be installed on the machine already, which
 [crates/virtualcam/belabox/install.sh](../crates/virtualcam/belabox/install.sh) does on a BELABOX.
 That is also what builds the FFmpeg in `/opt/mobcam/ffmpeg/bin`, the one that encodes video in the
-RK3588 hardware and reads ALSA, which the tests record the camera and the microphone with, and count
-the frames it repeated with. It also hands `/dev/mpp_service` to the `video` group, which the
+RK3588 hardware and reads ALSA, which the tests record the camera and the microphone with. It also
+hands `/dev/mpp_service` to the `video` group, which the
 machine ships to root alone; without that nothing but root encodes in the hardware. The FFmpeg of the machine, the one in the path, reads everything that
 came out. The tests need `sudo` without a password, as they stop the `mobcam-virtualcam` service and
 run the binary themselves.
@@ -86,6 +86,8 @@ Every test streams for ten seconds and then checks that
 - the camera delivers I420 or NV12 frames of the resolution Moblin is streaming,
 - the frames keep coming at close to the frame rate Moblin is streaming, in every half second of the
   ten,
+- every gap between two frames is one frame time, 33.3 ms at 30 frames a second and 16.7 ms at 60,
+  to within 20 %, after the first quarter of a second of the recording,
 - the MP4 the camera and the microphone were recorded into holds H.264 of that resolution and AAC
   of the sample rate `mobcam-virtualcam` logged, ten seconds of both,
 - the microphone delivers the sample rate `mobcam-virtualcam` logged and at least as many channels
@@ -109,34 +111,15 @@ frame times.
 
 Recording costs close to nothing because `h264_rkmpp` encodes in the video unit of the RK3588.
 Encoding 1080p60 in software costs the BELABOX around eight frames a second, which is more than the
-rate being measured can afford, so the FFmpeg of the machine is not the one that records. A second
-capture, running at the same time, counts the frames that are not repeats of the one before with
-`mpdecimate` and encodes nothing at all. The audio the silence and the volume checks read is a WAV
-taken out of the MP4 once the recording is over, as ALSA hands the loopback to one reader at a time
-and the recording is the one holding it.
+rate being measured can afford, so the FFmpeg of the machine is not the one that records. Only one
+capture runs: a v4l2loopback reader is handed the frame that was queued last rather than a queue of
+its own, so a second reader taking CPU from the first turns into frames the recording never sees.
+The audio the silence and the volume checks read is a WAV taken out of the MP4 once the recording is
+over, as ALSA hands the loopback to one reader at a time and the recording is the one holding it.
 
 The microphone is the capture half of an `snd-aloop` loopback, which hands a mono stream over as
 stereo, so the channel count is only checked to be at least the one `mobcam-virtualcam` plays and to
 survive the trip from ALSA into the MP4 unchanged.
-
-`mpdecimate` runs with far tighter thresholds than its defaults, `hi=64:lo=32:frac=0.01`, and on the
-frames the camera delivers rather than on the recording. A frame the camera repeated is the same
-buffer read twice, identical to the byte, which any threshold catches, while the defaults are loose
-enough to call a still scene one long duplicate: pointed at a grey wall, a camera whose picture only
-moves by its own noise keeps 1 frame of 90 with the defaults and all 90 with these. Encoding the
-frames first would blur the distinction the other way, as a duplicate comes back out of H.264
-slightly changed.
-
-The distinct frame rate is logged and nothing else, for now. A device pointed at a scene that does
-not move sends a picture that does not change, which arrives as frame after frame the decoder gives
-back byte for byte the same, so the count says as much about what the camera was pointed at as about
-Mobcam. It is there to be read, and to be turned into a check of a camera that froze once the tests
-stream something that moves.
-
-The frame rate is only checked to be in the neighbourhood of the one Moblin streams, never to be
-exactly it. The camera of the device delivers fewer frames than it is asked for in dim light, 55 of
-60 in a normally lit room, and how many is nothing the tests can control. A regression that drops
-every other frame is still caught.
 
 # Troubleshooting
 

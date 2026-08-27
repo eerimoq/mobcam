@@ -111,9 +111,14 @@ written to it, because a `write()` makes the kernel stamp the buffer with the ti
 while `VIDIOC_QBUF` carries a timestamp of the caller's choosing: `core/clock.rs` turns the device's
 presentation timestamp into one on the monotonic clock, the same `Clock` the OBS plugin anchors OBS
 timestamps with. The buffer index has to be a strict rotation, as the output `VIDIOC_DQBUF` of
-v4l2loopback hands back the buffer that was queued last. The platform-specific modules follow one
-pattern: `v4l2.rs`, `pulse.rs` and `alsa.rs` hold the portable types and `#[cfg_attr(..., path = "...")]` in
-either a `supported.rs` or an `unsupported.rs`. The unsupported halves are uninhabited enums whose
+v4l2loopback hands back the buffer that was queued last. Frames are also spaced out before they are
+queued, to three quarters of the frame interval the timestamps carry: v4l2loopback fast-forwards a
+reader that has fallen more than two frames behind, so a writer that empties a burst of frames
+straight into the camera loses all but the last of them, whatever the buffer count.
+
+The platform-specific modules follow one pattern: `v4l2.rs`, `pulse.rs` and `alsa.rs` hold the
+portable types and `#[cfg_attr(..., path = "...")]` in either a `supported.rs` or an
+`unsupported.rs`. The unsupported halves are uninhabited enums whose
 `open()` returns an error, which is what keeps this Linux-only crate compiling on macOS — keep that
 working when adding to any backend.
 

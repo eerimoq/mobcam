@@ -3,6 +3,8 @@ use std::os::raw::{c_int, c_void};
 use std::path::Path;
 use std::path::PathBuf;
 use std::ptr;
+use std::thread::sleep;
+use std::time::Duration;
 use v4l::buffer::Type;
 use v4l::capability::Flags;
 use v4l::context;
@@ -16,6 +18,9 @@ const LOOPBACK_DRIVER: &str = "v4l2 loopback";
 const PROBE_SIZE: (u32, u32) = (640, 480);
 const BUFFERS: u32 = 4;
 const NANOSECONDS_PER_SECOND: u64 = 1_000_000_000;
+const SPACING_NUMERATOR: u64 = 3;
+const SPACING_DENOMINATOR: u64 = 4;
+const LONGEST_SPACING_NS: u64 = NANOSECONDS_PER_SECOND / 10;
 
 impl From<Format> for FourCC {
     fn from(format: Format) -> Self {
@@ -87,11 +92,35 @@ struct Mapping {
     length: usize,
 }
 
+#[derive(Default)]
+struct Spacing {
+    previous_timestamp_ns: Option<u64>,
+    queued_ns: u64,
+}
+
+impl Spacing {
+    fn wait(&mut self, timestamp_ns: u64) {
+        let previous = self.previous_timestamp_ns.replace(timestamp_ns);
+        let Some(interval) = previous.map(|previous| timestamp_ns.saturating_sub(previous)) else {
+            self.queued_ns = now_ns();
+            return;
+        };
+        let spacing = (interval * SPACING_NUMERATOR / SPACING_DENOMINATOR).min(LONGEST_SPACING_NS);
+        let earliest = self.queued_ns + spacing;
+        let now = now_ns();
+        if now < earliest {
+            sleep(Duration::from_nanos(earliest - now));
+        }
+        self.queued_ns = now_ns();
+    }
+}
+
 struct Buffers {
     fd: c_int,
     mappings: Vec<Mapping>,
     next: usize,
     queued: usize,
+    spacing: Spacing,
 }
 
 impl Buffers {
@@ -113,6 +142,7 @@ impl Buffers {
             mappings: Vec::new(),
             next: 0,
             queued: 0,
+            spacing: Spacing::default(),
         };
         for index in 0..request.count {
             buffers.mappings.push(buffers.map(index)?);
@@ -167,6 +197,7 @@ impl Buffers {
             return Err(format!("a frame of {} bytes does not fit a buffer", data.len()));
         }
         unsafe { ptr::copy_nonoverlapping(data.as_ptr(), mapping.data, data.len()) };
+        self.spacing.wait(timestamp_ns);
         self.queue(index, data.len(), timestamp_ns)?;
         self.next = (index + 1) % self.mappings.len();
         self.queued += 1;

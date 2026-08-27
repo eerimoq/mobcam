@@ -33,7 +33,6 @@ DEFAULT_AUDIO_CHANNELS = 1
 FRAME_QUEUE_SIZE = 512
 VIDEO_BITRATE = "10M"
 VIDEO_TIME_BASE = "1/90000"
-DECIMATE_FILTER = "mpdecimate=hi=64:lo=32:frac=0.01"
 START_ATTEMPTS = 3
 RETRY_SECONDS = 2
 CAMERA_MODULE = "v4l2loopback"
@@ -93,8 +92,6 @@ class Recording:
     video_path: Path
     audio_path: Path
     timestamps: list[float]
-    distinct_frames: int
-    distinct_duration: float
     window_rates: list[float]
 
     @property
@@ -110,12 +107,6 @@ class Recording:
 
     def pts_deltas(self) -> list[float]:
         return [after - before for before, after in zip(self.timestamps, self.timestamps[1:])]
-
-    def distinct_fps(self) -> float:
-        return self.distinct_frames / self.distinct_duration
-
-    def duplicate_ratio(self) -> float:
-        return 1 - self.distinct_frames / self.frames
 
 
 class VirtualCam:
@@ -221,16 +212,11 @@ class VirtualCam:
         video_path = FILES_DIR / f"{name}.mp4"
         audio_path = FILES_DIR / f"{name}.wav"
         recording = self._start(self._recording_command(seconds, audio, video_path))
-        distinct = self._start(self._distinct_frames_command(seconds))
         _, recording_errors = recording.communicate()
-        distinct_output, distinct_errors = distinct.communicate()
         self._log(recording_errors)
-        self._log(distinct_errors)
         _check(recording, recording_errors, "record")
-        _check(distinct, distinct_errors, "count the distinct frames of")
         extract_audio(video_path, audio_path)
         timestamps = sorted(frame.pts for frame in ffprobe_video(video_path).frames)
-        distinct_windows = _parse_progress(distinct_output)
         return Recording(
             seconds=seconds,
             video=_parse_video_input(recording_errors),
@@ -238,8 +224,6 @@ class VirtualCam:
             video_path=video_path,
             audio_path=audio_path,
             timestamps=timestamps,
-            distinct_frames=distinct_windows[-1][1] if distinct_windows else 0,
-            distinct_duration=distinct_windows[-1][0] if distinct_windows else 0,
             window_rates=_window_rates(timestamps),
         )
 
@@ -266,23 +250,6 @@ class VirtualCam:
             "-b:a",
             AUDIO_BITRATE,
             str(path),
-        ]
-
-    def _distinct_frames_command(self, seconds: float) -> list[str]:
-        return MOBCAM_FFMPEG_COMMAND + [
-            *self._video_input(),
-            "-progress",
-            "pipe:1",
-            "-an",
-            "-t",
-            str(seconds),
-            "-vf",
-            DECIMATE_FILTER,
-            "-fps_mode",
-            "passthrough",
-            "-f",
-            "null",
-            "-",
         ]
 
     def _audio_input(self, audio: AudioSpec) -> list[str]:
@@ -347,29 +314,6 @@ def _check(process: subprocess.Popen, errors: str, what: str):
         return
     tail = "\n".join(errors.splitlines()[-5:])
     raise Exception(f"ffmpeg failed to {what} the camera:\n{tail}")
-
-
-def _parse_progress(output: str) -> list[tuple[float, int]]:
-    windows = []
-    frames = 0
-    duration = 0.0
-    for line in output.splitlines():
-        key, _, value = line.partition("=")
-        number = _parse_number(value)
-        if key == "frame" and number is not None:
-            frames = number
-        elif key == "out_time_us" and number is not None:
-            duration = number / 1_000_000
-        elif key == "progress" and duration > 0:
-            windows.append((duration, frames))
-    return windows
-
-
-def _parse_number(value: str) -> int | None:
-    try:
-        return int(value)
-    except ValueError:
-        return None
 
 
 def _window_rates(timestamps: list[float]) -> list[float]:
