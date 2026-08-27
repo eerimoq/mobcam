@@ -125,20 +125,33 @@ fn copy(out: &mut Vec<u8>, plane: &Plane<'_>, grid: &Grid, shift: u32) -> bool {
         let Some(source) = plane.data.get(start..).and_then(|rest| rest.get(..length)) else {
             return false;
         };
-        if shift == 0 {
-            out.extend(source.iter().step_by(grid.column_step));
-        } else {
-            out.extend(
-                source
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .step_by(grid.column_step)
-                    .map(|sample| (u16::from_le_bytes(*sample) >> shift) as u8),
-            );
-        }
+        copy_row(out, source, grid.column_step, shift);
     }
     true
+}
+
+fn copy_row(out: &mut Vec<u8>, source: &[u8], column_step: usize, shift: u32) {
+    if shift == 0 {
+        match column_step {
+            1 => out.extend_from_slice(source),
+            2 => {
+                let (pairs, last) = source.as_chunks::<2>();
+                out.extend(pairs.iter().map(|pair| pair[0]));
+                out.extend_from_slice(last);
+            }
+            step => out.extend(source.iter().step_by(step)),
+        }
+        return;
+    }
+    let samples = source.as_chunks::<2>().0;
+    match column_step {
+        1 => out.extend(samples.iter().map(|sample| narrow(*sample, shift))),
+        step => out.extend(samples.iter().step_by(step).map(|sample| narrow(*sample, shift))),
+    }
+}
+
+fn narrow(sample: [u8; 2], shift: u32) -> u8 {
+    (u16::from_le_bytes(sample) >> shift) as u8
 }
 
 #[cfg(test)]
