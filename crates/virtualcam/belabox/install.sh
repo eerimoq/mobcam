@@ -8,10 +8,15 @@
 #     ./crates/virtualcam/belabox/install.sh
 #
 # It installs the build dependencies and the v4l2loopback module, builds the
-# FFmpeg and snd-aloop that BELABOX does not have, builds and installs the
-# binary, creates the Mobcam camera and the Mobcam sound card, both loaded at
-# boot, adds the belacoder pipeline belaUI streams the camera with, and runs
-# mobcam-virtualcam as a service.
+# snd-aloop that BELABOX does not have and an FFmpeg that decodes in the RK3588
+# hardware, builds and installs the binary, creates the Mobcam camera and the
+# Mobcam sound card, both loaded at boot, adds the belacoder pipeline belaUI
+# streams the camera with, and runs mobcam-virtualcam as a service.
+#
+# The FFmpeg is nyanmisaka's ffmpeg-rockchip, which decodes H.264 and HEVC in
+# the video unit of the RK3588 the BELABOX is built around, through the Rockchip
+# Media Process Platform (MPP) it also builds. Both are installed under
+# /opt/mobcam, leaving the FFmpeg and the MPP of the machine alone.
 
 set -euo pipefail
 
@@ -30,10 +35,13 @@ PIPELINES_DIR=/usr/share/belacoder/pipelines
 PIPELINE_TEMPLATE=h265_camlink
 PIPELINE=h265_mobcam
 AUDIO_DEVICE=plughw:CARD=$CARD,DEV=1
-FFMPEG_VERSION=7.1.2
 FFMPEG_PREFIX=/opt/mobcam/ffmpeg
 FFMPEG_MINIMUM=59.37.100
-FFMPEG_URL=https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz
+FFMPEG_REPOSITORY=${MOBCAM_FFMPEG_REPOSITORY:-https://github.com/nyanmisaka/ffmpeg-rockchip.git}
+FFMPEG_BRANCH=${MOBCAM_FFMPEG_BRANCH:-7.1}
+MPP_PREFIX=/opt/mobcam/mpp
+MPP_REPOSITORY=${MOBCAM_MPP_REPOSITORY:-https://github.com/nyanmisaka/mpp.git}
+MPP_BRANCH=${MOBCAM_MPP_BRANCH:-jellyfin-mpp}
 BUILD_DIR=${MOBCAM_BUILD_DIR:-$HOME/.cache/mobcam}
 KERNEL=$(uname -r)
 KERNEL_HEADERS=/lib/modules/$KERNEL/build
@@ -43,13 +51,13 @@ ALOOP_URL=https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain
 
 PACKAGES=(
     build-essential
+    cmake
     curl
     dkms
     git
     libasound2-dev
-    libavcodec-dev
-    libavutil-dev
     libclang-dev
+    libdrm-dev
     pkg-config
     usbmuxd
     v4l2loopback-dkms
@@ -76,8 +84,10 @@ Build and install Mobcam Virtual Camera on a BELABOX.
 The source is the clone this script is part of, or a clone of
 $REPOSITORY
 in $CLONE_DIR. Set MOBCAM_REPOSITORY and MOBCAM_SOURCE_DIR to
-change either, and MOBCAM_BUILD_DIR to build FFmpeg somewhere else than
-$BUILD_DIR.
+change either, and MOBCAM_BUILD_DIR to build FFmpeg and MPP somewhere else
+than $BUILD_DIR. MOBCAM_FFMPEG_REPOSITORY, MOBCAM_FFMPEG_BRANCH,
+MOBCAM_MPP_REPOSITORY and MOBCAM_MPP_BRANCH pick which ffmpeg-rockchip and
+MPP to build.
 EOF
 }
 
@@ -118,6 +128,9 @@ check_machine()
     [ -d "$KERNEL_HEADERS" ] || die "no kernel headers in $KERNEL_HEADERS"
     if [ ! -d /opt/belaUI ] ; then
         warn "no /opt/belaUI; this does not look like a BELABOX, carrying on anyway"
+    fi
+    if [ ! -e /dev/mpp_service ] ; then
+        warn "no /dev/mpp_service; this machine has no Rockchip video unit to decode in"
     fi
     if [ "$(id -u)" -ne 0 ] ; then
         sudo=sudo
@@ -160,26 +173,79 @@ install_rust()
     command -v cargo >/dev/null || die "no cargo in the path"
 }
 
-ffmpeg_is_new_enough()
+ffmpeg_has_hardware_decoders()
 {
-    PKG_CONFIG_PATH=${1:-} pkg-config --atleast-version=$FFMPEG_MINIMUM libavcodec 2>/dev/null
+    # The library carries the names of the decoders it was built with.
+    grep -qa h264_rkmpp $FFMPEG_PREFIX/lib/libavcodec.so 2>/dev/null
+}
+
+ffmpeg_is_installed()
+{
+    PKG_CONFIG_PATH=$FFMPEG_PREFIX/lib/pkgconfig \
+        pkg-config --atleast-version=$FFMPEG_MINIMUM libavcodec 2>/dev/null \
+        && ffmpeg_has_hardware_decoders
+}
+
+clone()
+{
+    local repository
+    local branch
+    local directory
+
+    repository=$1
+    branch=$2
+    directory=$3
+    mkdir -p "$(dirname "$directory")"
+    if [ -d "$directory/.git" ] ; then
+        git -C "$directory" fetch --depth 1 origin "$branch"
+        git -C "$directory" checkout --quiet --detach FETCH_HEAD
+    else
+        rm -rf "$directory"
+        git clone --depth 1 --branch "$branch" "$repository" "$directory"
+    fi
+}
+
+build_mpp()
+{
+    local directory
+
+    step "Building the Rockchip MPP $MPP_BRANCH in $BUILD_DIR."
+    directory=$BUILD_DIR/rkmpp
+    clone "$MPP_REPOSITORY" "$MPP_BRANCH" "$directory"
+    cmake \
+        -S "$directory" \
+        -B "$directory/build" \
+        -DCMAKE_INSTALL_PREFIX=$MPP_PREFIX \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=ON \
+        -DBUILD_TEST=OFF
+    make -C "$directory/build" -j"$(nproc)"
+    $sudo make -C "$directory/build" install
+}
+
+setup_mpp()
+{
+    # The MPP of the machine is often too old for the decoders, and replacing it
+    # would take the hardware encoder of belacoder with it, so this one is its
+    # own and only FFmpeg links against it.
+    if [ ! -f $MPP_PREFIX/lib/pkgconfig/rockchip_mpp.pc ] ; then
+        build_mpp
+    fi
 }
 
 build_ffmpeg()
 {
     local directory
 
-    step "Building FFmpeg $FFMPEG_VERSION in $BUILD_DIR."
-    directory=$BUILD_DIR/ffmpeg-$FFMPEG_VERSION
-    mkdir -p "$BUILD_DIR"
-    if [ ! -d "$directory" ] ; then
-        curl -fL "$FFMPEG_URL" | tar -xJ -C "$BUILD_DIR"
-    fi
+    step "Building ffmpeg-rockchip $FFMPEG_BRANCH in $BUILD_DIR."
+    directory=$BUILD_DIR/ffmpeg-rockchip
+    clone "$FFMPEG_REPOSITORY" "$FFMPEG_BRANCH" "$directory"
     (
         cd "$directory"
         # /tmp is noexec on a BELABOX, which configure cannot work with.
         mkdir -p tmp
         export TMPDIR=$directory/tmp
+        export PKG_CONFIG_PATH=$MPP_PREFIX/lib/pkgconfig
         ./configure \
             --prefix=$FFMPEG_PREFIX \
             --enable-shared \
@@ -194,8 +260,13 @@ build_ffmpeg()
             --disable-swresample \
             --disable-network \
             --disable-everything \
-            --enable-decoder=h264,hevc,aac \
-            --enable-parser=h264,hevc,aac
+            --enable-gpl \
+            --enable-version3 \
+            --enable-libdrm \
+            --enable-rkmpp \
+            --enable-decoder=h264,hevc,aac,h264_rkmpp,hevc_rkmpp \
+            --enable-parser=h264,hevc,aac \
+            --extra-ldflags="-Wl,-rpath,$MPP_PREFIX/lib"
         make -j"$(nproc)"
     )
     $sudo make -C "$directory" install
@@ -203,13 +274,13 @@ build_ffmpeg()
 
 setup_ffmpeg()
 {
-    if ffmpeg_is_new_enough ; then
-        return
-    fi
-    if ! ffmpeg_is_new_enough $FFMPEG_PREFIX/lib/pkgconfig ; then
-        step "The FFmpeg of this machine is too old for Mobcam."
+    # The FFmpeg of the machine decodes in software only, so Mobcam brings one
+    # with the Rockchip decoders of the RK3588 whatever the machine has.
+    if ! ffmpeg_is_installed ; then
+        step "This machine has no FFmpeg that decodes in the RK3588 hardware."
+        setup_mpp
         build_ffmpeg
-        ffmpeg_is_new_enough $FFMPEG_PREFIX/lib/pkgconfig || die "the FFmpeg build did not take"
+        ffmpeg_is_installed || die "the FFmpeg build did not take"
     fi
     export PKG_CONFIG_PATH=$FFMPEG_PREFIX/lib/pkgconfig
     export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-rpath,$FFMPEG_PREFIX/lib"

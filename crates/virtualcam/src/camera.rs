@@ -50,12 +50,30 @@ pub fn main() -> ExitCode {
     if options.list {
         return list();
     }
+    log_decoders();
     match run(options) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
             eprintln!("error: {message}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// What libavcodec was built with, which is the first thing to look at when a
+/// stream will not decode or a decoder with hardware of its own is missing.
+fn log_decoders() {
+    log!(Level::Info, "available decoders:");
+    for codec in ffmpeg::Codec::decoders() {
+        let name = match codec.long_name() {
+            Some(long_name) => format!("{} ({long_name})", codec.name()),
+            None => codec.name(),
+        };
+        let hardware = match codec.is_hardware() {
+            true => " [hardware]",
+            false => "",
+        };
+        log!(Level::Info, "  {} {name}{hardware}", codec.media_type_name());
     }
 }
 

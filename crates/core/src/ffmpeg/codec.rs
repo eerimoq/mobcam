@@ -11,6 +11,42 @@ impl Codec {
         (!codec.is_null()).then_some(Self(codec))
     }
 
+    pub fn decoders() -> impl Iterator<Item = Self> {
+        let mut opaque = ptr::null_mut();
+        std::iter::from_fn(move || {
+            loop {
+                let codec = unsafe { sys::av_codec_iterate(&mut opaque) };
+                if codec.is_null() {
+                    return None;
+                }
+                if unsafe { sys::av_codec_is_decoder(codec) } != 0 {
+                    return Some(Self(codec));
+                }
+            }
+        })
+    }
+
+    pub fn id(self) -> sys::AVCodecID {
+        unsafe { (*self.0).id }
+    }
+
+    pub fn is_hardware(self) -> bool {
+        unsafe { (*self.0).capabilities as u32 & sys::AV_CODEC_CAP_HARDWARE != 0 }
+    }
+
+    pub fn name(self) -> String {
+        super::name(unsafe { (*self.0).name }).unwrap_or_else(|| String::from("unnamed"))
+    }
+
+    pub fn long_name(self) -> Option<String> {
+        super::name(unsafe { (*self.0).long_name })
+    }
+
+    pub fn media_type_name(self) -> String {
+        let kind = unsafe { (*self.0).type_ };
+        super::name(unsafe { sys::av_get_media_type_string(kind) }).unwrap_or_else(|| String::from("unknown"))
+    }
+
     pub(super) fn as_ptr(self) -> *const sys::AVCodec {
         self.0
     }
