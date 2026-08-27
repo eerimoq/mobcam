@@ -12,11 +12,9 @@ use v4l::v4l2;
 use v4l::video::Output;
 
 const LOOPBACK_DRIVER: &str = "v4l2 loopback";
-/// How many buffers to ask the device for. It may hand back fewer.
 const BUFFER_COUNT: u32 = 4;
 const BUFFERS_OF: u32 = v4l2_buf_type_V4L2_BUF_TYPE_VIDEO_OUTPUT;
 const MAPPED: u32 = v4l2_memory_V4L2_MEMORY_MMAP;
-/// The size a device is asked for when probing which formats it takes.
 const PROBE_SIZE: (u32, u32) = (640, 480);
 
 impl From<Format> for FourCC {
@@ -49,7 +47,6 @@ impl From<Quantization> for v4l::format::Quantization {
     }
 }
 
-/// How many bytes one image takes. Both formats carry twelve bits a pixel.
 fn size_of(picture: Picture) -> usize {
     picture.width as usize * picture.height as usize * 3 / 2
 }
@@ -67,24 +64,14 @@ impl From<Picture> for v4l::format::Format {
     }
 }
 
-/// One buffer of a device, mapped into our memory.
 struct Mapping {
     data: *mut u8,
     length: usize,
 }
 
-/// The buffers a device is written through.
-///
-/// A frame is laid out straight into the memory the driver reads, rather than
-/// built somewhere else and copied in, which is a whole frame of copying saved
-/// every time. Buffers are taken back from the driver, filled and handed over
-/// one at a time, so a frame reaches whoever is reading the camera as soon as
-/// it has been written and no later.
 struct Buffers {
-    /// Kept so that the descriptor outlives the mappings taken from it.
     handle: Arc<Handle>,
     mappings: Vec<Mapping>,
-    /// The buffers the driver has given back to us, which we may fill.
     ours: Vec<u32>,
     streaming: bool,
 }
@@ -105,7 +92,6 @@ impl Buffers {
             let mapping = buffers.query(index)?;
             buffers.mappings.push(mapping);
         }
-        // Every buffer starts out ours, newest last so that they are used in turn.
         buffers.ours = (0..count).rev().collect();
         buffers.stream(v4l2::vidioc::VIDIOC_STREAMON, "starting the stream")?;
         buffers.streaming = true;
@@ -117,7 +103,6 @@ impl Buffers {
         unsafe { v4l2::ioctl(self.handle.fd(), request, argument) }.map_err(|error| format!("{what}: {error}"))
     }
 
-    /// Ask the device for `count` buffers, and say how many it gave.
     fn request(&self, count: u32) -> Result<u32, String> {
         let mut request = v4l2_requestbuffers {
             count,
@@ -129,7 +114,6 @@ impl Buffers {
         Ok(request.count)
     }
 
-    /// Find out where a buffer lives and map it into our memory.
     fn query(&self, index: u32) -> Result<Mapping, String> {
         let mut buffer = v4l2_buffer {
             index,
@@ -139,7 +123,6 @@ impl Buffers {
         };
         self.call(v4l2::vidioc::VIDIOC_QUERYBUF, &mut buffer, "looking a buffer up")?;
         let length = buffer.length as usize;
-        // The offset is where in the device the buffer lies, not a pointer.
         let offset = unsafe { buffer.m.offset }.into();
         let data = unsafe {
             v4l2::mmap(
@@ -163,7 +146,6 @@ impl Buffers {
         self.call(request, &mut kind, what)
     }
 
-    /// Take a buffer to fill, waiting for one back if the driver has them all.
     fn take(&mut self) -> Result<u32, String> {
         if let Some(index) = self.ours.pop() {
             return Ok(index);
@@ -177,15 +159,11 @@ impl Buffers {
         Ok(buffer.index)
     }
 
-    /// The first `size` bytes of a buffer we hold, to lay an image in.
     fn room(&mut self, index: u32, size: usize) -> Option<&mut [u8]> {
         let mapping = self.mappings.get(index as usize)?;
-        // The mapping is ours alone until it is handed over again, and it is
-        // page aligned so it may be a little larger than an image.
         (mapping.length >= size).then(|| unsafe { std::slice::from_raw_parts_mut(mapping.data, size) })
     }
 
-    /// Hand a filled buffer to the driver, which shows it to whoever is reading.
     fn give(&mut self, index: u32, size: usize) -> Result<(), String> {
         let mut buffer = v4l2_buffer {
             index,
@@ -198,7 +176,6 @@ impl Buffers {
         self.call(v4l2::vidioc::VIDIOC_QBUF, &mut buffer, "handing a buffer over")
     }
 
-    /// Keep a buffer we took but could not fill, rather than losing it.
     fn keep(&mut self, index: u32) {
         self.ours.push(index);
     }
@@ -247,21 +224,12 @@ impl Device {
         &self.path
     }
 
-    /// Whether the device takes interleaved chroma. Every v4l2loopback built in
-    /// the last decade does, and one that a program is already reading in
-    /// another format does not.
     pub fn takes_nv12(&self) -> bool {
         self.nv12
     }
 
-    /// Write one frame, letting `lay_out` fill the buffer the driver reads.
-    ///
-    /// The image is built in place, so nothing is copied between laying it out
-    /// and the camera being able to show it.
     pub fn write_frame(&mut self, picture: Picture, lay_out: impl FnOnce(&mut [u8]) -> bool) -> Result<(), String> {
         if self.picture != Some(picture) {
-            // The buffers belong to the old format, so let them go before the
-            // device is told about the new one.
             self.buffers = None;
             self.picture = None;
             self.set_picture(picture)?;
@@ -317,13 +285,6 @@ impl Device {
     }
 }
 
-/// Ask the device for `format` at a size every device handles, and say whether
-/// that is what it gave back.
-///
-/// The device is put back in the format it was found in, so that a program
-/// reading the camera before the first frame arrives still sees the format it
-/// would have seen. A device another program already holds refuses the change
-/// and is reported as not taking the format, which is the safe answer.
 fn probe(device: &v4l::Device, format: Format) -> bool {
     let (width, height) = PROBE_SIZE;
     let picture = Picture {

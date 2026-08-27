@@ -204,11 +204,8 @@ fn wait_before_reconnecting() {
 struct Output<'a> {
     device: &'a mut v4l2::Device,
     audio: Option<&'a mut Audio>,
-    /// Whether a frame that already is NV12 may be written as it is.
     nv12: bool,
     serial: String,
-    /// The conversion last reported, so that it is reported again only when the
-    /// decoder starts producing something else.
     logged_conversion: Option<(av::AVPixelFormat, v4l2::Format)>,
     logged_pixel_format: Option<av::AVPixelFormat>,
     failure: Option<String>,

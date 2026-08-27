@@ -2,7 +2,6 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
-/// The audio backends, as the `cfg` they enable and the package `pkg-config` knows them by.
 const BACKENDS: [(&str, &str); 2] = [("pulse", "libpulse-simple"), ("alsa", "alsa")];
 
 fn target_os() -> String {
@@ -26,7 +25,6 @@ fn configure_prebuilt() {
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", libraries.display());
 }
 
-/// Link against `package` if the machine has it, and say whether it did.
 fn link(package: &str) -> bool {
     let Ok(output) = Command::new("pkg-config").args(["--libs", package]).output() else {
         return false;
