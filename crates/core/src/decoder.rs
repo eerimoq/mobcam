@@ -11,9 +11,52 @@ const _: () = assert!(
     "INPUT_PADDING is smaller than what this libavcodec requires"
 );
 
+#[derive(Clone, Copy)]
+enum Access {
+    Unknown,
+    Map(av::AVPixelFormat),
+    Copy,
+}
+
 struct Hardware {
     device: Device,
     frame: ffmpeg::Frame,
+    access: Access,
+}
+
+impl Hardware {
+    fn fetch(&mut self, into: &mut ffmpeg::Frame) -> bool {
+        if let Access::Unknown = self.access {
+            let format = self
+                .device
+                .maps_cheaply()
+                .then(|| self.frame.transfer_format())
+                .flatten();
+            self.access = match format {
+                Some(format) => {
+                    log!(
+                        Level::Info,
+                        "mapping the {} frames rather than copying them",
+                        self.device.name()
+                    );
+                    Access::Map(format)
+                }
+                None => Access::Copy,
+            };
+        }
+        if let Access::Map(format) = self.access {
+            if into.map(&self.frame, format) {
+                return true;
+            }
+            log!(
+                Level::Info,
+                "the {} frames cannot be mapped, copying them instead",
+                self.device.name()
+            );
+            self.access = Access::Copy;
+        }
+        into.download(&self.frame)
+    }
 }
 
 struct Stream {
@@ -107,7 +150,11 @@ impl Stream {
             return;
         };
         context.set_hardware_device(&device);
-        self.hardware = Some(Hardware { device, frame });
+        self.hardware = Some(Hardware {
+            device,
+            frame,
+            access: Access::Unknown,
+        });
     }
 
     fn send(&mut self, data: &[u8], pts: i64, keyframe: bool) -> bool {
@@ -137,7 +184,7 @@ impl Stream {
             self.frame.move_from(&mut hardware.frame);
             return Received::Frame;
         }
-        if !self.frame.download(&hardware.frame) {
+        if !hardware.fetch(&mut self.frame) {
             return Received::Failed;
         }
         Received::Frame

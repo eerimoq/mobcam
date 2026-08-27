@@ -25,6 +25,10 @@ impl Device {
     pub fn name(&self) -> String {
         super::name(unsafe { sys::av_hwdevice_get_type_name(self.kind) }).unwrap_or_else(|| String::from("hardware"))
     }
+
+    pub fn maps_cheaply(&self) -> bool {
+        matches!(self.name().as_str(), "rkmpp" | "drm")
+    }
 }
 
 impl Drop for Device {

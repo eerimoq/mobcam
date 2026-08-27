@@ -40,6 +40,33 @@ impl Frame {
         }
     }
 
+    pub fn map(&mut self, source: &Frame, format: sys::AVPixelFormat) -> bool {
+        unsafe {
+            sys::av_frame_unref(self.0);
+            (*self.0).format = format;
+            sys::av_hwframe_map(self.0, source.0, sys::AV_HWFRAME_MAP_READ as i32) >= 0
+                && sys::av_frame_copy_props(self.0, source.0) >= 0
+        }
+    }
+
+    pub fn transfer_format(&self) -> Option<sys::AVPixelFormat> {
+        let frames = self.get().hw_frames_ctx;
+        if frames.is_null() {
+            return None;
+        }
+        let mut formats = std::ptr::null_mut();
+        let direction = sys::AV_HWFRAME_TRANSFER_DIRECTION_FROM;
+        if unsafe { sys::av_hwframe_transfer_get_formats(frames, direction, &mut formats, 0) } < 0 {
+            return None;
+        }
+        if formats.is_null() {
+            return None;
+        }
+        let first = unsafe { *formats };
+        unsafe { sys::av_freep((&raw mut formats).cast()) };
+        (first != sys::AV_PIX_FMT_NONE).then_some(first)
+    }
+
     pub fn pixel_format(&self) -> sys::AVPixelFormat {
         self.get().format
     }
