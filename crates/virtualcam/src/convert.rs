@@ -47,6 +47,7 @@ struct Plane<'a> {
     stride: usize,
 }
 
+/// The buffer an image is being laid out in, a plane at a time.
 struct Out<'a> {
     data: &'a mut [u8],
     filled: usize,
@@ -57,6 +58,7 @@ impl<'a> Out<'a> {
         Self { data, filled: 0 }
     }
 
+    /// Take the next `length` bytes to lay a row in, if there are that many.
     fn take(&mut self, length: usize) -> Option<&mut [u8]> {
         let end = self.filled.checked_add(length)?;
         let room = self.data.get_mut(self.filled..end)?;
@@ -71,18 +73,30 @@ fn dimensions(frame: &ffmpeg::Frame) -> Option<(usize, usize)> {
     (width != 0 && height != 0).then_some((width, height))
 }
 
+/// How the decoder laid a frame out, as the one thing that decides what has to
+/// be copied where. Naming the layout rather than the pixel format keeps the
+/// choice of it and the carrying of it out from drifting apart.
 #[derive(Clone, Copy)]
 enum Source {
+    /// A plane per component, the chroma at half the width and height.
     Planar,
+    /// The same, with the chroma at full height.
     PlanarTall,
+    /// The same, at full width and height.
     PlanarWide,
+    /// The same, ten bits a sample in the low bits.
     PlanarTen,
+    /// A luma plane and a plane of chroma pairs.
     SemiPlanar,
+    /// The same, the pairs the other way round.
     SemiPlanarSwapped,
+    /// The same, ten bits a sample in the high bits.
     SemiPlanarTen,
+    /// A luma plane and a plane of chroma pairs, kept as they are.
     AsIs,
 }
 
+/// What a decoded frame becomes when it is written to a camera.
 #[derive(Clone, Copy)]
 pub struct Image {
     pub width: u32,
@@ -91,6 +105,13 @@ pub struct Image {
     source: Source,
 }
 
+/// Work out what a decoded frame becomes, without copying anything yet.
+///
+/// `nv12` says whether the device takes interleaved chroma. When it does, a
+/// frame that already is NV12 keeps its chroma as it is, which is the whole of
+/// what a hardware decoder hands over and saves splitting it into two planes
+/// only for the program reading the camera to weave it back together. Every
+/// other frame becomes I420, which every device takes.
 pub fn image(frame: &ffmpeg::Frame, nv12: bool) -> Option<Image> {
     let (width, height) = dimensions(frame)?;
     let (format, source) = match frame.pixel_format() {
@@ -98,6 +119,8 @@ pub fn image(frame: &ffmpeg::Frame, nv12: bool) -> Option<Image> {
         av::AV_PIX_FMT_YUV420P | av::AV_PIX_FMT_YUVJ420P => (Format::I420, Source::Planar),
         av::AV_PIX_FMT_NV12 => (Format::I420, Source::SemiPlanar),
         av::AV_PIX_FMT_NV21 => (Format::I420, Source::SemiPlanarSwapped),
+        // 4:2:2 keeps every other chroma row, and 4:4:4 also keeps every other
+        // chroma column.
         av::AV_PIX_FMT_YUV422P => (Format::I420, Source::PlanarTall),
         av::AV_PIX_FMT_YUV444P => (Format::I420, Source::PlanarWide),
         av::AV_PIX_FMT_YUV420P10LE => (Format::I420, Source::PlanarTen),
@@ -113,14 +136,21 @@ pub fn image(frame: &ffmpeg::Frame, nv12: bool) -> Option<Image> {
 }
 
 impl Image {
+    /// Whether the frame is written the way the decoder laid it out, with no
+    /// conversion beyond dropping the padding a stride leaves at each row.
     pub fn passes_through(self) -> bool {
         matches!(self.source, Source::AsIs)
     }
 
+    /// How many bytes `write` fills. Both layouts carry twelve bits a pixel.
     pub fn size(self) -> usize {
         self.width as usize * self.height as usize * 3 / 2
     }
 
+    /// Lay the frame out in `out`, which has to be exactly `size` bytes.
+    ///
+    /// The buffer is the one the camera is read from, so the frame is written
+    /// where it is wanted rather than somewhere it has to be copied from again.
     pub fn write(self, frame: &ffmpeg::Frame, out: &mut [u8]) -> bool {
         if out.len() != self.size() {
             return false;
@@ -205,6 +235,12 @@ fn copy(out: &mut Out<'_>, plane: &Plane<'_>, grid: &Grid, shift: u32) -> bool {
     true
 }
 
+/// Lay one row of a plane down in `room`, keeping every `column_step`th sample.
+///
+/// The steps a frame actually arrives in are matched on rather than handed to
+/// `step_by`, which the compiler cannot see through and turns into a loop over
+/// one byte at a time. Whole rows then become a `memcpy` and interleaved chroma
+/// a vectorised loop, which is an order of magnitude less work per frame.
 fn copy_row(room: &mut [u8], source: &[u8], column_step: usize, shift: u32) {
     if shift == 0 {
         match column_step {
@@ -244,6 +280,7 @@ fn copy_row(room: &mut [u8], source: &[u8], column_step: usize, shift: u32) {
     }
 }
 
+/// Narrow one little endian sample of more than eight bits down to eight.
 fn narrow(sample: [u8; 2], shift: u32) -> u8 {
     (u16::from_le_bytes(sample) >> shift) as u8
 }

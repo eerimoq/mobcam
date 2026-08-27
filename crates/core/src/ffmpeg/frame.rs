@@ -33,6 +33,7 @@ impl Frame {
         }
     }
 
+    /// Copy a hardware frame out of the device into memory of our own.
     pub fn download(&mut self, source: &Frame) -> bool {
         unsafe {
             sys::av_frame_unref(self.0);
@@ -40,6 +41,10 @@ impl Frame {
         }
     }
 
+    /// Point at the image of a hardware frame rather than copying it out.
+    ///
+    /// The frame then holds the buffer the decoder wrote for as long as it is
+    /// referenced, so unref it as soon as the image has been read.
     pub fn map(&mut self, source: &Frame, format: sys::AVPixelFormat) -> bool {
         unsafe {
             sys::av_frame_unref(self.0);
@@ -49,6 +54,7 @@ impl Frame {
         }
     }
 
+    /// The pixel format the frames of this hardware frame's pool come out in.
     pub fn transfer_format(&self) -> Option<sys::AVPixelFormat> {
         let frames = self.get().hw_frames_ctx;
         if frames.is_null() {

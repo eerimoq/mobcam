@@ -4,6 +4,7 @@ mod device;
 
 pub use device::{Device, loopback_devices};
 
+/// How the colors of a frame are encoded.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Colorspace {
     Smpte170m,
@@ -11,15 +12,20 @@ pub enum Colorspace {
     Rec2020,
 }
 
+/// The range the color components use.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Quantization {
     FullRange,
     LimitedRange,
 }
 
+/// How the samples of an image are laid out.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Format {
+    /// Three planes, one per component.
     I420,
+    /// A luma plane and one plane of chroma pairs, as most hardware decoders
+    /// produce and as the hardware encoders that read the camera want it.
     Nv12,
 }
 
@@ -32,6 +38,7 @@ impl Format {
     }
 }
 
+/// The kind of image a device is written.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct Picture {
     pub width: u32,

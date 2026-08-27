@@ -11,18 +11,25 @@ const _: () = assert!(
     "INPUT_PADDING is smaller than what this libavcodec requires"
 );
 
+/// How the image of a decoded frame is got out of the device.
 #[derive(Clone, Copy)]
 enum Access {
+    /// Not settled yet; the first frame decides.
     Unknown,
+    /// Pointed at where it lies, in this pixel format.
     Map(av::AVPixelFormat),
+    /// Copied into memory of our own.
     Copy,
 }
 
 struct Stream {
     context: Option<Context>,
+    /// The device the decoder was asked to work in, if it took one.
     device: Option<Device>,
     packet: Packet,
+    /// What the decoder writes into, which may live in the device.
     decoded: ffmpeg::Frame,
+    /// What the sink is given, always in memory it can read.
     frame: ffmpeg::Frame,
     access: Access,
     codec: u8,
@@ -130,6 +137,9 @@ impl Stream {
             Status::Error(_) => return Received::Failed,
             Status::Ok => (),
         }
+        // A hardware decoder hands over a frame that lives in the device
+        // whether or not it was given one to work in, so what has to be done
+        // with the frame follows from the frame and not from what we asked for.
         if !self.decoded.is_hardware() {
             self.frame.move_from(&mut self.decoded);
             return Received::Frame;
@@ -140,8 +150,12 @@ impl Stream {
         Received::Frame
     }
 
+    /// Get at the image of a frame that lives in the device, mapping it where
+    /// that is cheaper than copying and copying it out everywhere else.
     fn fetch(&mut self) -> bool {
         if let Access::Unknown = self.access {
+            // Only a device we opened ourselves is known to be one worth
+            // mapping, so a frame from any other is copied out.
             let format = self
                 .device
                 .as_ref()
@@ -173,6 +187,7 @@ impl Stream {
         self.frame.download(&self.decoded)
     }
 
+    /// What to call the device the frames come from, in a message.
     fn device_name(&self) -> String {
         match self.device.as_ref() {
             Some(device) => device.name(),

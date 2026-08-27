@@ -124,6 +124,16 @@ impl Context {
         }
     }
 
+    /// Hand every frame over as soon as it is decoded.
+    ///
+    /// The low delay flag rules out frame threading, which would hand frames
+    /// over a few behind, so slice threading is all that is left. It is asked
+    /// for a single thread rather than the one per core it takes by default: a
+    /// frame from a phone is one slice, which gives the workers nothing to
+    /// divide between them. On an RK3588 those threads cost about two per cent
+    /// of the decoding rate on such a stream, and a third of it on one cut into
+    /// eight slices, where they have something to divide but spend longer
+    /// agreeing about it than decoding.
     pub fn set_low_latency(&mut self) {
         unsafe {
             (*self.raw).flags |= sys::AV_CODEC_FLAG_LOW_DELAY as i32;
