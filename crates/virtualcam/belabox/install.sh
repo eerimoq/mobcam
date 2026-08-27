@@ -8,15 +8,21 @@
 #     ./crates/virtualcam/belabox/install.sh
 #
 # It installs the build dependencies and the v4l2loopback module, builds the
-# snd-aloop that BELABOX does not have and an FFmpeg that decodes in the RK3588
-# hardware, builds and installs the binary, creates the Mobcam camera and the
-# Mobcam sound card, both loaded at boot, adds the belacoder pipeline belaUI
-# streams the camera with, and runs mobcam-virtualcam as a service.
+# snd-aloop that BELABOX does not have and an FFmpeg that decodes and encodes in
+# the RK3588 hardware, builds and installs the binary, creates the Mobcam camera
+# and the Mobcam sound card, both loaded at boot, adds the belacoder pipeline
+# belaUI streams the camera with, and runs mobcam-virtualcam as a service.
 #
 # The FFmpeg is nyanmisaka's ffmpeg-rockchip, which decodes H.264 and HEVC in
 # the video unit of the RK3588 the BELABOX is built around, through the Rockchip
 # Media Process Platform (MPP) it also builds. Both are installed under
 # /opt/mobcam, leaving the FFmpeg and the MPP of the machine alone.
+#
+# The ffmpeg and ffprobe command line tools are built along with the libraries,
+# with the Rockchip encoders, the V4L2 input device and the MP4 muxer, so ffmpeg
+# records a camera into an MP4 file in hardware. They are installed in
+# /opt/mobcam, which is not in the path, and the ffmpeg of the machine stays the
+# one that runs when ffmpeg is typed.
 
 set -euo pipefail
 
@@ -36,6 +42,7 @@ PIPELINE_TEMPLATE=h265_camlink
 PIPELINE=h265_mobcam
 AUDIO_DEVICE=plughw:CARD=$CARD,DEV=1
 FFMPEG_PREFIX=/opt/mobcam/ffmpeg
+FFMPEG_CLI=$FFMPEG_PREFIX/bin/ffmpeg
 FFMPEG_MINIMUM=59.37.100
 FFMPEG_REPOSITORY=${MOBCAM_FFMPEG_REPOSITORY:-https://github.com/nyanmisaka/ffmpeg-rockchip.git}
 FFMPEG_BRANCH=${MOBCAM_FFMPEG_BRANCH:-7.1}
@@ -186,17 +193,22 @@ install_rust()
     command -v cargo >/dev/null || die "no cargo in the path"
 }
 
-ffmpeg_has_hardware_decoders()
+ffmpeg_supports()
 {
-    # The library carries the names of the decoders it was built with.
-    grep -qa h264_rkmpp $FFMPEG_PREFIX/lib/libavcodec.so 2>/dev/null
+    # The tool lists what it was built with, and an FFmpeg from an older run of
+    # this script has no tools at all.
+    [ -x $FFMPEG_CLI ] || return 1
+    $FFMPEG_CLI -hide_banner -loglevel quiet -"$1" 2>/dev/null | grep -qw "$2"
 }
 
 ffmpeg_is_installed()
 {
     PKG_CONFIG_PATH=$FFMPEG_PREFIX/lib/pkgconfig \
         pkg-config --atleast-version=$FFMPEG_MINIMUM libavcodec 2>/dev/null \
-        && ffmpeg_has_hardware_decoders
+        && ffmpeg_supports decoders h264_rkmpp \
+        && ffmpeg_supports encoders h264_rkmpp \
+        && ffmpeg_supports devices v4l2 \
+        && ffmpeg_supports muxers mp4
 }
 
 clone()
@@ -261,21 +273,26 @@ build_ffmpeg()
             --enable-shared \
             --disable-static \
             --disable-autodetect \
-            --disable-programs \
             --disable-doc \
-            --disable-avdevice \
-            --disable-avformat \
-            --disable-avfilter \
-            --disable-swscale \
-            --disable-swresample \
             --disable-network \
             --disable-everything \
+            --disable-ffplay \
+            --enable-ffmpeg \
+            --enable-ffprobe \
+            --enable-rpath \
             --enable-gpl \
             --enable-version3 \
             --enable-libdrm \
             --enable-rkmpp \
-            --enable-decoder=h264,hevc,aac,h264_rkmpp,hevc_rkmpp \
-            --enable-parser=h264,hevc,aac \
+            --enable-decoder=h264,hevc,aac,rawvideo,mjpeg,h264_rkmpp,hevc_rkmpp \
+            --enable-encoder=h264_rkmpp,hevc_rkmpp \
+            --enable-parser=h264,hevc,aac,mjpeg \
+            --enable-demuxer=mov,h264,hevc \
+            --enable-muxer=mp4 \
+            --enable-indev=v4l2 \
+            --enable-protocol=file,pipe \
+            --enable-filter=format,scale,fps,copy,hwupload,hwdownload \
+            --enable-bsf=extract_extradata,h264_mp4toannexb,hevc_mp4toannexb \
             --extra-ldflags="-Wl,-rpath,$MPP_PREFIX/lib"
         make -j"$(nproc)"
     )
@@ -285,9 +302,12 @@ build_ffmpeg()
 setup_ffmpeg()
 {
     # The FFmpeg of the machine decodes in software only, so Mobcam brings one
-    # with the Rockchip decoders of the RK3588 whatever the machine has.
+    # with the Rockchip decoders and encoders of the RK3588 whatever the machine
+    # has. Only the libraries are used by mobcam-virtualcam; the ffmpeg and
+    # ffprobe tools are there to record a camera into an MP4 file in hardware
+    # and to look at what came out.
     if ! ffmpeg_is_installed ; then
-        step "This machine has no FFmpeg that decodes in the RK3588 hardware."
+        step "This machine has no FFmpeg that decodes and encodes in the RK3588 hardware."
         setup_mpp
         build_ffmpeg
         ffmpeg_is_installed || die "the FFmpeg build did not take"
@@ -521,6 +541,14 @@ $(pipelines_dir)/custom.
 EOF
     fi
     cat <<EOF
+
+An FFmpeg with the RK3588 decoders and encoders is in
+$FFMPEG_PREFIX/bin, as ffmpeg and ffprobe. It is not in the
+path, so the FFmpeg of the machine is still the one that runs when ffmpeg is
+typed. Record the camera into an MP4 file with
+
+    $FFMPEG_CLI -f v4l2 -i $VIDEO_DEVICE \\
+        -c:v h264_rkmpp recording.mp4
 
 Set the stream URL in Moblin to mobcam://localhost:7790, connect the iPhone or
 iPad to the BELABOX with a USB cable, unlock it and tap Trust.
