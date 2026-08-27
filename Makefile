@@ -21,8 +21,17 @@ install:
 clean:
 	python scripts/build.py clean
 
-test:
+unit-test:
 	cargo test --workspace
+
+test:
+	python -m tests.test $(TEST_ARGS)
+
+test-generate-device-settings-clipboard:
+	python -m tests.generate_device_settings $(TEST_ARGS)
+
+test-generate-device-settings-stdout:
+	python -m tests.generate_device_settings --force-stdout $(TEST_ARGS)
 
 style:
 	cargo fmt -- --config-path $(CONFIG_DIR)/rustfmt.toml

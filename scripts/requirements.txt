@@ -3,3 +3,8 @@ ruff
 pylint
 isort
 mypy
+systest
+xdg-base-dirs
+requests
+moblin_assistant
+pyperclip
