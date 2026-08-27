@@ -92,14 +92,24 @@ class Recording:
     audio: AudioSpec | None
     video_path: Path
     audio_path: Path
-    frames: int
-    duration: float
+    timestamps: list[float]
     distinct_frames: int
     distinct_duration: float
     window_rates: list[float]
 
+    @property
+    def frames(self) -> int:
+        return len(self.timestamps)
+
+    @property
+    def duration(self) -> float:
+        return self.timestamps[-1] - self.timestamps[0] if len(self.timestamps) > 1 else 0
+
     def fps(self) -> float:
         return self.frames / self.duration
+
+    def pts_deltas(self) -> list[float]:
+        return [after - before for before, after in zip(self.timestamps, self.timestamps[1:])]
 
     def distinct_fps(self) -> float:
         return self.distinct_frames / self.distinct_duration
@@ -227,8 +237,7 @@ class VirtualCam:
             audio=_parse_audio_input(recording_errors),
             video_path=video_path,
             audio_path=audio_path,
-            frames=len(timestamps),
-            duration=timestamps[-1] - timestamps[0] if len(timestamps) > 1 else 0,
+            timestamps=timestamps,
             distinct_frames=distinct_windows[-1][1] if distinct_windows else 0,
             distinct_duration=distinct_windows[-1][0] if distinct_windows else 0,
             window_rates=_window_rates(timestamps),
@@ -294,8 +303,6 @@ class VirtualCam:
         return [
             "-thread_queue_size",
             str(FRAME_QUEUE_SIZE),
-            "-use_wallclock_as_timestamps",
-            "1",
             "-f",
             "v4l2",
             "-i",

@@ -106,8 +106,13 @@ Rust panic never unwinds into C. UI strings are keys looked up via `obs::text()`
 `data/locale/en-US.ini` — add both when adding a setting.
 
 **Virtual camera.** `camera.rs` is the main loop, `convert.rs` the pixel format conversions,
-`audio.rs` the resampling and the backend choice. The platform-specific modules follow one pattern:
-`v4l2.rs`, `pulse.rs` and `alsa.rs` hold the portable types and `#[cfg_attr(..., path = "...")]` in
+`audio.rs` the resampling and the backend choice. Frames are queued into v4l2loopback rather than
+written to it, because a `write()` makes the kernel stamp the buffer with the time of the write,
+while `VIDIOC_QBUF` carries a timestamp of the caller's choosing: `core/clock.rs` turns the device's
+presentation timestamp into one on the monotonic clock, the same `Clock` the OBS plugin anchors OBS
+timestamps with. The buffer index has to be a strict rotation, as the output `VIDIOC_DQBUF` of
+v4l2loopback hands back the buffer that was queued last. The platform-specific modules follow one
+pattern: `v4l2.rs`, `pulse.rs` and `alsa.rs` hold the portable types and `#[cfg_attr(..., path = "...")]` in
 either a `supported.rs` or an `unsupported.rs`. The unsupported halves are uninhabited enums whose
 `open()` returns an error, which is what keeps this Linux-only crate compiling on macOS — keep that
 working when adding to any backend.

@@ -15,9 +15,13 @@ impl Device {
         match *self {}
     }
 
-    pub fn write_frame(&mut self, _picture: Picture, _data: &[u8]) -> Result<(), String> {
+    pub fn write_frame(&mut self, _picture: Picture, _data: &[u8], _timestamp_ns: u64) -> Result<(), String> {
         match *self {}
     }
+}
+
+pub fn now_ns() -> u64 {
+    0
 }
 
 pub fn loopback_devices() -> Vec<(PathBuf, String)> {

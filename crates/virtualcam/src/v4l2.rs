@@ -2,7 +2,7 @@
 #[cfg_attr(not(target_os = "linux"), path = "v4l2/unsupported.rs")]
 mod device;
 
-pub use device::{Device, loopback_devices};
+pub use device::{Device, loopback_devices, now_ns};
 
 /// How the colors of a frame are encoded.
 #[derive(Clone, Copy, Eq, PartialEq)]

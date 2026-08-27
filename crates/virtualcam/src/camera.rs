@@ -3,6 +3,7 @@ use crate::convert;
 use crate::options::Options;
 use crate::v4l2;
 use clap::Parser;
+use mobcam_core::clock::Clock;
 use mobcam_core::decoder::{Decoder, Sink};
 use mobcam_core::ffmpeg::{self, sys as av};
 use mobcam_core::protocol::DeviceHello;
@@ -160,6 +161,7 @@ fn run(options: Options) -> Result<(), String> {
                     device: &mut device,
                     audio: audio.as_mut(),
                     buffer: &mut buffer,
+                    clock: Clock::default(),
                     serial: serial.clone(),
                     logged_pixel_format: None,
                     failure: None,
@@ -196,6 +198,7 @@ struct Output<'a> {
     device: &'a mut v4l2::Device,
     audio: Option<&'a mut Audio>,
     buffer: &'a mut Vec<u8>,
+    clock: Clock,
     serial: String,
     logged_pixel_format: Option<av::AVPixelFormat>,
     failure: Option<String>,
@@ -223,7 +226,8 @@ impl Sink for Output<'_> {
                 false => v4l2::Quantization::LimitedRange,
             },
         };
-        if let Err(error) = self.device.write_frame(picture, self.buffer) {
+        let timestamp = self.clock.timestamp(frame.pts() as u64, v4l2::now_ns);
+        if let Err(error) = self.device.write_frame(picture, self.buffer, timestamp) {
             self.failure = Some(format!("failed to write a frame: {error}"));
             STOPPING.store(true, Ordering::Relaxed);
         }

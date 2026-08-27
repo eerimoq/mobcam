@@ -93,14 +93,18 @@ Every test streams for ten seconds and then checks that
 - the audio is neither silent nor interrupted, and
 - `mobcam-virtualcam` logged no errors or warnings.
 
-The frame rate is measured from the timestamps of the recorded frames, which the capture stamps with
-the wall clock as it reads them, and not from what `ffmpeg` reports while it runs: the hardware
-encoder hands packets back in bursts, so its progress counter reads 0 frames in one half second and
-60 in the next while the camera is delivering 30 a second the whole way through. The timestamps come
-off the recording with `ffprobe`, and the recording is encoded with an explicit `-enc_time_base:v
-1/90000` so they survive the trip: left to itself `ffmpeg` gives the encoder the frame rate of the
-camera as its time base, which rounds every wall clock timestamp to the nearest 1/30 of a second
-and turns a steady 30 frames a second into pairs sharing a timestamp separated by gaps of two
+The frame rate is measured from the timestamps of the recorded frames, and not from what `ffmpeg`
+reports while it runs: the hardware encoder hands packets back in bursts, so its progress counter
+reads 0 frames in one half second and 60 in the next while the camera is delivering 30 a second the
+whole way through. Those timestamps are the ones the device gave every frame: Moblin sends a
+presentation timestamp with each frame, the decoder hands it back on the decoded frame, and
+`mobcam-virtualcam` queues the frame with it, which is what the camera then reports to whoever reads
+it. So they say when the device took the picture rather than when the reader got around to it, and a
+frame that arrived late over USB still sits one frame time after the one before it. The
+timestamps come off the recording with `ffprobe`, and the recording is encoded with an explicit
+`-enc_time_base:v 1/90000` so they survive the trip: left to itself `ffmpeg` gives the encoder the
+frame rate of the camera as its time base, which rounds every timestamp to the nearest 1/30 of a
+second and turns a steady 30 frames a second into pairs sharing a timestamp separated by gaps of two
 frame times.
 
 Recording costs close to nothing because `h264_rkmpp` encodes in the video unit of the RK3588.

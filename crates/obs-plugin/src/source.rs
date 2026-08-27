@@ -1,5 +1,6 @@
 use crate::devices::{Device, Devices};
 use crate::obs::{self, Audio, Data, Frame, Properties, media, sys, text};
+use mobcam_core::clock::Clock;
 use mobcam_core::decoder::{Decoder, Sink};
 use mobcam_core::ffmpeg::{self, sys as av};
 use mobcam_core::protocol::DeviceHello;
@@ -19,32 +20,7 @@ const SETTING_CLEAR_ON_DISCONNECT: &CStr = c"clear_on_disconnect";
 const SETTING_DISCONNECT_WHEN_HIDDEN: &CStr = c"disconnect_when_hidden";
 const DEFAULT_PORT: i64 = 7790;
 const RECONNECT_DELAY: Duration = Duration::from_millis(1000);
-const PTS_DISCONTINUITY_US: u64 = 5 * 1000 * 1000;
 const DEVICE_LIST_TIMEOUT: Duration = Duration::from_secs(2);
-
-#[derive(Default)]
-struct Clock {
-    anchored: bool,
-    first_pts_us: u64,
-    previous_pts_us: u64,
-    anchor_ns: u64,
-}
-
-impl Clock {
-    fn timestamp(&mut self, pts_us: u64) -> u64 {
-        let distance = pts_us.abs_diff(self.previous_pts_us);
-        if !self.anchored || distance > PTS_DISCONTINUITY_US {
-            self.anchored = true;
-            self.first_pts_us = pts_us;
-            self.anchor_ns = obs::now_ns();
-        } else if pts_us < self.first_pts_us {
-            self.anchor_ns -= (self.first_pts_us - pts_us) * 1000;
-            self.first_pts_us = pts_us;
-        }
-        self.previous_pts_us = pts_us;
-        self.anchor_ns + (pts_us - self.first_pts_us) * 1000
-    }
-}
 
 struct Shared {
     source: obs::Source,
@@ -133,7 +109,7 @@ impl Sink for Output {
             height: source.height() as u32,
             full_range,
             trc: media::transfer(source),
-            timestamp: self.clock.timestamp(source.pts() as u64),
+            timestamp: self.clock.timestamp(source.pts() as u64, obs::now_ns),
             ..Default::default()
         };
         for plane in 0..(sys::MAX_AV_PLANES as usize).min(ffmpeg::Frame::PLANES) {
@@ -172,7 +148,7 @@ impl Sink for Output {
             speakers,
             frames: source.samples() as u32,
             samples_per_sec: source.sample_rate() as u32,
-            timestamp: self.clock.timestamp(source.pts() as u64),
+            timestamp: self.clock.timestamp(source.pts() as u64, obs::now_ns),
             ..Default::default()
         };
         let planes = media::audio_planes(format, speakers).min(sys::MAX_AV_PLANES as usize);
