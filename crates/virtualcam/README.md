@@ -116,6 +116,7 @@ installs the binary, adds the belacoder pipeline that streams the camera, and
 runs it as a service:
 
 ```shell
+sudo apt install curl
 curl -fsSL https://raw.githubusercontent.com/eerimoq/mobcam/main/crates/virtualcam/belabox/install.sh | bash
 ```
 
