@@ -59,7 +59,7 @@ class TestCase(systest.TestCase):
     def _assert_camera_format(self, recording: Recording, width: int, height: int):
         if recording.video is None:
             raise Exception("ffmpeg did not report any video input format.")
-        LOGGER.info(
+        LOGGER.debug(
             "The camera delivers %s %sx%s",
             recording.video.pixel_format,
             recording.video.width,
@@ -72,7 +72,7 @@ class TestCase(systest.TestCase):
     def _assert_camera_frames(self, recording: Recording, fps: int):
         self.assert_greater(len(recording.window_rates), 0)
         slowest = min(recording.window_rates)
-        LOGGER.info(
+        LOGGER.debug(
             "%s frames in %.3f s, %.2f fps, slowest %.1f fps of the %s windows",
             recording.frames,
             recording.duration,
@@ -96,7 +96,7 @@ class TestCase(systest.TestCase):
             for delta, timestamp in zip(deltas, recording.timestamps)
             if abs(delta - expected) > tolerance
         ]
-        LOGGER.info(
+        LOGGER.debug(
             "PTS delta expected %.2f ms, mean %.2f ms, median %.2f ms, min %.2f ms, max %.2f ms, "
             "standard deviation %.2f ms, %s of %s deltas more than %.0f %% off",
             1000 * expected,
@@ -114,7 +114,7 @@ class TestCase(systest.TestCase):
             LOGGER.info("PTS delta %.2f ms at %.3f s into the recording", 1000 * delta, offset)
 
     def _log_distinct_frames(self, recording: Recording):
-        LOGGER.info(
+        LOGGER.debug(
             "%s distinct frames in %.3f s, %.2f distinct fps, %.1f %% of the %s frames captured "
             "are frames the camera repeated",
             recording.distinct_frames,
@@ -134,7 +134,7 @@ class TestCase(systest.TestCase):
         video = ffprobe_video(recording.video_path)
         recorded_audio = ffprobe_audio(recording.video_path)
         length = ffprobe_format(recording.video_path).duration
-        LOGGER.info(
+        LOGGER.debug(
             "%s holds %s frames of %s %sx%s and %s Hz %s channel %s of %.3f s, %s MiB",
             recording.video_path.name,
             len(video.frames),
@@ -161,7 +161,7 @@ class TestCase(systest.TestCase):
         probe = ffprobe_audio(recording.audio_path)
         length = ffprobe_format(recording.audio_path).duration
         mean_volume_db = measure_mean_volume(recording.audio_path)
-        LOGGER.info(
+        LOGGER.debug(
             "The microphone delivers %s Hz %s channel audio of %.3f s, mean volume %.1f dB",
             probe.sample_rate,
             probe.channels,

@@ -201,7 +201,7 @@ class VirtualCam:
             f"{self._video_device}",
             timeout=timeout,
         )
-        LOGGER.info("Connected to %s", self.device_name())
+        LOGGER.debug("Connected to %s", self.device_name())
 
     def device_name(self) -> str | None:
         found = self.log.match(RE_CONNECTED)
@@ -222,7 +222,7 @@ class VirtualCam:
         audio_path = FILES_DIR / f"{name}.wav"
         recording = self._start(self._recording_command(seconds, audio, video_path))
         distinct = self._start(self._distinct_frames_command(seconds))
-        recording_output, recording_errors = recording.communicate()
+        _, recording_errors = recording.communicate()
         distinct_output, distinct_errors = distinct.communicate()
         self._log(recording_errors)
         self._log(distinct_errors)

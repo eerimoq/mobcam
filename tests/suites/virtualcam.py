@@ -40,7 +40,6 @@ class Stream(TestCase):
         self.moblin.import_settings(
             overrides={"streams": [stream_settings(self._video_codec, self._resolution, self._fps)]}
         )
-        self.moblin.set_muted(False)
 
     def run(self):
         with VirtualCam(self.moblin.config) as virtualcam:
