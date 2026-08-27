@@ -15,6 +15,10 @@ impl Device {
         match *self {}
     }
 
+    pub fn takes_nv12(&self) -> bool {
+        match *self {}
+    }
+
     pub fn write_frame(&mut self, _picture: Picture, _data: &[u8], _timestamp_ns: u64) -> Result<(), String> {
         match *self {}
     }

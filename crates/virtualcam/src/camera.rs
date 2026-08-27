@@ -1,6 +1,6 @@
 use crate::audio::{self, Audio};
 use crate::convert;
-use crate::options::Options;
+use crate::options::{Options, PixelFormat};
 use crate::v4l2;
 use clap::Parser;
 use mobcam_core::clock::Clock;
@@ -139,6 +139,7 @@ fn run(options: Options) -> Result<(), String> {
             audio::hint()
         );
     }
+    let nv12 = options.pixel_format == PixelFormat::Auto && device.takes_nv12();
     let mut decoder = Decoder::new().ok_or("failed to create the decoder")?;
     decoder.set_hardware(options.hardware_decode);
     decoder.set_audio(audio.is_some());
@@ -146,7 +147,15 @@ fn run(options: Options) -> Result<(), String> {
         signal(SIGINT, stop as extern "C" fn(c_int) as usize);
         signal(SIGTERM, stop as extern "C" fn(c_int) as usize);
     }
-    log!(Level::Info, "writing to {}", device.path().display());
+    log!(
+        Level::Info,
+        "writing to {} in {}",
+        device.path().display(),
+        match nv12 {
+            true => "NV12 or I420, whichever the decoder produces",
+            false => "I420",
+        }
+    );
     let abort = || stopping();
     let mut reported_failure = None;
     let mut buffer = Vec::new();
@@ -161,8 +170,10 @@ fn run(options: Options) -> Result<(), String> {
                     device: &mut device,
                     audio: audio.as_mut(),
                     buffer: &mut buffer,
+                    nv12,
                     clock: Clock::default(),
                     serial: serial.clone(),
+                    logged_conversion: None,
                     logged_pixel_format: None,
                     failure: None,
                 };
@@ -198,28 +209,48 @@ struct Output<'a> {
     device: &'a mut v4l2::Device,
     audio: Option<&'a mut Audio>,
     buffer: &'a mut Vec<u8>,
+    nv12: bool,
     clock: Clock,
     serial: String,
+    logged_conversion: Option<(av::AVPixelFormat, v4l2::Format)>,
     logged_pixel_format: Option<av::AVPixelFormat>,
     failure: Option<String>,
 }
 
 impl Sink for Output<'_> {
     fn video(&mut self, frame: &ffmpeg::Frame) {
-        let Some((width, height)) = convert::to_i420(frame, self.buffer) else {
-            if self.logged_pixel_format != Some(frame.pixel_format()) {
-                self.logged_pixel_format = Some(frame.pixel_format());
+        let decoded = frame.pixel_format();
+        let Some(image) = convert::image(frame, self.buffer, self.nv12) else {
+            if self.logged_pixel_format != Some(decoded) {
+                self.logged_pixel_format = Some(decoded);
                 log!(
                     Level::Warning,
-                    "unsupported pixel format {}",
-                    ffmpeg::pixel_format_name(frame.pixel_format())
+                    "no conversion from {} to anything the camera takes; dropping the frames",
+                    ffmpeg::pixel_format_name(decoded)
                 );
             }
             return;
         };
+        if self.logged_conversion != Some((decoded, image.format)) {
+            self.logged_conversion = Some((decoded, image.format));
+            match image.format {
+                v4l2::Format::Nv12 => log!(
+                    Level::Info,
+                    "writing {} frames to the camera without converting them",
+                    ffmpeg::pixel_format_name(decoded)
+                ),
+                v4l2::Format::I420 => log!(
+                    Level::Info,
+                    "converting {} frames to {} for the camera",
+                    ffmpeg::pixel_format_name(decoded),
+                    image.format.name()
+                ),
+            }
+        }
         let picture = v4l2::Picture {
-            width,
-            height,
+            width: image.width,
+            height: image.height,
+            format: image.format,
             colorspace: colorspace(frame),
             quantization: match frame.is_full_range() {
                 true => v4l2::Quantization::FullRange,

@@ -1,3 +1,4 @@
+use crate::v4l2::Format;
 use mobcam_core::ffmpeg::{self, sys as av};
 
 struct Grid {
@@ -52,13 +53,28 @@ fn size(frame: &ffmpeg::Frame) -> Option<(usize, usize)> {
     (width != 0 && height != 0).then_some((width, height))
 }
 
-pub fn to_i420(frame: &ffmpeg::Frame, out: &mut Vec<u8>) -> Option<(u32, u32)> {
+pub struct Image {
+    pub width: u32,
+    pub height: u32,
+    pub format: Format,
+}
+
+pub fn image(frame: &ffmpeg::Frame, out: &mut Vec<u8>, nv12: bool) -> Option<Image> {
     let (width, height) = size(frame)?;
     let (chroma_width, chroma_height) = (width / 2, height / 2);
     out.clear();
     out.reserve(width * height + 2 * chroma_width * chroma_height);
     let luma = Grid::direct(width, height);
     let chroma = Grid::direct(chroma_width, chroma_height);
+    let image_of = |format| Image {
+        width: width as u32,
+        height: height as u32,
+        format,
+    };
+    if nv12 && frame.pixel_format() == av::AV_PIX_FMT_NV12 {
+        let pairs = Grid::direct(width, chroma_height);
+        return planar(out, frame, [(0, &luma, 0), (1, &pairs, 0)]).then(|| image_of(Format::Nv12));
+    }
     let converted = match frame.pixel_format() {
         av::AV_PIX_FMT_YUV420P | av::AV_PIX_FMT_YUVJ420P => {
             planar(out, frame, [(0, &luma, 0), (1, &chroma, 0), (2, &chroma, 0)])
@@ -83,7 +99,7 @@ pub fn to_i420(frame: &ffmpeg::Frame, out: &mut Vec<u8>) -> Option<(u32, u32)> {
         av::AV_PIX_FMT_P010LE => planar(out, frame, [(0, &luma, 8)]) && interleaved(out, frame, &chroma, 8, [0, 1]),
         _ => false,
     };
-    converted.then_some((width as u32, height as u32))
+    converted.then(|| image_of(Format::I420))
 }
 
 fn planar<const N: usize>(out: &mut Vec<u8>, frame: &ffmpeg::Frame, planes: [(usize, &Grid, u32); N]) -> bool {

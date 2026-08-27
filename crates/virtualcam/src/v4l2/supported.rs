@@ -1,4 +1,4 @@
-use crate::v4l2::{Colorspace, Picture, Quantization};
+use crate::v4l2::{Colorspace, Format, Picture, Quantization};
 use std::os::raw::{c_int, c_void};
 use std::path::Path;
 use std::path::PathBuf;
@@ -6,16 +6,27 @@ use std::ptr;
 use v4l::buffer::Type;
 use v4l::capability::Flags;
 use v4l::context;
-use v4l::format::{FieldOrder, Format, FourCC};
+use v4l::format::{FieldOrder, FourCC};
 use v4l::memory::Memory;
 use v4l::v4l_sys::{timeval, v4l2_buffer, v4l2_requestbuffers};
 use v4l::v4l2;
 use v4l::video::Output;
 
 const LOOPBACK_DRIVER: &str = "v4l2 loopback";
-const PIXEL_FORMAT: FourCC = FourCC { repr: *b"YU12" };
+const PROBE_SIZE: (u32, u32) = (640, 480);
 const BUFFERS: u32 = 4;
 const NANOSECONDS_PER_SECOND: u64 = 1_000_000_000;
+
+impl From<Format> for FourCC {
+    fn from(format: Format) -> Self {
+        Self {
+            repr: match format {
+                Format::I420 => *b"YU12",
+                Format::Nv12 => *b"NV12",
+            },
+        }
+    }
+}
 
 impl From<Colorspace> for v4l::format::Colorspace {
     fn from(colorspace: Colorspace) -> Self {
@@ -36,7 +47,7 @@ impl From<Quantization> for v4l::format::Quantization {
     }
 }
 
-impl From<Picture> for Format {
+impl From<Picture> for v4l::format::Format {
     fn from(picture: Picture) -> Self {
         let size = picture.width as usize * picture.height as usize * 3 / 2;
         Self {
@@ -45,7 +56,7 @@ impl From<Picture> for Format {
             size: size as u32,
             colorspace: picture.colorspace.into(),
             quantization: picture.quantization.into(),
-            ..Self::new(picture.width, picture.height, PIXEL_FORMAT)
+            ..Self::new(picture.width, picture.height, picture.format.into())
         }
     }
 }
@@ -221,6 +232,7 @@ pub struct Device {
     device: v4l::Device,
     path: PathBuf,
     picture: Option<Picture>,
+    nv12: bool,
 }
 
 impl Device {
@@ -232,16 +244,22 @@ impl Device {
         if !capability.capabilities.contains(Flags::VIDEO_OUTPUT) {
             return Err(format!("{} cannot be written to as a camera", path.display()));
         }
+        let nv12 = probe(&device, Format::Nv12);
         Ok(Self {
             buffers: None,
             device,
             path: path.to_path_buf(),
             picture: None,
+            nv12,
         })
     }
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn takes_nv12(&self) -> bool {
+        self.nv12
     }
 
     pub fn write_frame(&mut self, picture: Picture, data: &[u8], timestamp_ns: u64) -> Result<(), String> {
@@ -276,11 +294,34 @@ impl Device {
                 picture.height
             ));
         }
-        if accepted.fourcc != PIXEL_FORMAT {
-            return Err(format!("{} does not accept YU12 images", self.path.display()));
+        if accepted.fourcc != picture.format.into() {
+            return Err(format!(
+                "{} does not accept {} images",
+                self.path.display(),
+                picture.format.name()
+            ));
         }
         Ok(())
     }
+}
+
+fn probe(device: &v4l::Device, format: Format) -> bool {
+    let (width, height) = PROBE_SIZE;
+    let picture = Picture {
+        width,
+        height,
+        format,
+        colorspace: Colorspace::Rec709,
+        quantization: Quantization::LimitedRange,
+    };
+    let found = device.format().ok();
+    let takes = device
+        .set_format(&picture.into())
+        .is_ok_and(|accepted| accepted.fourcc == format.into());
+    if let Some(found) = found {
+        let _ = device.set_format(&found);
+    }
+    takes
 }
 
 pub fn loopback_devices() -> Vec<(PathBuf, String)> {
