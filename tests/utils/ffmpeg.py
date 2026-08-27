@@ -1,6 +1,5 @@
 import json
 import logging
-import math
 import re
 import subprocess
 import time
@@ -10,16 +9,8 @@ from fractions import Fraction
 from pathlib import Path
 
 LOGGER = logging.getLogger(__name__)
-FFMPEG_COMMAND = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-y"]
-MOBCAM_FFMPEG_DIR = Path("/opt/mobcam/ffmpeg/bin")
-MOBCAM_FFMPEG = str(MOBCAM_FFMPEG_DIR / "ffmpeg")
-MOBCAM_FFMPEG_COMMAND = [MOBCAM_FFMPEG, "-hide_banner", "-nostdin", "-nostats", "-y"]
-VIDEO_ENCODER = "h264_rkmpp"
-VIDEO_CODEC = "h264"
-AUDIO_ENCODER = "aac"
-AUDIO_CODEC = "aac"
-RE_VOLUME_DETECT = re.compile(r"(n_samples|mean_volume|max_volume): (-?[\d.]+|-?inf)")
-RE_SILENCE_DETECT = re.compile(r"silence_(start|end): (-?[\d.]+)")
+MOBCAM_FFMPEG = str(Path("/opt/mobcam/ffmpeg/bin") / "ffmpeg")
+FFMPEG_COMMAND = [MOBCAM_FFMPEG, "-hide_banner", "-nostdin", "-nostats", "-y"]
 
 
 def _run_logged(command: list[str], text: bool):
@@ -182,58 +173,3 @@ def ffprobe(path: Path):
         audio=ffprobe_audio(path),
         format=ffprobe_format(path),
     )
-
-
-def extract_audio(path: Path, audio_path: Path):
-    ffmpeg_run("-i", str(path), "-vn", "-c:a", "pcm_s16le", str(audio_path))
-
-
-def measure_mean_volume(path: Path) -> float:
-    return _measure_volume(path, "mean_volume")
-
-
-def _measure_volume(path: Path, name: str) -> float:
-    output = ffmpeg_run(
-        "-i",
-        str(path),
-        "-vn",
-        "-af",
-        "volumedetect",
-        "-f",
-        "null",
-        "-",
-    ).stderr
-    for found_name, value in RE_VOLUME_DETECT.findall(output):
-        if found_name == name:
-            return float(value)
-    return -math.inf
-
-
-@dataclass
-class Silence:
-    start: float
-    end: float
-
-
-def detect_silence(path: Path, noise_db: float, minimum_duration: float) -> list[Silence]:
-    output = ffmpeg_run(
-        "-i",
-        str(path),
-        "-vn",
-        "-af",
-        f"silencedetect=noise={noise_db}dB:duration={minimum_duration}",
-        "-f",
-        "null",
-        "-",
-    ).stderr
-    silences = []
-    start = None
-    for kind, value in RE_SILENCE_DETECT.findall(output):
-        if kind == "start":
-            start = float(value)
-        elif start is not None:
-            silences.append(Silence(start, float(value)))
-            start = None
-    if start is not None:
-        silences.append(Silence(start, ffprobe_format(path).duration))
-    return silences

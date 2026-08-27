@@ -7,7 +7,6 @@ from collections.abc import Callable
 import systest
 
 from .config import Config
-from .dependencies import check_dependencies
 from .moblin import Moblin
 from .utils import FILES_DIR
 
@@ -40,7 +39,6 @@ def run(name: str, parser: argparse.ArgumentParser, make_tests: MakeTests):
     sequencer.remove_filtered_testcases = True
     sequencer.compact_output = True
     args = parser.parse_args()
-    check_dependencies()
     logging.getLogger("urllib3.connectionpool").setLevel(logging.INFO)
     logging.getLogger("websockets.client").setLevel(logging.INFO)
     config = Config()

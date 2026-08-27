@@ -6,16 +6,7 @@ from xdg_base_dirs import xdg_config_home
 from .utils import TEST_DIR
 
 REMOTE_CONTROL_PASSWORD = "1234"
-MOBCAM_PORT = 7790
-MOBCAM_URL = f"mobcam://localhost:{MOBCAM_PORT}"
-
-VIRTUALCAM_KEYS = [
-    "binary",
-    "service",
-    "video-device",
-    "audio-playback-device",
-    "audio-capture-device",
-]
+MOBCAM_URL = "mobcam://localhost:7790"
 
 
 def find_config_toml() -> Path:
@@ -31,7 +22,6 @@ class Config:
     def __init__(self):
         self.config_toml = find_config_toml()
         self._config = tomllib.loads(self.config_toml.read_text())
-        self._validate()
 
     def general(self):
         return self._config["general"]
@@ -59,12 +49,3 @@ class Config:
 
     def _virtualcam(self):
         return self._config["virtualcam"]
-
-    def _validate(self):
-        path = self.config_toml.absolute()
-        virtualcam = self._config.get("virtualcam")
-        if virtualcam is None:
-            raise Exception(f"No [virtualcam] section found in '{path}'.")
-        for key in VIRTUALCAM_KEYS:
-            if key not in virtualcam:
-                raise Exception(f"No '{key}' in the [virtualcam] section of '{path}'.")

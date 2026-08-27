@@ -39,25 +39,19 @@ class Resolution(StrEnum):
         return int(width), int(height)
 
 
-BACK_SCENE_SETTINGS = {
-    "name": SceneName.BACK,
-    "cameraPosition": CameraPosition.BACK,
-    "enabled": True,
-}
-FRONT_SCENE_SETTINGS = {
-    "name": SceneName.FRONT,
-    "cameraPosition": CameraPosition.FRONT,
-    "enabled": True,
-}
-
-
 def uuid() -> str:
     return str(uuid4()).upper()
 
 
 def base_settings(config: Config, remote_control_port: int):
     return {
-        "scenes": [BACK_SCENE_SETTINGS, FRONT_SCENE_SETTINGS],
+        "scenes": [
+            {
+                "name": SceneName.BACK,
+                "cameraPosition": CameraPosition.BACK,
+                "enabled": True,
+            }
+        ],
         "remoteControl": {
             "server": {
                 "enabled": True,

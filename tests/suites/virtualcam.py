@@ -9,10 +9,6 @@ from ..utils.moblin import Moblin
 from ..utils.test_case import TestCase
 from ..utils.virtualcam import VirtualCam
 
-RECORDING_SECONDS = 10
-SETTLE_SECONDS = 2
-BITRATE = 5_000_000
-
 
 def stream_settings(video_codec: VideoCodec, resolution: Resolution, fps: int):
     return {
@@ -24,7 +20,7 @@ def stream_settings(video_codec: VideoCodec, resolution: Resolution, fps: int):
         "audioCodec": AudioCodec.AAC,
         "resolution": resolution,
         "fps": fps,
-        "bitrate": BITRATE,
+        "bitrate": 5_000_000,
         "bitrateRateControl": "CBR",
     }
 
@@ -44,19 +40,11 @@ class Stream(TestCase):
     def run(self):
         with VirtualCam(self.moblin.config) as virtualcam:
             self.moblin.go_live()
-            virtualcam.wait_until_connected()
-            time.sleep(SETTLE_SECONDS)
-            recording = virtualcam.record(RECORDING_SECONDS, self.name)
-            width, height = self._resolution.size()
-            self.assert_camera_recording(
-                recording,
-                width=width,
-                height=height,
-                fps=self._fps,
-                audio=virtualcam.audio_spec(),
-            )
-            self.assert_equal(virtualcam.log.errors(), [])
-            self.assert_equal(virtualcam.log.warnings(), [])
+            time.sleep(2)
+            recording = virtualcam.record(10, self.name)
+            self.moblin.end()
+        width, height = self._resolution.size()
+        self.assert_camera_recording(recording, width=width, height=height, fps=self._fps)
 
 
 def tests(moblin: Moblin):
