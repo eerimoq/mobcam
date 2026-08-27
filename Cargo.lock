@@ -372,7 +372,6 @@ name = "mobcam-virtualcam"
 version = "0.25.0"
 dependencies = [
  "clap",
- "libc",
  "mobcam-core",
  "v4l",
 ]

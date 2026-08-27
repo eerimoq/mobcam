@@ -19,31 +19,11 @@ pub enum Quantization {
     LimitedRange,
 }
 
-/// How the samples of an image are laid out.
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub enum Format {
-    /// Three planes, one per component.
-    I420,
-    /// A luma plane and one plane of chroma pairs, as most hardware decoders
-    /// produce and as the hardware encoders that read the camera want it.
-    Nv12,
-}
-
-impl Format {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::I420 => "YU12",
-            Self::Nv12 => "NV12",
-        }
-    }
-}
-
-/// The kind of image a device is written.
+/// The kind of I420 image a device is written.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct Picture {
     pub width: u32,
     pub height: u32,
-    pub format: Format,
     pub colorspace: Colorspace,
     pub quantization: Quantization,
 }

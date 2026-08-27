@@ -11,27 +11,16 @@ const _: () = assert!(
     "INPUT_PADDING is smaller than what this libavcodec requires"
 );
 
-/// How the image of a decoded frame is got out of the device.
-#[derive(Clone, Copy)]
-enum Access {
-    /// Not settled yet; the first frame decides.
-    Unknown,
-    /// Pointed at where it lies, in this pixel format.
-    Map(av::AVPixelFormat),
-    /// Copied into memory of our own.
-    Copy,
+struct Hardware {
+    device: Device,
+    frame: ffmpeg::Frame,
 }
 
 struct Stream {
     context: Option<Context>,
-    /// The device the decoder was asked to work in, if it took one.
-    device: Option<Device>,
+    hardware: Option<Hardware>,
     packet: Packet,
-    /// What the decoder writes into, which may live in the device.
-    decoded: ffmpeg::Frame,
-    /// What the sink is given, always in memory it can read.
     frame: ffmpeg::Frame,
-    access: Access,
     codec: u8,
     name: String,
     record: Vec<u8>,
@@ -47,11 +36,9 @@ impl Stream {
     fn new() -> Option<Self> {
         Some(Self {
             context: None,
-            device: None,
+            hardware: None,
             packet: Packet::new()?,
-            decoded: ffmpeg::Frame::new()?,
             frame: ffmpeg::Frame::new()?,
-            access: Access::Unknown,
             codec: 0,
             name: String::new(),
             record: Vec::new(),
@@ -59,8 +46,8 @@ impl Stream {
     }
 
     fn decoder_name(&self) -> String {
-        match self.device.as_ref() {
-            Some(device) => format!("{} on {}", self.name, device.name()),
+        match self.hardware.as_ref() {
+            Some(hardware) => format!("{} on {}", self.name, hardware.device.name()),
             None => self.name.clone(),
         }
     }
@@ -75,8 +62,7 @@ impl Stream {
 
     fn close(&mut self) {
         self.context = None;
-        self.device = None;
-        self.access = Access::Unknown;
+        self.hardware = None;
         self.name.clear();
         self.record.clear();
     }
@@ -117,8 +103,11 @@ impl Stream {
         let Some(device) = Device::open(codec) else {
             return;
         };
+        let Some(frame) = ffmpeg::Frame::new() else {
+            return;
+        };
         context.set_hardware_device(&device);
-        self.device = Some(device);
+        self.hardware = Some(Hardware { device, frame });
     }
 
     fn send(&mut self, data: &[u8], pts: i64, keyframe: bool) -> bool {
@@ -132,71 +121,32 @@ impl Stream {
         let Some(context) = self.context.as_mut() else {
             return Received::Drained;
         };
-        match context.receive(&mut self.decoded) {
+        let status = match self.hardware.as_mut() {
+            Some(hardware) => context.receive(&mut hardware.frame),
+            None => context.receive(&mut self.frame),
+        };
+        match status {
             Status::Again | Status::Eof => return Received::Drained,
             Status::Error(_) => return Received::Failed,
             Status::Ok => (),
         }
-        // A hardware decoder hands over a frame that lives in the device
-        // whether or not it was given one to work in, so what has to be done
-        // with the frame follows from the frame and not from what we asked for.
-        if !self.decoded.is_hardware() {
-            self.frame.move_from(&mut self.decoded);
+        let Some(hardware) = self.hardware.as_mut() else {
+            return Received::Frame;
+        };
+        if !hardware.frame.is_hardware() {
+            self.frame.move_from(&mut hardware.frame);
             return Received::Frame;
         }
-        if !self.fetch() {
+        if !self.frame.download(&hardware.frame) {
             return Received::Failed;
         }
         Received::Frame
     }
 
-    /// Get at the image of a frame that lives in the device, mapping it where
-    /// that is cheaper than copying and copying it out everywhere else.
-    fn fetch(&mut self) -> bool {
-        if let Access::Unknown = self.access {
-            // Only a device we opened ourselves is known to be one worth
-            // mapping, so a frame from any other is copied out.
-            let format = self
-                .device
-                .as_ref()
-                .filter(|device| device.maps_cheaply())
-                .and_then(|_| self.decoded.transfer_format());
-            self.access = match format {
-                Some(format) => {
-                    log!(
-                        Level::Info,
-                        "mapping the {} frames rather than copying them",
-                        self.device_name()
-                    );
-                    Access::Map(format)
-                }
-                None => Access::Copy,
-            };
-        }
-        if let Access::Map(format) = self.access {
-            if self.frame.map(&self.decoded, format) {
-                return true;
-            }
-            log!(
-                Level::Info,
-                "the {} frames cannot be mapped, copying them instead",
-                self.device_name()
-            );
-            self.access = Access::Copy;
-        }
-        self.frame.download(&self.decoded)
-    }
-
-    /// What to call the device the frames come from, in a message.
-    fn device_name(&self) -> String {
-        match self.device.as_ref() {
-            Some(device) => device.name(),
-            None => String::from("hardware"),
-        }
-    }
-
     fn release(&mut self) {
-        self.decoded.unref();
+        if let Some(hardware) = self.hardware.as_mut() {
+            hardware.frame.unref();
+        }
         self.frame.unref();
     }
 }
