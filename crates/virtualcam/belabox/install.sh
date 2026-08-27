@@ -19,10 +19,12 @@
 # /opt/mobcam, leaving the FFmpeg and the MPP of the machine alone.
 #
 # The ffmpeg and ffprobe command line tools are built along with the libraries,
-# with the Rockchip encoders, the V4L2 input device and the MP4 muxer, so ffmpeg
-# records a camera into an MP4 file in hardware. They are installed in
-# /opt/mobcam, which is not in the path, and the ffmpeg of the machine stays the
-# one that runs when ffmpeg is typed.
+# with the Rockchip encoders, the V4L2 and ALSA input devices, the AAC encoder
+# and the MP4 muxer, so ffmpeg records a camera and a microphone into an MP4
+# file, the video in hardware, and with the mpdecimate filter, which finds the
+# frames a camera repeated. They are installed in /opt/mobcam, which is not in
+# the path, and the ffmpeg of the machine stays the one that runs when ffmpeg is
+# typed.
 
 set -euo pipefail
 
@@ -35,12 +37,14 @@ SERVICE_FILE=/etc/systemd/system/$SERVICE
 MODPROBE_FILE=/etc/modprobe.d/mobcam.conf
 MODULES_FILE=/etc/modules-load.d/mobcam.conf
 UDEV_FILE=/etc/udev/rules.d/70-mobcam.rules
+MPP_UDEV_FILE=/etc/udev/rules.d/71-mobcam-mpp.rules
 VIDEO_DEVICE=/dev/mobcam
 SETUP_FILE=/opt/belaUI/setup.json
 PIPELINES_DIR=/usr/share/belacoder/pipelines
 PIPELINE_TEMPLATE=h265_camlink
 PIPELINE=h265_mobcam
 AUDIO_DEVICE=plughw:CARD=$CARD,DEV=1
+AUDIO_CAPTURE_DEVICE=plughw:CARD=$CARD,DEV=0
 FFMPEG_PREFIX=/opt/mobcam/ffmpeg
 FFMPEG_CLI=$FFMPEG_PREFIX/bin/ffmpeg
 FFMPEG_MINIMUM=59.37.100
@@ -207,8 +211,11 @@ ffmpeg_is_installed()
         pkg-config --atleast-version=$FFMPEG_MINIMUM libavcodec 2>/dev/null \
         && ffmpeg_supports decoders h264_rkmpp \
         && ffmpeg_supports encoders h264_rkmpp \
+        && ffmpeg_supports encoders aac \
         && ffmpeg_supports devices v4l2 \
-        && ffmpeg_supports muxers mp4
+        && ffmpeg_supports devices alsa \
+        && ffmpeg_supports muxers mp4 \
+        && ffmpeg_supports filters mpdecimate
 }
 
 clone()
@@ -284,14 +291,15 @@ build_ffmpeg()
             --enable-version3 \
             --enable-libdrm \
             --enable-rkmpp \
-            --enable-decoder=h264,hevc,aac,rawvideo,mjpeg,h264_rkmpp,hevc_rkmpp \
-            --enable-encoder=h264_rkmpp,hevc_rkmpp \
+            --enable-alsa \
+            --enable-decoder=h264,hevc,aac,rawvideo,mjpeg,pcm_s16le,h264_rkmpp,hevc_rkmpp \
+            --enable-encoder=h264_rkmpp,hevc_rkmpp,aac,wrapped_avframe \
             --enable-parser=h264,hevc,aac,mjpeg \
             --enable-demuxer=mov,h264,hevc \
-            --enable-muxer=mp4 \
-            --enable-indev=v4l2 \
+            --enable-muxer=mp4,null \
+            --enable-indev=v4l2,alsa \
             --enable-protocol=file,pipe \
-            --enable-filter=format,scale,fps,copy,hwupload,hwdownload \
+            --enable-filter=format,scale,fps,copy,hwupload,hwdownload,null,anull,aformat,aresample,mpdecimate \
             --enable-bsf=extract_extradata,h264_mp4toannexb,hevc_mp4toannexb \
             --extra-ldflags="-Wl,-rpath,$MPP_PREFIX/lib"
         make -j"$(nproc)"
@@ -304,8 +312,9 @@ setup_ffmpeg()
     # The FFmpeg of the machine decodes in software only, so Mobcam brings one
     # with the Rockchip decoders and encoders of the RK3588 whatever the machine
     # has. Only the libraries are used by mobcam-virtualcam; the ffmpeg and
-    # ffprobe tools are there to record a camera into an MP4 file in hardware
-    # and to look at what came out.
+    # ffprobe tools are there to record a camera and a microphone into an MP4
+    # file, the video in hardware, and to look at what came out, mpdecimate
+    # included.
     if ! ffmpeg_is_installed ; then
         step "This machine has no FFmpeg that decodes and encodes in the RK3588 hardware."
         setup_mpp
@@ -370,6 +379,20 @@ EOF
     $sudo modprobe v4l2loopback
     $sudo udevadm settle
     [ -e $VIDEO_DEVICE ] || die "no $VIDEO_DEVICE after loading v4l2loopback"
+}
+
+setup_video_unit()
+{
+    # The machine ships /dev/mpp_service to root alone, which leaves the
+    # hardware encoders and decoders of the RK3588 out of reach of everything
+    # not running as root, ffmpeg included. This hands it to the video group,
+    # the group that may read the camera.
+    step "Handing the RK3588 video unit to the video group."
+    write_file $MPP_UDEV_FILE <<EOF
+KERNEL=="mpp_service", MODE="0660", GROUP="video"
+EOF
+    $sudo udevadm control --reload
+    $sudo udevadm trigger --name-match=mpp_service
 }
 
 build_aloop()
@@ -545,10 +568,12 @@ EOF
 An FFmpeg with the RK3588 decoders and encoders is in
 $FFMPEG_PREFIX/bin, as ffmpeg and ffprobe. It is not in the
 path, so the FFmpeg of the machine is still the one that runs when ffmpeg is
-typed. Record the camera into an MP4 file with
+typed. Anyone in the video group may encode in the hardware. Record the camera
+and the microphone into an MP4 file with
 
     $FFMPEG_CLI -f v4l2 -i $VIDEO_DEVICE \\
-        -c:v h264_rkmpp recording.mp4
+        -f alsa -i $AUDIO_CAPTURE_DEVICE \\
+        -c:v h264_rkmpp -c:a aac recording.mp4
 
 Set the stream URL in Moblin to mobcam://localhost:7790, connect the iPhone or
 iPad to the BELABOX with a USB cable, unlock it and tap Trust.
@@ -595,6 +620,7 @@ main()
     find_source
     build
     install_binary
+    setup_video_unit
     setup_camera
     if [ $audio = yes ] ; then
         setup_microphone

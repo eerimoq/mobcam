@@ -9,10 +9,15 @@ from dataclasses import field
 from fractions import Fraction
 from pathlib import Path
 
-from .utils import Image
-
 LOGGER = logging.getLogger(__name__)
 FFMPEG_COMMAND = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-y"]
+MOBCAM_FFMPEG_DIR = Path("/opt/mobcam/ffmpeg/bin")
+MOBCAM_FFMPEG = str(MOBCAM_FFMPEG_DIR / "ffmpeg")
+MOBCAM_FFMPEG_COMMAND = [MOBCAM_FFMPEG, "-hide_banner", "-nostdin", "-nostats", "-y"]
+VIDEO_ENCODER = "h264_rkmpp"
+VIDEO_CODEC = "h264"
+AUDIO_ENCODER = "aac"
+AUDIO_CODEC = "aac"
 RE_VOLUME_DETECT = re.compile(r"(n_samples|mean_volume|max_volume): (-?[\d.]+|-?inf)")
 RE_SILENCE_DETECT = re.compile(r"silence_(start|end): (-?[\d.]+)")
 
@@ -29,10 +34,6 @@ def _run(command: list[str]):
     return _run_logged(command, True)
 
 
-def _run_binary(command: list[str]) -> bytes:
-    return _run_logged(command, False).stdout
-
-
 def ffprobe_run(path: Path, *args):
     command = [
         "ffprobe",
@@ -47,6 +48,16 @@ def ffprobe_run(path: Path, *args):
 
 def ffmpeg_run(*args):
     return _run(FFMPEG_COMMAND + [*args])
+
+
+def mobcam_ffmpeg_supports(kind: str, name: str) -> bool:
+    proc = subprocess.run(
+        [MOBCAM_FFMPEG, "-hide_banner", "-loglevel", "quiet", f"-{kind}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return re.search(rf"\b{re.escape(name)}\b", proc.stdout) is not None
 
 
 def _frame_pts(frame) -> float:
@@ -127,12 +138,6 @@ def ffprobe_video(path: Path):
     )
 
 
-def ffprobe_video_size(path: Path) -> tuple[int, int]:
-    output = ffprobe_run(path, "-select_streams", "v:0", "-show_entries", "stream=width,height")
-    stream = output["streams"][0]
-    return stream["width"], stream["height"]
-
-
 def _get_fps(stream, name: str) -> Fraction | None:
     try:
         return Fraction(stream[name])
@@ -179,14 +184,8 @@ def ffprobe(path: Path):
     )
 
 
-def read_image(path: Path) -> Image:
-    width, height = ffprobe_video_size(path)
-    data = _run_binary(
-        FFMPEG_COMMAND + ["-i", str(path), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
-    )
-    if len(data) != 3 * width * height:
-        raise Exception(f"Read {len(data)} bytes of {path}, but expected {3 * width * height}.")
-    return Image(width, height, data)
+def extract_audio(path: Path, audio_path: Path):
+    ffmpeg_run("-i", str(path), "-vn", "-c:a", "pcm_s16le", str(audio_path))
 
 
 def measure_mean_volume(path: Path) -> float:

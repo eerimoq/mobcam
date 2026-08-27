@@ -1,3 +1,4 @@
+import os
 import platform
 import shutil
 import subprocess
@@ -5,6 +6,10 @@ import sys
 from pathlib import Path
 
 from .config import Config
+from .ffmpeg import AUDIO_ENCODER
+from .ffmpeg import MOBCAM_FFMPEG
+from .ffmpeg import VIDEO_ENCODER
+from .ffmpeg import mobcam_ffmpeg_supports
 
 
 def _is_executable_in_path(name: str) -> bool:
@@ -21,6 +26,27 @@ def _is_readable(path: Path) -> bool:
 
 def _has_passwordless_sudo() -> bool:
     return subprocess.run(["sudo", "-n", "true"], check=False, capture_output=True).returncode == 0
+
+
+def _check_ffmpeg() -> list[str]:
+    missing = []
+    for executable in ["ffmpeg", "ffprobe"]:
+        if not _is_executable_in_path(executable):
+            missing.append(f"{executable} executable not found")
+    if not os.access(MOBCAM_FFMPEG, os.X_OK):
+        missing.append(f"{MOBCAM_FFMPEG} not found; build it with crates/virtualcam/belabox/install.sh")
+    else:
+        for kind, name in [
+            ("encoders", VIDEO_ENCODER),
+            ("encoders", AUDIO_ENCODER),
+            ("devices", "alsa"),
+        ]:
+            if not mobcam_ffmpeg_supports(kind, name):
+                missing.append(
+                    f"{MOBCAM_FFMPEG} has no {name} in its {kind}; rebuild it with "
+                    f"crates/virtualcam/belabox/install.sh"
+                )
+    return missing
 
 
 def _check_machine() -> list[str]:
@@ -41,10 +67,7 @@ def _check_machine() -> list[str]:
 
 
 def check_dependencies():
-    missing_dependencies = []
-    for executable in ["ffmpeg", "ffprobe"]:
-        if not _is_executable_in_path(executable):
-            missing_dependencies.append(f"{executable} executable not found")
+    missing_dependencies = _check_ffmpeg()
     missing_dependencies += _check_machine()
     if len(missing_dependencies) > 0:
         print("--- Missing dependencies ---")

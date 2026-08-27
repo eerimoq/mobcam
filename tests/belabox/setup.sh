@@ -10,6 +10,11 @@
 # It installs FFmpeg and a Python the tests run on, puts the user in the groups
 # that may read the camera and the microphone, and creates the virtual
 # environment the tests are started from.
+#
+# The tests record the camera and the microphone with the FFmpeg in
+# /opt/mobcam/ffmpeg, which crates/virtualcam/belabox/install.sh builds, as that
+# is the one that encodes video in the RK3588 hardware, reads ALSA and has the
+# mpdecimate filter. The FFmpeg of the machine reads what came out.
 
 set -euo pipefail
 
@@ -24,6 +29,7 @@ PACKAGES=(
     v4l-utils
 )
 USER_GROUPS=(audio video)
+MOBCAM_FFMPEG=/opt/mobcam/ffmpeg/bin/ffmpeg
 sudo=
 
 step()
@@ -47,6 +53,9 @@ check_machine()
         if ! sudo -n true 2>/dev/null && ! sudo -v ; then
             die "sudo is needed to install"
         fi
+    fi
+    if [ ! -x $MOBCAM_FFMPEG ] ; then
+        die "no $MOBCAM_FFMPEG; run ./crates/virtualcam/belabox/install.sh first"
     fi
 }
 

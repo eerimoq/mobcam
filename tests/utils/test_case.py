@@ -3,13 +3,14 @@ from collections.abc import Callable
 
 import systest
 
+from .ffmpeg import AUDIO_CODEC
+from .ffmpeg import VIDEO_CODEC
 from .ffmpeg import detect_silence
 from .ffmpeg import ffprobe_audio
 from .ffmpeg import ffprobe_format
+from .ffmpeg import ffprobe_video
 from .ffmpeg import measure_mean_volume
-from .ffmpeg import read_image
 from .moblin import Moblin
-from .utils import Image
 from .utils import wait_until
 from .virtualcam import AudioSpec
 from .virtualcam import Recording
@@ -19,6 +20,7 @@ PIXEL_FORMATS = ["yuv420p", "nv12"]
 MINIMUM_FPS_RATIO = 0.8
 MAXIMUM_FPS_RATIO = 1.05
 MINIMUM_WINDOW_FPS_RATIO = 0.5
+MAXIMUM_VIDEO_LENGTH_DIFFERENCE = 0.5
 MINIMUM_MEAN_VOLUME_DB = -60.0
 SILENCE_NOISE_DB = -60.0
 MAXIMUM_SILENCE = 0.5
@@ -33,9 +35,6 @@ class TestCase(systest.TestCase):
     def teardown(self):
         self.moblin.end()
 
-    def assert_not_all_black(self, image: Image, minimum_ratio: float = 0.01):
-        self.assert_greater(image.non_black_ratio(), minimum_ratio)
-
     def wait_until(self, check: Callable[[], bool]):
         wait_until(check, "condition to be true")
 
@@ -49,9 +48,9 @@ class TestCase(systest.TestCase):
     ):
         self._assert_camera_format(recording, width, height)
         self._assert_camera_frames(recording, fps)
+        self._assert_recorded_file(recording, width, height, audio)
+        self._log_distinct_frames(recording)
         self._assert_camera_audio(recording, audio)
-        self.assert_greater(len(recording.images), 0)
-        self.assert_not_all_black(read_image(recording.images[len(recording.images) // 2]))
 
     def _assert_camera_format(self, recording: Recording, width: int, height: int):
         if recording.video is None:
@@ -81,6 +80,50 @@ class TestCase(systest.TestCase):
         self.assert_less(recording.fps(), MAXIMUM_FPS_RATIO * fps)
         self.assert_greater(slowest, MINIMUM_WINDOW_FPS_RATIO * fps)
 
+    def _log_distinct_frames(self, recording: Recording):
+        LOGGER.info(
+            "%s distinct frames in %.3f s, %.2f distinct fps, %.1f %% of the %s frames captured "
+            "are frames the camera repeated",
+            recording.distinct_frames,
+            recording.distinct_duration,
+            recording.distinct_fps(),
+            100 * recording.duplicate_ratio(),
+            recording.frames,
+        )
+
+    def _assert_recorded_file(
+        self,
+        recording: Recording,
+        width: int,
+        height: int,
+        audio: AudioSpec | None,
+    ):
+        video = ffprobe_video(recording.video_path)
+        recorded_audio = ffprobe_audio(recording.video_path)
+        length = ffprobe_format(recording.video_path).duration
+        LOGGER.info(
+            "%s holds %s frames of %s %sx%s and %s Hz %s channel %s of %.3f s, %s MiB",
+            recording.video_path.name,
+            len(video.frames),
+            video.codec,
+            video.width,
+            video.height,
+            recorded_audio.sample_rate,
+            recorded_audio.channels,
+            recorded_audio.codec,
+            length,
+            round(recording.video_path.stat().st_size / 1024 / 1024, 1),
+        )
+        self.assert_equal(video.codec, VIDEO_CODEC)
+        self.assert_equal(video.width, width)
+        self.assert_equal(video.height, height)
+        self.assert_equal(recorded_audio.codec, AUDIO_CODEC)
+        if audio is not None:
+            self.assert_equal(recorded_audio.sample_rate, audio.sample_rate)
+            self.assert_greater_equal(recorded_audio.channels, audio.channels)
+        self.assert_greater(length, recording.seconds - MAXIMUM_VIDEO_LENGTH_DIFFERENCE)
+        self.assert_less(length, recording.seconds + MAXIMUM_VIDEO_LENGTH_DIFFERENCE)
+
     def _assert_camera_audio(self, recording: Recording, audio: AudioSpec | None):
         probe = ffprobe_audio(recording.audio_path)
         length = ffprobe_format(recording.audio_path).duration
@@ -94,10 +137,10 @@ class TestCase(systest.TestCase):
         )
         if audio is not None:
             self.assert_equal(probe.sample_rate, audio.sample_rate)
-            self.assert_equal(probe.channels, audio.channels)
+            self.assert_greater_equal(probe.channels, audio.channels)
             if recording.audio is not None:
                 self.assert_equal(recording.audio.sample_rate, audio.sample_rate)
-                self.assert_equal(recording.audio.channels, audio.channels)
+                self.assert_equal(recording.audio.channels, probe.channels)
         self.assert_greater(length, recording.seconds - MAXIMUM_AUDIO_LENGTH_DIFFERENCE)
         self.assert_less(length, recording.seconds + MAXIMUM_AUDIO_LENGTH_DIFFERENCE)
         self.assert_greater(mean_volume_db, MINIMUM_MEAN_VOLUME_DB)

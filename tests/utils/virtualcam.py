@@ -2,11 +2,16 @@ import logging
 import re
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from .config import Config
-from .ffmpeg import FFMPEG_COMMAND
+from .ffmpeg import AUDIO_ENCODER
+from .ffmpeg import MOBCAM_FFMPEG_COMMAND
+from .ffmpeg import VIDEO_ENCODER
+from .ffmpeg import extract_audio
+from .ffmpeg import ffprobe_video
 from .process import ManagedProcess
 from .utils import FILES_DIR
 from .utils import wait_until
@@ -17,7 +22,7 @@ LOGGER_FFMPEG = logging.getLogger(__name__ + ".ffmpeg")
 
 RE_CONNECTED = re.compile(r"connected to (.+) \(Moblin (\S+)\) on (\S+)")
 RE_AUDIO_SPEC = re.compile(r"playing (\d+) Hz (\d+) channel audio into")
-RE_WRITING = re.compile(r"writing to (\S+) in ")
+RE_WRITING = re.compile(r"writing to (\S+)")
 RE_VIDEO_INPUT = re.compile(r"Stream #0:0.*: Video: (\w+).*?, (\w+), (\d+)x(\d+)")
 RE_AUDIO_INPUT = re.compile(r"Stream #1:0.*: Audio: (\w+).*?, (\d+) Hz, (\w+)")
 RE_ERROR = re.compile(r"^error: (.*)")
@@ -26,7 +31,14 @@ RE_WARNING = re.compile(r"^warning: (.*)")
 DEFAULT_AUDIO_SAMPLE_RATE = 48000
 DEFAULT_AUDIO_CHANNELS = 1
 FRAME_QUEUE_SIZE = 512
-IMAGES_PER_SECOND = 1
+VIDEO_BITRATE = "10M"
+VIDEO_TIME_BASE = "1/90000"
+DECIMATE_FILTER = "mpdecimate=hi=64:lo=32:frac=0.01"
+START_ATTEMPTS = 3
+RETRY_SECONDS = 2
+CAMERA_MODULE = "v4l2loopback"
+WINDOW_SECONDS = 0.5
+AUDIO_BITRATE = "128k"
 
 
 class Log:
@@ -78,14 +90,22 @@ class Recording:
     seconds: float
     video: VideoInputFormat | None
     audio: AudioSpec | None
+    video_path: Path
     audio_path: Path
-    images: list[Path]
     frames: int
     duration: float
+    distinct_frames: int
+    distinct_duration: float
     window_rates: list[float]
 
     def fps(self) -> float:
         return self.frames / self.duration
+
+    def distinct_fps(self) -> float:
+        return self.distinct_frames / self.distinct_duration
+
+    def duplicate_ratio(self) -> float:
+        return 1 - self.distinct_frames / self.frames
 
 
 class VirtualCam:
@@ -95,7 +115,7 @@ class VirtualCam:
         self._video_device = config.video_device()
         self._audio_capture_device = config.audio_capture_device()
         self.log = Log()
-        command = [
+        self._command = [
             "sudo",
             "-n",
             config.virtualcam_binary(),
@@ -107,17 +127,48 @@ class VirtualCam:
             config.audio_playback_device(),
         ]
         if not hardware_decode:
-            command.append("--no-hardware-decode")
-        self._process = ManagedProcess(command, LOGGER_VIRTUALCAM, observer=self.log.add)
+            self._command.append("--no-hardware-decode")
+        self._process = ManagedProcess(self._command, LOGGER_VIRTUALCAM, observer=self.log.add)
 
     def __enter__(self):
         self._control_service("stop")
-        self._process.start()
-        self._wait_until_ready()
+        self._start_process()
         return self
+
+    def _start_process(self):
+        for attempt in range(START_ATTEMPTS):
+            self.log = Log()
+            self._process = ManagedProcess(self._command, LOGGER_VIRTUALCAM, observer=self.log.add)
+            self._process.start()
+            try:
+                self._wait_until_ready()
+                return
+            except Exception:
+                self._process.stop()
+                if attempt + 1 == START_ATTEMPTS:
+                    raise
+                LOGGER.warning(
+                    "mobcam-virtualcam did not take %s; reloading %s and trying again",
+                    self._video_device,
+                    CAMERA_MODULE,
+                )
+                self._reload_camera()
+                time.sleep(RETRY_SECONDS)
+
+    def _reload_camera(self):
+        for command in [
+            ["sudo", "-n", "modprobe", "-r", CAMERA_MODULE],
+            ["sudo", "-n", "modprobe", CAMERA_MODULE],
+            ["sudo", "-n", "udevadm", "settle"],
+        ]:
+            proc = subprocess.run(command, check=False, capture_output=True, text=True)
+            if proc.returncode != 0:
+                LOGGER.warning("%s failed: %s", " ".join(command), proc.stderr.strip())
+                return
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self._stop_process()
+        self._reload_camera()
         self._control_service("start")
 
     def _wait_until_ready(self, timeout: float = 10):
@@ -157,52 +208,76 @@ class VirtualCam:
 
     def record(self, seconds: float, name: str) -> Recording:
         audio = self.audio_spec() or AudioSpec(DEFAULT_AUDIO_SAMPLE_RATE, DEFAULT_AUDIO_CHANNELS)
+        video_path = FILES_DIR / f"{name}.mp4"
         audio_path = FILES_DIR / f"{name}.wav"
-        images_pattern = FILES_DIR / f"{name}-%03d.jpg"
-        frames = self._start(self._frames_command(seconds))
-        others = self._start(self._audio_and_images_command(seconds, audio, audio_path, images_pattern))
-        frames_output, frames_errors = frames.communicate()
-        others_output, others_errors = others.communicate()
-        _check(frames, frames_errors, "count the frames of")
-        _check(others, others_errors, "record the audio and the images of")
-        self._log(frames_errors)
-        self._log(others_errors)
-        windows = _parse_progress(frames_output)
+        recording = self._start(self._recording_command(seconds, audio, video_path))
+        distinct = self._start(self._distinct_frames_command(seconds))
+        recording_output, recording_errors = recording.communicate()
+        distinct_output, distinct_errors = distinct.communicate()
+        self._log(recording_errors)
+        self._log(distinct_errors)
+        _check(recording, recording_errors, "record")
+        _check(distinct, distinct_errors, "count the distinct frames of")
+        extract_audio(video_path, audio_path)
+        timestamps = sorted(frame.pts for frame in ffprobe_video(video_path).frames)
+        distinct_windows = _parse_progress(distinct_output)
         return Recording(
             seconds=seconds,
-            video=_parse_video_input(frames_errors),
-            audio=_parse_audio_input(others_errors),
+            video=_parse_video_input(recording_errors),
+            audio=_parse_audio_input(recording_errors),
+            video_path=video_path,
             audio_path=audio_path,
-            images=sorted(FILES_DIR.glob(f"{name}-*.jpg")),
-            frames=windows[-1][1] if windows else 0,
-            duration=windows[-1][0] if windows else 0,
-            window_rates=_window_rates(windows),
+            frames=len(timestamps),
+            duration=timestamps[-1] - timestamps[0] if len(timestamps) > 1 else 0,
+            distinct_frames=distinct_windows[-1][1] if distinct_windows else 0,
+            distinct_duration=distinct_windows[-1][0] if distinct_windows else 0,
+            window_rates=_window_rates(timestamps),
         )
 
-    def _frames_command(self, seconds: float) -> list[str]:
-        return FFMPEG_COMMAND + [
+    def _recording_command(self, seconds: float, audio: AudioSpec, path: Path) -> list[str]:
+        return MOBCAM_FFMPEG_COMMAND + [
+            *self._video_input(),
+            *self._audio_input(audio),
+            "-map",
+            "0:v",
+            "-map",
+            "1:a",
+            "-t",
+            str(seconds),
+            "-fps_mode",
+            "passthrough",
+            "-enc_time_base:v",
+            VIDEO_TIME_BASE,
+            "-c:v",
+            VIDEO_ENCODER,
+            "-b:v",
+            VIDEO_BITRATE,
+            "-c:a",
+            AUDIO_ENCODER,
+            "-b:a",
+            AUDIO_BITRATE,
+            str(path),
+        ]
+
+    def _distinct_frames_command(self, seconds: float) -> list[str]:
+        return MOBCAM_FFMPEG_COMMAND + [
             *self._video_input(),
             "-progress",
             "pipe:1",
             "-an",
             "-t",
             str(seconds),
-            "-vsync",
-            "0",
+            "-vf",
+            DECIMATE_FILTER,
+            "-fps_mode",
+            "passthrough",
             "-f",
             "null",
             "-",
         ]
 
-    def _audio_and_images_command(
-        self,
-        seconds: float,
-        audio: AudioSpec,
-        audio_path: Path,
-        images_pattern: Path,
-    ) -> list[str]:
-        return FFMPEG_COMMAND + [
-            *self._video_input(),
+    def _audio_input(self, audio: AudioSpec) -> list[str]:
+        return [
             "-thread_queue_size",
             str(FRAME_QUEUE_SIZE),
             "-f",
@@ -213,22 +288,6 @@ class VirtualCam:
             str(audio.channels),
             "-i",
             self._audio_capture_device,
-            "-map",
-            "0:v",
-            "-t",
-            str(seconds),
-            "-vf",
-            f"fps={IMAGES_PER_SECOND}",
-            "-q:v",
-            "4",
-            str(images_pattern),
-            "-map",
-            "1:a",
-            "-t",
-            str(seconds),
-            "-c:a",
-            "pcm_s16le",
-            str(audio_path),
         ]
 
     def _video_input(self) -> list[str]:
@@ -289,21 +348,34 @@ def _parse_progress(output: str) -> list[tuple[float, int]]:
     duration = 0.0
     for line in output.splitlines():
         key, _, value = line.partition("=")
-        if key == "frame":
-            frames = int(value)
-        elif key == "out_time_us":
-            duration = int(value) / 1_000_000
+        number = _parse_number(value)
+        if key == "frame" and number is not None:
+            frames = number
+        elif key == "out_time_us" and number is not None:
+            duration = number / 1_000_000
         elif key == "progress" and duration > 0:
             windows.append((duration, frames))
     return windows
 
 
-def _window_rates(windows: list[tuple[float, int]]) -> list[float]:
-    return [
-        (frames - previous_frames) / (duration - previous_duration)
-        for (previous_duration, previous_frames), (duration, frames) in zip(windows, windows[1:])
-        if duration > previous_duration
-    ]
+def _parse_number(value: str) -> int | None:
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _window_rates(timestamps: list[float]) -> list[float]:
+    if len(timestamps) < 2:
+        return []
+    start = timestamps[0]
+    windows = int((timestamps[-1] - start) / WINDOW_SECONDS)
+    counts = [0] * windows
+    for timestamp in timestamps:
+        window = int((timestamp - start) / WINDOW_SECONDS)
+        if window < windows:
+            counts[window] += 1
+    return [count / WINDOW_SECONDS for count in counts]
 
 
 def _parse_video_input(output: str) -> VideoInputFormat | None:
