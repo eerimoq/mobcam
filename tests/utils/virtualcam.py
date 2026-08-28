@@ -101,6 +101,7 @@ class VirtualCam:
         self._process = ManagedProcess(
             [
                 self._config.virtualcam_binary(),
+                "--debug",
                 "--device",
                 self._video_device,
                 "--audio-backend",

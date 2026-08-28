@@ -128,6 +128,7 @@ fn choose_device(chosen: Option<&Path>) -> Result<v4l2::Device, String> {
 
 fn run(options: Options) -> Result<(), String> {
     let mut device = choose_device(options.device.as_deref())?;
+    device.set_debug(options.debug);
     let mut audio = options
         .audio
         .then(|| Audio::open(options.audio_backend, options.audio_device.as_deref()))
@@ -176,6 +177,9 @@ fn run(options: Options) -> Result<(), String> {
                     logged_conversion: None,
                     logged_pixel_format: None,
                     failure: None,
+                    debug: options.debug,
+                    previous_write_frame_timestamp: 0,
+                    previous_write_frame_clock: 0,
                 };
                 session::stream(&mut stream, &mut decoder, &mut output, &abort);
                 if let Some(failure) = output.failure {
@@ -215,6 +219,9 @@ struct Output<'a> {
     logged_conversion: Option<(av::AVPixelFormat, v4l2::Format)>,
     logged_pixel_format: Option<av::AVPixelFormat>,
     failure: Option<String>,
+    debug: bool,
+    previous_write_frame_timestamp: u64,
+    previous_write_frame_clock: u64,
 }
 
 impl Sink for Output<'_> {
@@ -258,6 +265,19 @@ impl Sink for Output<'_> {
             },
         };
         let timestamp = self.clock.timestamp(frame.pts() as u64, v4l2::now_ns);
+        if self.debug {
+            let timestamp_delta = timestamp - self.previous_write_frame_timestamp;
+            self.previous_write_frame_timestamp = timestamp;
+            let clock = v4l2::now_ns();
+            let clock_delta = clock - self.previous_write_frame_clock;
+            self.previous_write_frame_clock = clock;
+            log!(
+                Level::Info,
+                "writing frame with timestamp delta {} ms and clock delta {} ms",
+                timestamp_delta / 1_000_000,
+                clock_delta / 1_000_000
+            );
+        }
         if let Err(error) = self.device.write_frame(picture, self.buffer, timestamp) {
             self.failure = Some(format!("failed to write a frame: {error}"));
             STOPPING.store(true, Ordering::Relaxed);

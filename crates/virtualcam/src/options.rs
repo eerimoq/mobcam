@@ -73,6 +73,10 @@ pub struct Options {
     #[arg(long, value_name = "FORMAT", default_value = "auto")]
     pub pixel_format: PixelFormat,
 
+    /// log a line for every frame written to the camera
+    #[arg(long)]
+    pub debug: bool,
+
     /// list the attached iPhones and iPads, the v4l2loopback devices and the
     /// virtual microphones, and exit
     #[arg(short, long)]

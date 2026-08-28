@@ -11,6 +11,10 @@ impl Device {
         Err(format!("{}: {UNSUPPORTED}", path.display()))
     }
 
+    pub fn set_debug(&mut self, _debug: bool) {
+        match *self {}
+    }
+
     pub fn path(&self) -> &Path {
         match *self {}
     }

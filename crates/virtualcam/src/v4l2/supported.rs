@@ -1,4 +1,5 @@
 use crate::v4l2::{Colorspace, Format, Picture, Quantization};
+use mobcam_core::{Level, log};
 use std::os::raw::{c_int, c_void};
 use std::path::Path;
 use std::path::PathBuf;
@@ -121,10 +122,13 @@ struct Buffers {
     next: usize,
     queued: usize,
     spacing: Spacing,
+    debug: bool,
+    previous_timestamp: u64,
+    previous_clock: u64,
 }
 
 impl Buffers {
-    fn open(fd: c_int) -> Result<Self, String> {
+    fn open(fd: c_int, debug: bool) -> Result<Self, String> {
         let mut request = v4l2_requestbuffers {
             count: BUFFERS,
             type_: Type::VideoOutput as u32,
@@ -143,6 +147,9 @@ impl Buffers {
             next: 0,
             queued: 0,
             spacing: Spacing::default(),
+            debug,
+            previous_timestamp: 0,
+            previous_clock: 0,
         };
         for index in 0..request.count {
             buffers.mappings.push(buffers.map(index)?);
@@ -198,6 +205,19 @@ impl Buffers {
         }
         unsafe { ptr::copy_nonoverlapping(data.as_ptr(), mapping.data, data.len()) };
         self.spacing.wait(timestamp_ns);
+        if self.debug {
+            let timestamp_delta = timestamp_ns - self.previous_timestamp;
+            self.previous_timestamp = timestamp_ns;
+            let clock = now_ns();
+            let clock_delta = clock - self.previous_clock;
+            self.previous_clock = clock;
+            log!(
+                Level::Info,
+                "queuing frame with timestamp delta {} ms and clock delta {} ms",
+                timestamp_delta / 1_000_000,
+                clock_delta / 1_000_000
+            );
+        }
         self.queue(index, data.len(), timestamp_ns)?;
         self.next = (index + 1) % self.mappings.len();
         self.queued += 1;
@@ -264,6 +284,7 @@ pub struct Device {
     path: PathBuf,
     picture: Option<Picture>,
     nv12: bool,
+    debug: bool,
 }
 
 impl Device {
@@ -282,7 +303,12 @@ impl Device {
             path: path.to_path_buf(),
             picture: None,
             nv12,
+            debug: false,
         })
+    }
+
+    pub fn set_debug(&mut self, debug: bool) {
+        self.debug = debug;
     }
 
     pub fn path(&self) -> &Path {
@@ -297,7 +323,7 @@ impl Device {
         if self.picture != Some(picture) {
             self.buffers = None;
             self.set_picture(picture)?;
-            self.buffers = Some(Buffers::open(self.device.handle().fd())?);
+            self.buffers = Some(Buffers::open(self.device.handle().fd(), self.debug)?);
             self.picture = Some(picture);
         }
         match self.buffers.as_mut() {
