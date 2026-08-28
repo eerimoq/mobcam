@@ -5,7 +5,7 @@
 # Run it on the BELABOX, either from a clone of the repository or on its own,
 # in which case it clones the repository itself:
 #
-#     ./crates/virtualcam/belabox/install.sh
+#     ./scripts/belabox/install.sh
 #
 # It installs the build dependencies and the v4l2loopback module, builds the
 # snd-aloop that BELABOX does not have and an FFmpeg that decodes and encodes in
@@ -108,7 +108,6 @@ EOF
 
 step()
 {
-    echo
     echo "==> $1"
 }
 
@@ -330,7 +329,7 @@ find_source()
 
     script=${BASH_SOURCE[0]:-}
     if [ -f "$script" ] ; then
-        root=$(cd "$(dirname "$script")/../../.." && pwd)
+        root=$(cd "$(dirname "$script")/../.." && pwd)
         if [ -f "$root/crates/virtualcam/Cargo.toml" ] ; then
             source_dir=$root
             return

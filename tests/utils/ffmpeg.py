@@ -6,11 +6,13 @@ import time
 from dataclasses import dataclass
 from dataclasses import field
 from fractions import Fraction
+from functools import cache
 from pathlib import Path
 
 LOGGER = logging.getLogger(__name__)
-MOBCAM_FFMPEG = str(Path("/opt/mobcam/ffmpeg/bin") / "ffmpeg")
-FFMPEG_COMMAND = [MOBCAM_FFMPEG, "-hide_banner", "-nostdin", "-nostats", "-y"]
+FFMPEG = "ffmpeg"
+FFPROBE = "ffprobe"
+FFMPEG_COMMAND = [FFMPEG, "-hide_banner", "-nostdin", "-nostats", "-y"]
 
 
 def _run_logged(command: list[str], text: bool):
@@ -27,7 +29,7 @@ def _run(command: list[str]):
 
 def ffprobe_run(path: Path, *args):
     command = [
-        "ffprobe",
+        FFPROBE,
         "-of",
         "json",
         *args,
@@ -41,14 +43,19 @@ def ffmpeg_run(*args):
     return _run(FFMPEG_COMMAND + [*args])
 
 
-def mobcam_ffmpeg_supports(kind: str, name: str) -> bool:
+@cache
+def ffmpeg_supports(kind: str, name: str) -> bool:
     proc = subprocess.run(
-        [MOBCAM_FFMPEG, "-hide_banner", "-loglevel", "quiet", f"-{kind}"],
+        [FFMPEG, "-hide_banner", "-loglevel", "quiet", f"-{kind}"],
         check=False,
         capture_output=True,
         text=True,
     )
     return re.search(rf"\b{re.escape(name)}\b", proc.stdout) is not None
+
+
+def video_encoder() -> str:
+    return "h264_rkmpp" if ffmpeg_supports("encoders", "h264_rkmpp") else "libx264"
 
 
 def _frame_pts(frame) -> float:

@@ -7,7 +7,6 @@ import time
 from base64 import b64encode
 from pathlib import Path
 
-from moblin_assistant import make_client_request
 from websockets.sync.client import ClientConnection
 from websockets.sync.client import connect
 
@@ -22,6 +21,7 @@ from .utils import wait_until
 LOGGER = logging.getLogger(__name__)
 LOGGER_ASSISTANT = logging.getLogger(__name__ + ".assistant")
 LOGGER_EVENTS = logging.getLogger(__name__ + ".events")
+HOST = "127.0.0.1"
 
 
 class AssistantEvents:
@@ -50,7 +50,7 @@ class AssistantEvents:
     def _listen(self):
         while not self._stopped.is_set():
             try:
-                with connect(f"ws://localhost:{self._port}/events", max_size=None) as connection:
+                with connect(f"ws://{HOST}:{self._port}/events", max_size=None) as connection:
                     self._connection = connection
                     for message in connection:
                         self._handle_message(message)
@@ -138,7 +138,10 @@ class Moblin:
         return self._request({"getStatus": {}})["data"]["getStatus"]
 
     def _request(self, data):
-        return make_client_request(self._remote_control_port, data)
+        url = f"ws://{HOST}:{self._remote_control_port}/client"
+        with connect(url, max_size=None) as server:
+            server.send(json.dumps({"type": "request", "data": data}))
+            return json.loads(server.recv())["data"]
 
     def _get_settings(self):
         return self._request({"getSettings": {}})["data"]["getSettings"]["data"]

@@ -113,10 +113,10 @@ runs it as a service:
 
 ```shell
 sudo apt install curl
-curl -fsSL https://raw.githubusercontent.com/eerimoq/mobcam/main/crates/virtualcam/belabox/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/eerimoq/mobcam/main/scripts/belabox/install.sh | bash
 ```
 
-It is the same script as `crates/virtualcam/belabox/install.sh` in a clone, and
+It is the same script as `scripts/belabox/install.sh` in a clone, and
 running it there builds that clone instead of a fresh one.
 
 The camera it creates is `/dev/mobcam`, labelled `Mobcam`, and the microphone

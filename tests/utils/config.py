@@ -32,9 +32,6 @@ class Config:
     def tester_ip_address(self) -> str:
         return self.general()["tester-ip-address"]
 
-    def virtualcam_binary(self) -> str:
-        return self._virtualcam()["binary"]
-
     def virtualcam_service(self) -> str:
         return self._virtualcam()["service"]
 

@@ -7,10 +7,13 @@ from pathlib import Path
 from .config import Config
 from .ffmpeg import ffmpeg_run
 from .ffmpeg import ffprobe_video
+from .ffmpeg import video_encoder
 from .process import ManagedProcess
 from .utils import FILES_DIR
+from .utils import ROOT_DIR
 
 LOGGER = logging.getLogger(__name__)
+BINARY = str(ROOT_DIR / "target" / "release" / "mobcam-virtualcam")
 
 
 class Log:
@@ -87,7 +90,7 @@ class VirtualCam:
             "-enc_time_base:v",
             "1/90000",
             "-c:v",
-            "h264_rkmpp",
+            video_encoder(),
             "-b:v",
             "5M",
             "-c:a",
@@ -100,7 +103,7 @@ class VirtualCam:
     def _start_process(self):
         self._process = ManagedProcess(
             [
-                self._config.virtualcam_binary(),
+                BINARY,
                 "--debug",
                 "--device",
                 self._video_device,

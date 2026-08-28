@@ -5,8 +5,8 @@ PYTHON_DIRS += $(MYPY_DIRS)
 PYTHON_DIRS += tests
 
 CODE_DIRS += $(PYTHON_DIRS)
-CODE_DIRS += crates/virtualcam/belabox/install.sh
-CODE_DIRS += tests/belabox/setup.sh
+CODE_DIRS += scripts/belabox/install.sh
+CODE_DIRS += scripts/belabox/test.sh
 
 CONFIG_DIR = .config
 PYTHON = python
@@ -33,18 +33,21 @@ unit-test:
 test:
 	$(PYTHON) -m tests.test $(TEST_ARGS)
 
-test-remote-belabox:
-	rsync -a --delete \
-	    --exclude .git \
-	    --exclude .venv \
-	    --exclude .deps \
-	    --exclude target \
-	    --exclude release \
-	    --exclude logs \
-	    --exclude tests/files \
-	    ./ $(BELABOX):mobcam/
+test-belabox:
+	rsync \
+		--archive \
+		--delete \
+		--exclude .git \
+		--exclude .venv \
+		--exclude .deps \
+		--exclude target \
+		--exclude release \
+		--exclude logs \
+		--exclude tests/files \
+		./ \
+		$(BELABOX):mobcam/
 	status=0 ; \
-	ssh $(BELABOX) 'cd mobcam && ./crates/virtualcam/belabox/install.sh --no-packages --no-pipeline --no-service && source .venv/bin/activate && make test TEST_ARGS="$(TEST_ARGS)"' || status=$$? ; \
+	ssh -t $(BELABOX) 'cd mobcam && ./scripts/belabox/test.sh $(TEST_ARGS)' || status=$$? ; \
 	rsync -a $(BELABOX):mobcam/logs/ logs/ ; \
 	rsync -a $(BELABOX):mobcam/tests/files/ tests/files/ ; \
 	exit $$status

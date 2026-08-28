@@ -26,14 +26,12 @@ over its remote control. All commands below are run from the root of a clone of 
 
 # Run the tests
 
-On this machine:
-
 ```bash
 make test TEST_ARGS="--device iphone16pro"
 ```
 
-From this machine, which copies the working tree over to the BELABOX and runs the tests there:
+Or test on a BELABOX over SSH (user@belabox.local, no password).
 
 ```bash
-make test-remote-belabox TEST_ARGS="--device iphone16pro"
+make test-belabox TEST_ARGS="--device iphone16pro"
 ```

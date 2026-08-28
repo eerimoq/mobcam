@@ -3,7 +3,6 @@ tester-ip-address = "belabox.local"
 remote-control-port = 2345
 
 [virtualcam]
-binary = "/usr/local/bin/mobcam-virtualcam"
 service = "mobcam-virtualcam.service"
 video-device = "/dev/mobcam"
 audio-playback-device = "plughw:CARD=Mobcam,DEV=1"
