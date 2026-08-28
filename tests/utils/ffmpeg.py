@@ -13,6 +13,7 @@ LOGGER = logging.getLogger(__name__)
 FFMPEG = "ffmpeg"
 FFPROBE = "ffprobe"
 FFMPEG_COMMAND = [FFMPEG, "-hide_banner", "-nostdin", "-nostats", "-y"]
+DUPLICATE_FRAME_RE = re.compile(r"drop pts:\d+ pts_time:([\d.]+) drop_count:(\d+)")
 
 
 def _run_logged(command: list[str], text: bool):
@@ -114,6 +115,36 @@ class FfprobeOutput:
     video: FfprobeVideoOutput
     audio: FfprobeAudioOutput
     format: FfprobeFormatOutput
+
+
+@dataclass
+class FfmpegDuplicateFrame:
+    pts: float
+    count: int
+
+
+def ffmpeg_duplicate_frames(path: Path) -> list[FfmpegDuplicateFrame]:
+    output = _run(
+        FFMPEG_COMMAND
+        + [
+            "-loglevel",
+            "debug",
+            "-i",
+            str(path),
+            "-map",
+            "0:v:0",
+            "-an",
+            "-vf",
+            "mpdecimate",
+            "-f",
+            "null",
+            "-",
+        ]
+    ).stderr
+    return [
+        FfmpegDuplicateFrame(pts=float(found.group(1)), count=int(found.group(2)))
+        for found in DUPLICATE_FRAME_RE.finditer(output)
+    ]
 
 
 def ffprobe_video(path: Path):

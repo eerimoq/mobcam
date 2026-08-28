@@ -96,7 +96,7 @@ run_tests()
 {
     export PATH=$FFMPEG_PREFIX/bin:$PATH
     . $VENV/bin/activate
-    make test TEST_ARGS="$*"
+    make test-virtualcam TEST_ARGS="$*"
 }
 
 main()

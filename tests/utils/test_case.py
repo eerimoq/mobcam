@@ -9,6 +9,7 @@ from .ffmpeg import ffprobe_audio
 from .ffmpeg import ffprobe_format
 from .ffmpeg import ffprobe_video
 from .moblin import Moblin
+from .obs import ObsRecording
 from .virtualcam import Recording
 
 LOGGER = logging.getLogger(__name__)
@@ -24,6 +25,10 @@ MAXIMUM_AUDIO_LENGTH_DIFFERENCE = 0.5
 PTS_DELTA_TOLERANCE_RATIO = 0.2
 PTS_DELTA_SETTLE_SECONDS = 0.25
 WORST_PTS_DELTAS = 5
+MAXIMUM_OBS_VIDEO_LENGTH_DIFFERENCE = 1.0
+FRAME_COUNT_TOLERANCE_RATIO = 0.05
+DUPLICATE_SETTLE_SECONDS = 0.5
+WORST_DUPLICATES = 5
 
 
 class TestCase(systest.TestCase):
@@ -48,6 +53,46 @@ class TestCase(systest.TestCase):
         self.assert_equal(recorded_audio.codec, "aac")
         self.assert_greater(length, recording.seconds - MAXIMUM_VIDEO_LENGTH_DIFFERENCE)
         self.assert_less(length, recording.seconds + MAXIMUM_VIDEO_LENGTH_DIFFERENCE)
+
+    def assert_obs_recording(self, recording: ObsRecording, width: int, height: int, fps: int):
+        video = ffprobe_video(recording.video_path)
+        recorded_audio = ffprobe_audio(recording.video_path)
+        length = ffprobe_format(recording.video_path).duration
+        self._assert_duplicate_frames(recording, length)
+        self.assert_equal(video.codec, "h264")
+        self.assert_equal(video.width, width)
+        self.assert_equal(video.height, height)
+        self.assert_equal(recorded_audio.codec, "aac")
+        self.assert_greater(length, recording.seconds - MAXIMUM_OBS_VIDEO_LENGTH_DIFFERENCE)
+        self.assert_less(length, recording.seconds + MAXIMUM_OBS_VIDEO_LENGTH_DIFFERENCE)
+        expected_frames = fps * length
+        self.assert_greater(len(video.frames), (1 - FRAME_COUNT_TOLERANCE_RATIO) * expected_frames)
+        self.assert_less(len(video.frames), (1 + FRAME_COUNT_TOLERANCE_RATIO) * expected_frames)
+        self.assert_equal(recording.render_skipped, 0)
+        self.assert_equal(recording.output_skipped, 0)
+
+    def _assert_duplicate_frames(self, recording: ObsRecording, length: float):
+        all_duplicates = recording.duplicates()
+        duplicates = [
+            duplicate
+            for duplicate in all_duplicates
+            if DUPLICATE_SETTLE_SECONDS < duplicate.pts < length - DUPLICATE_SETTLE_SECONDS
+        ]
+        LOGGER.debug(
+            "%s of %s duplicated frames in %.2f s at %d fps outside the first and last %.2f s",
+            len(duplicates),
+            len(all_duplicates),
+            length,
+            recording.fps,
+            DUPLICATE_SETTLE_SECONDS,
+        )
+        for duplicate in duplicates[:WORST_DUPLICATES]:
+            LOGGER.info(
+                "Duplicated frame %.3f s into the recording, %d in a row",
+                duplicate.pts,
+                duplicate.count,
+            )
+        self.assert_equal(len(duplicates), 0)
 
     def _assert_pts_deltas(self, recording: Recording, fps: int):
         deltas = recording.pts_deltas()

@@ -1,6 +1,5 @@
 import logging
 import re
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,30 +11,10 @@ from .ffmpeg import ffprobe_video
 from .ffmpeg import video_encoder
 from .utils import FILES_DIR
 from .utils import ROOT_DIR
+from .utils import Log
 
 LOGGER = logging.getLogger(__name__)
 BINARY = str(ROOT_DIR / "target" / "release" / "mobcam-virtualcam")
-
-
-class Log:
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._lines: list[str] = []
-
-    def add(self, line: str):
-        with self._lock:
-            self._lines.append(line)
-
-    def lines(self) -> list[str]:
-        with self._lock:
-            return list(self._lines)
-
-    def match(self, pattern: re.Pattern) -> re.Match | None:
-        for line in self.lines():
-            found = pattern.search(line)
-            if found is not None:
-                return found
-        return None
 
 
 @dataclass

@@ -10,8 +10,8 @@ def create_suites(moblin, _):
 
 
 def main():
-    parser = create_parser("Run tests.")
-    run("test", parser, create_suites)
+    parser = create_parser("Run virtual camera tests.")
+    run("virtualcam", parser, create_suites)
 
 
 main()

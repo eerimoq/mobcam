@@ -30,8 +30,11 @@ clean:
 unit-test:
 	cargo test --workspace
 
-test:
-	$(PYTHON) -m tests.test $(TEST_ARGS)
+test-obs:
+	$(PYTHON) -m tests.test_obs $(TEST_ARGS)
+
+test-virtualcam:
+	$(PYTHON) -m tests.test_virtualcam $(TEST_ARGS)
 
 test-belabox:
 	rsync \

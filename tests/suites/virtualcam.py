@@ -1,28 +1,11 @@
 import time
 
-from ..utils.config import MOBCAM_URL
-from ..utils.generate_device_settings import AudioCodec
 from ..utils.generate_device_settings import Resolution
 from ..utils.generate_device_settings import VideoCodec
-from ..utils.generate_device_settings import uuid
+from ..utils.generate_device_settings import stream_settings
 from ..utils.moblin import Moblin
 from ..utils.test_case import TestCase
 from ..utils.virtualcam import VirtualCam
-
-
-def stream_settings(video_codec: VideoCodec, resolution: Resolution, fps: int):
-    return {
-        "id": uuid(),
-        "name": "Mobcam",
-        "enabled": True,
-        "url": MOBCAM_URL,
-        "codec": video_codec,
-        "audioCodec": AudioCodec.AAC,
-        "resolution": resolution,
-        "fps": fps,
-        "bitrate": 5_000_000,
-        "bitrateRateControl": "CBR",
-    }
 
 
 class Stream(TestCase):

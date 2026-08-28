@@ -4,6 +4,7 @@ from enum import StrEnum
 from pathlib import Path
 from uuid import uuid4
 
+from .config import MOBCAM_URL
 from .config import REMOTE_CONTROL_PASSWORD
 from .config import Config
 
@@ -64,6 +65,21 @@ def base_settings(config: Config, remote_control_port: int):
         "showAllSettings": True,
         "debug": {"logLevel": "Debug"},
         "show": {"stream": True, "cpu": True, "microphone": True, "cameras": True},
+    }
+
+
+def stream_settings(video_codec: VideoCodec, resolution: Resolution, fps: int):
+    return {
+        "id": uuid(),
+        "name": "Mobcam",
+        "enabled": True,
+        "url": MOBCAM_URL,
+        "codec": video_codec,
+        "audioCodec": AudioCodec.AAC,
+        "resolution": resolution,
+        "fps": fps,
+        "bitrate": 5_000_000,
+        "bitrateRateControl": "CBR",
     }
 
 

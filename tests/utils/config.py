@@ -6,7 +6,8 @@ from xdg_base_dirs import xdg_config_home
 from .utils import TEST_DIR
 
 REMOTE_CONTROL_PASSWORD = "1234"
-MOBCAM_URL = "mobcam://localhost:7790"
+MOBCAM_PORT = 7790
+MOBCAM_URL = f"mobcam://localhost:{MOBCAM_PORT}"
 
 
 def find_config_toml() -> Path:
