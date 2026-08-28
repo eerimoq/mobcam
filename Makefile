@@ -33,7 +33,7 @@ unit-test:
 test:
 	$(PYTHON) -m tests.test $(TEST_ARGS)
 
-test-remote:
+test-remote-belabox:
 	rsync -a --delete \
 	    --exclude .git \
 	    --exclude .venv \
