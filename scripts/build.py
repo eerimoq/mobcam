@@ -391,6 +391,13 @@ def build_windows() -> None:
     remove(root)
     binary_dir.mkdir(parents=True)
     shutil.copy2(library, binary_dir / f"{OBS_PLUGIN.module}.dll")
+    prebuilt_bin = DEPS_DIR / "prebuilt" / "bin"
+    for pattern in ("avcodec-*.dll", "avutil-*.dll", "swresample-*.dll", "libx264-*.dll", "zlib.dll"):
+        matches = list(prebuilt_bin.glob(pattern))
+        if not matches:
+            raise Error(f"{prebuilt_bin} has no DLL matching {pattern}")
+        for dependency in matches:
+            shutil.copy2(dependency, binary_dir / dependency.name)
     symbols = library.with_suffix(".pdb")
     if symbols.is_file():
         shutil.copy2(symbols, binary_dir / f"{OBS_PLUGIN.module}.pdb")
