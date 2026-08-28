@@ -3,12 +3,12 @@ import statistics
 from collections.abc import Callable
 
 import systest
+from systest import wait_until
 
 from .ffmpeg import ffprobe_audio
 from .ffmpeg import ffprobe_format
 from .ffmpeg import ffprobe_video
 from .moblin import Moblin
-from .utils import wait_until
 from .virtualcam import Recording
 
 LOGGER = logging.getLogger(__name__)

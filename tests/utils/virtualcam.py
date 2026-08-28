@@ -4,11 +4,12 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
+from systest import ManagedProcess
+
 from .config import Config
 from .ffmpeg import ffmpeg_run
 from .ffmpeg import ffprobe_video
 from .ffmpeg import video_encoder
-from .process import ManagedProcess
 from .utils import FILES_DIR
 from .utils import ROOT_DIR
 

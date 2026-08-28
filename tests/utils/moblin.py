@@ -7,6 +7,8 @@ import time
 from base64 import b64encode
 from pathlib import Path
 
+from systest import ManagedProcess
+from systest import wait_until
 from websockets.sync.client import ClientConnection
 from websockets.sync.client import connect
 
@@ -15,8 +17,6 @@ from .config import Config
 from .generate_device_settings import SceneName
 from .generate_device_settings import base_settings
 from .generate_device_settings import create_settings_file
-from .process import ManagedProcess
-from .utils import wait_until
 
 LOGGER = logging.getLogger(__name__)
 LOGGER_ASSISTANT = logging.getLogger(__name__ + ".assistant")
