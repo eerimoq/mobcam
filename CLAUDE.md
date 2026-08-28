@@ -57,6 +57,19 @@ Python tooling comes from `scripts/requirements.txt` (`.venv/` is already set up
 - `.deps/prebuilt` — obs-deps FFmpeg for macOS and Windows. Linux gets FFmpeg and libobs from
   `pkg-config` instead.
 
+The macOS and Windows plugins ship those FFmpeg libraries rather than borrowing the ones OBS Studio
+installed, so a struct layout never differs between the headers bindgen read and the library that
+ends up loaded. On macOS `build_macos()` copies them into the bundle's `Contents/Frameworks` and
+renames them to `mobcam-lib*.dylib`: dyld keys loaded images on the install name, and OBS Studio has
+already loaded `@rpath/libavcodec.dylib` from its own `Frameworks` by the time a plugin is dlopened,
+so a copy under the original name is silently ignored in favour of OBS Studio's. Each library is
+signed before the bundle is, and `verify_macos()` fails the build if anything in it still needs an
+`@rpath` library the bundle does not carry, links something outside `/usr/lib` and
+`/System/Library`, or searches for libraries anywhere but inside the bundle. Belt and braces,
+`obs_module_load()` calls `ffmpeg::version::check()` and refuses to register the source unless the
+loaded libavcodec and libavutil have the major version the plugin was built against and are no
+older than it — which is the only guard on Linux, where the libraries come from the distribution.
+
 Each crate's `build.rs` runs bindgen at build time and writes `$OUT_DIR/{ffmpeg,obs}.rs`, included by
 `ffmpeg/sys.rs` and `obs/sys.rs`. Generation is skipped when a `.stamp` file matches the flags,
 header text and the OBS source hash, so touching an allowlist in `build.rs` regenerates and nothing

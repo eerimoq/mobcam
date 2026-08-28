@@ -107,7 +107,7 @@ fn configure_macos() -> Vec<PathBuf> {
     let obs_include = require(dependencies.join("obs-studio").join("libobs"));
     let prebuilt_include = require(dependencies.join("prebuilt").join("include"));
     println!("cargo:rustc-link-arg=-Wl,-undefined,dynamic_lookup");
-    println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
+    println!("cargo:rustc-link-arg=-Wl,-rpath,@loader_path/../Frameworks");
     vec![obs_include, prebuilt_include, obsconfig_dir()]
 }
 

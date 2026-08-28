@@ -51,6 +51,10 @@ RELEASE_DIR = REPO_ROOT / "release"
 INSTALL_DIR = RELEASE_DIR / "install"
 MACOS_DEPLOYMENT_TARGET = "12.0"
 MACOS_TARGETS = {"arm64": "aarch64-apple-darwin", "x86_64": "x86_64-apple-darwin"}
+MACOS_BUNDLED_LIBRARIES = ["libavcodec", "libavutil", "libswresample", "libx264"]
+MACOS_SYSTEM_PREFIXES = ("/usr/lib/", "/System/Library/")
+MACOS_LIBRARY_RPATH = "@loader_path"
+MACOS_PLUGIN_RPATH = "@loader_path/../Frameworks"
 
 
 def read_workspace_version() -> str:
@@ -341,6 +345,76 @@ def macos_paths() -> tuple[Path, Path, Path]:
     )
 
 
+def macos_dependencies(path: Path) -> list[str]:
+    output = run(["otool", "-L", path], capture_output=True, text=True).stdout
+    return sorted({line.split()[0] for line in output.splitlines() if line.startswith("\t")})
+
+
+def macos_rpaths(path: Path) -> list[str]:
+    output = run(["otool", "-l", path], capture_output=True, text=True).stdout
+    rpaths = set()
+    is_rpath = False
+    for line in output.splitlines():
+        fields = line.split()
+        if fields[-1:] == ["LC_RPATH"]:
+            is_rpath = True
+        elif is_rpath and fields[:1] == ["path"]:
+            rpaths.add(fields[1])
+            is_rpath = False
+    return sorted(rpaths)
+
+
+def bundled_library_name(name: str) -> str:
+    return f"{PROJECT}-{name}.dylib"
+
+
+def rename_bundled_dependencies(path: Path) -> None:
+    dependencies = macos_dependencies(path)
+    for name in MACOS_BUNDLED_LIBRARIES:
+        dependency = f"@rpath/{name}.dylib"
+        if dependency in dependencies:
+            renamed = f"@rpath/{bundled_library_name(name)}"
+            run(["install_name_tool", "-change", dependency, renamed, path])
+
+
+def bundle_macos_libraries(frameworks: Path) -> list[Path]:
+    prebuilt_lib = DEPS_DIR / "prebuilt" / "lib"
+    frameworks.mkdir(parents=True)
+    libraries = []
+    for name in MACOS_BUNDLED_LIBRARIES:
+        source = prebuilt_lib / f"{name}.dylib"
+        library = frameworks / bundled_library_name(name)
+        shutil.copy2(source, library)
+        library.chmod(0o755)
+        run(["install_name_tool", "-id", f"@rpath/{library.name}", library])
+        run(["install_name_tool", "-add_rpath", MACOS_LIBRARY_RPATH, library])
+        libraries.append(library)
+    for library in libraries:
+        rename_bundled_dependencies(library)
+    return libraries
+
+
+def verify_macos(binary: Path, frameworks: Path) -> None:
+    libraries = sorted(frameworks.iterdir())
+    bundled = {library.name for library in libraries}
+    for path, rpath in [
+        (binary, MACOS_PLUGIN_RPATH),
+        *((library, MACOS_LIBRARY_RPATH) for library in libraries),
+    ]:
+        rpaths = macos_rpaths(path)
+        if rpaths != [rpath]:
+            raise Error(f"{path.name} searches {rpaths} for libraries instead of only {rpath}")
+        for dependency in macos_dependencies(path):
+            name = dependency.removeprefix("@rpath/")
+            if name == path.name:
+                continue
+            if dependency.startswith("@rpath/"):
+                if name not in bundled:
+                    raise Error(f"{path.name} needs {dependency}, which the bundle does not ship")
+            elif not dependency.startswith(MACOS_SYSTEM_PREFIXES):
+                raise Error(f"{path.name} links {dependency}, which is neither bundled nor part of macOS")
+
+
 def build_macos(identity: str | None) -> None:
     bundle, binary, symbols = macos_paths()
     libraries = cargo_build_library("macos", OBS_PLUGIN, sorted(MACOS_TARGETS.values()))
@@ -354,9 +428,15 @@ def build_macos(identity: str | None) -> None:
         **OBS_PLUGIN.values(),
     )
     copy_data(bundle / "Contents" / "Resources")
+    frameworks = bundle / "Contents" / "Frameworks"
+    bundled = bundle_macos_libraries(frameworks)
+    rename_bundled_dependencies(binary)
     remove(symbols)
     run(["dsymutil", binary, "-o", symbols])
     run(["strip", "-x", binary])
+    verify_macos(binary, frameworks)
+    for library in bundled:
+        codesign(library, identity)
     codesign(bundle, identity)
 
 
