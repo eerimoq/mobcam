@@ -72,9 +72,8 @@ class AssistantEvents:
 
 
 class Moblin:
-    def __init__(self, config: Config, device_name: str):
+    def __init__(self, config: Config):
         self.config = config
-        self.device_name = device_name
         self._remote_control_port = config.remote_control_port()
         self._server = ManagedProcess(
             [
@@ -154,8 +153,7 @@ class Moblin:
 
     def _wait_until_streamer_is_connected(self):
         LOGGER.info(
-            "Waiting for %s's remote control streamer to connect to port %d...",
-            self.device_name,
+            "Waiting for a remote control streamer to connect to port %d...",
             self._remote_control_port,
         )
 

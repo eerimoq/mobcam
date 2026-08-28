@@ -24,7 +24,6 @@ class HelpFormatter(argparse.HelpFormatter):
 
 def create_parser(description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description, formatter_class=HelpFormatter)
-    parser.add_argument("--device", required=True)
     return parser
 
 
@@ -42,7 +41,7 @@ def run(name: str, parser: argparse.ArgumentParser, make_tests: MakeTests):
     logging.getLogger("urllib3.connectionpool").setLevel(logging.INFO)
     logging.getLogger("websockets.client").setLevel(logging.INFO)
     config = Config()
-    moblin = Moblin(config, args.device)
+    moblin = Moblin(config)
     with moblin:
         moblin.end()
         sequencer.run(*make_tests(moblin, args))
