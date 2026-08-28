@@ -198,8 +198,6 @@ install_rust()
 
 ffmpeg_supports()
 {
-    # The tool lists what it was built with, and an FFmpeg from an older run of
-    # this script has no tools at all.
     [ -x $FFMPEG_CLI ] || return 1
     $FFMPEG_CLI -hide_banner -loglevel quiet -"$1" 2>/dev/null | grep -qw "$2"
 }
@@ -541,66 +539,21 @@ EOF
 
 summary()
 {
-    step "Installed."
-    cat <<EOF
-$($BINARY --version) is in $BINARY.
-
-The camera is $VIDEO_DEVICE, labelled $CARD.
-EOF
+    step "Summary."
+    echo "Binary:     $BINARY"
+    echo "Camera:     $VIDEO_DEVICE"
     if [ $audio = yes ] ; then
-        cat <<EOF
-The microphone is the $CARD sound card, which belaUI lists as an audio source.
-EOF
-    else
-        echo "There is no microphone; the video keeps going without one."
+        echo "Microphone: $CARD"
     fi
     if [ $pipeline = yes ] ; then
-        cat <<EOF
-The pipeline that streams them is custom/$PIPELINE, in
-$(pipelines_dir)/custom.
-EOF
-    fi
-    cat <<EOF
-
-An FFmpeg with the RK3588 decoders and encoders is in
-$FFMPEG_PREFIX/bin, as ffmpeg and ffprobe. It is not in the
-path, so the FFmpeg of the machine is still the one that runs when ffmpeg is
-typed. Anyone in the video group may encode in the hardware. Record the camera
-and the microphone into an MP4 file with
-
-    $FFMPEG_CLI -f v4l2 -i $VIDEO_DEVICE \\
-        -f alsa -i $AUDIO_CAPTURE_DEVICE \\
-        -c:v h264_rkmpp -c:a aac recording.mp4
-
-Set the stream URL in Moblin to mobcam://localhost:7790, connect the iPhone or
-iPad to the BELABOX with a USB cable, unlock it and tap Trust.
-EOF
-    if [ $pipeline = yes ] && [ $audio = yes ] ; then
-        cat <<EOF
-Then pick custom/$PIPELINE in belaUI, with $CARD as the audio source, and
-start streaming.
-EOF
-    elif [ $pipeline = yes ] ; then
-        cat <<EOF
-Then pick custom/$PIPELINE in belaUI, pick an audio source of its own, and
-start streaming.
-EOF
+        echo "Pipeline:   $(pipelines_dir)/custom/$PIPELINE"
     fi
     if [ $service = yes ] ; then
-        cat <<EOF
-
-$SERVICE is running. Follow it with
-
-    sudo journalctl -fu $SERVICE
-EOF
-    else
-        cat <<EOF
-
-No service was installed. Start it by hand with
-
-    sudo $BINARY --device $VIDEO_DEVICE
-EOF
+        echo "Service:    $SERVICE"
     fi
+    echo "Test: $FFMPEG_CLI -f v4l2 -i $VIDEO_DEVICE -f alsa -i \\"
+    echo "          $AUDIO_CAPTURE_DEVICE -c:v h264_rkmpp -c:a aac \\"
+    echo "          recording.mp4"
 }
 
 main()
