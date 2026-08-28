@@ -9,7 +9,6 @@ PACKAGES=(
     alsa-utils
     python3.11
     python3.11-venv
-    rsync
     v4l-utils
 )
 USER_GROUPS=(audio video)

@@ -551,7 +551,7 @@ summary()
     if [ $service = yes ] ; then
         echo "Service:    $SERVICE"
     fi
-    echo "Test: $FFMPEG_CLI -f v4l2 -i $VIDEO_DEVICE -f alsa -i \\"
+    echo "Test: sudo $FFMPEG_CLI -f v4l2 -i $VIDEO_DEVICE -f alsa -i \\"
     echo "          $AUDIO_CAPTURE_DEVICE -c:v h264_rkmpp -c:a aac \\"
     echo "          recording.mp4"
 }

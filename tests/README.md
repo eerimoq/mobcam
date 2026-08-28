@@ -33,5 +33,6 @@ make test TEST_ARGS="--device iphone16pro"
 Or test on a BELABOX over SSH (user@belabox.local, no password).
 
 ```bash
+sudo apt install rsync
 make test-belabox TEST_ARGS="--device iphone16pro"
 ```
