@@ -44,7 +44,7 @@ test-remote:
 	    --exclude tests/files \
 	    ./ $(BELABOX):mobcam/
 	status=0 ; \
-	ssh $(BELABOX) 'cd mobcam && make test PYTHON=.venv/bin/python TEST_ARGS="$(TEST_ARGS)"' || status=$$? ; \
+	ssh $(BELABOX) 'cd mobcam && ./crates/virtualcam/belabox/install.sh --no-packages --no-pipeline --no-service && source .venv/bin/activate && make test TEST_ARGS="$(TEST_ARGS)"' || status=$$? ; \
 	rsync -a $(BELABOX):mobcam/logs/ logs/ ; \
 	rsync -a $(BELABOX):mobcam/tests/files/ tests/files/ ; \
 	exit $$status
