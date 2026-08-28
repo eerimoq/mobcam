@@ -1,5 +1,6 @@
 MYPY_DIRS += scripts/build.py
 MYPY_DIRS += scripts/ci.py
+MYPY_DIRS += scripts/ffmpeg.py
 
 PYTHON_DIRS += $(MYPY_DIRS)
 PYTHON_DIRS += tests

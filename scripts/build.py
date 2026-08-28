@@ -125,8 +125,10 @@ VIRTUALCAM = Product(
 DATA_DIR = OBS_PLUGIN.root / "data"
 OBS_STUDIO_VERSION = "28.0.0"
 OBS_STUDIO_URL = "https://github.com/obsproject/obs-studio/archive/refs/tags"
-PREBUILT_VERSION = "2026-07-15"
-PREBUILT_URL = "https://github.com/obsproject/obs-deps/releases/download"
+FFMPEG_VERSION = "8.0"
+FFMPEG_TAG = f"ffmpeg-{FFMPEG_VERSION}-1"
+FFMPEG_NAME = f"{PROJECT}-ffmpeg-{FFMPEG_VERSION}"
+FFMPEG_URL = f"{WEBSITE}/releases/download/{FFMPEG_TAG}"
 DEPENDENCIES: list[Dependency] = [
     Dependency(
         label="OBS sources",
@@ -149,18 +151,18 @@ DEPENDENCIES: list[Dependency] = [
         },
     ),
     Dependency(
-        label="Pre-Built obs-deps",
-        version=PREBUILT_VERSION,
-        directory="prebuilt",
+        label="Mobcam FFmpeg",
+        version=FFMPEG_VERSION,
+        directory="ffmpeg",
         strip_root=False,
         os={
             "macos": DependencySource(
-                url=f"{PREBUILT_URL}/{PREBUILT_VERSION}/macos-deps-{PREBUILT_VERSION}-universal.tar.xz",
-                sha256="4ecb4c598dfa853168df6c2a0c4e0ffec8495a81fbd1ba051ef88ecd5e0f7e53",
+                url=f"{FFMPEG_URL}/{FFMPEG_NAME}-macos-universal.tar.xz",
+                sha256="1877120887c469acde24214af09b5b06b9d0cc26296ee6945d201210e7830173",
             ),
             "windows": DependencySource(
-                url=f"{PREBUILT_URL}/{PREBUILT_VERSION}/windows-deps-{PREBUILT_VERSION}-x64.zip",
-                sha256="6f90e9598fa10cff5ad23cdcfae49b87868c07bf896b02cd464582b4ce2f2ba9",
+                url=f"{FFMPEG_URL}/{FFMPEG_NAME}-windows-x64.zip",
+                sha256="0000000000000000000000000000000000000000000000000000000000000000",
             ),
         },
     ),
@@ -314,6 +316,9 @@ def cargo_build_binary(product: Product) -> Path:
 
 def copy_data(destination: Path) -> None:
     shutil.copytree(DATA_DIR, destination, dirs_exist_ok=True)
+    licenses = DEPS_DIR / "ffmpeg" / "licenses"
+    if licenses.is_dir():
+        shutil.copytree(licenses, destination / "licenses" / "ffmpeg", dirs_exist_ok=True)
 
 
 def codesign(path: Path, identity: str | None) -> None:

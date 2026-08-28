@@ -103,12 +103,10 @@ fn pkg_config(packages: &[&str], flags: &str) -> Vec<String> {
 }
 
 fn configure_macos() -> Vec<PathBuf> {
-    let dependencies = dependencies_dir();
-    let obs_include = require(dependencies.join("obs-studio").join("libobs"));
-    let prebuilt_include = require(dependencies.join("prebuilt").join("include"));
+    let obs_include = require(dependencies_dir().join("obs-studio").join("libobs"));
     println!("cargo:rustc-link-arg=-Wl,-undefined,dynamic_lookup");
     println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
-    vec![obs_include, prebuilt_include, obsconfig_dir()]
+    vec![obs_include, obsconfig_dir()]
 }
 
 #[cfg(windows)]
@@ -170,12 +168,10 @@ fn write_import_library(_bindings: &Path) {
 }
 
 fn configure_windows() -> Vec<PathBuf> {
-    let dependencies = dependencies_dir();
-    let obs_include = require(dependencies.join("obs-studio").join("libobs"));
-    let prebuilt_include = require(dependencies.join("prebuilt").join("include"));
+    let obs_include = require(dependencies_dir().join("obs-studio").join("libobs"));
     println!("cargo:rustc-link-search=native={}", out_dir().display());
     println!("cargo:rustc-link-lib=dylib=obs");
-    vec![obs_include, prebuilt_include, obsconfig_dir()]
+    vec![obs_include, obsconfig_dir()]
 }
 
 fn configure_linux() -> Vec<PathBuf> {

@@ -1,0 +1,45 @@
+name: FFmpeg
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  macos-build:
+    name: Build FFmpeg for macOS
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install nasm
+        run: brew install nasm
+      - name: Build
+        run: ./scripts/ffmpeg.py build
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: ffmpeg-macos-universal
+          path: ${{ github.workspace }}/release/mobcam-ffmpeg-*-macos-universal.tar.xz
+  windows-build:
+    name: Build FFmpeg for Windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          path-type: inherit
+          install: make diffutils nasm
+      - name: Build
+        env:
+          MSYS2_BASH: ${{ steps.msys2.outputs.msys2-location }}\usr\bin\bash.exe
+        run: ./scripts/ffmpeg.py build
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: ffmpeg-windows-x64
+          path: ${{ github.workspace }}/release/mobcam-ffmpeg-*-windows-x64.zip

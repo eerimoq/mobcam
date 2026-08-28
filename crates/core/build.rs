@@ -26,8 +26,8 @@ fn target_os() -> String {
     env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS is set by cargo")
 }
 
-fn prebuilt_dir() -> PathBuf {
-    let path = repo_root().join(".deps").join("prebuilt");
+fn ffmpeg_dir() -> PathBuf {
+    let path = repo_root().join(".deps").join("ffmpeg");
     assert!(
         path.exists(),
         "{} is missing; run `python3 scripts/build.py deps` to download the dependencies",
@@ -55,14 +55,18 @@ fn pkg_config(packages: &[&str], flags: &str) -> Vec<String> {
         .collect()
 }
 
-fn configure_prebuilt() -> Vec<PathBuf> {
-    let prebuilt_dir = prebuilt_dir();
-    println!("cargo:rustc-link-search=native={}", prebuilt_dir.join("lib").display());
-    println!("cargo:rustc-link-lib=dylib=avcodec");
-    println!("cargo:rustc-link-lib=dylib=avutil");
-    // The unit tests run outside any bundle, so they need to find the dylibs.
-    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", prebuilt_dir.join("lib").display());
-    vec![prebuilt_dir.join("include")]
+fn configure_vendored() -> Vec<PathBuf> {
+    let ffmpeg_dir = ffmpeg_dir();
+    println!("cargo:rustc-link-search=native={}", ffmpeg_dir.join("lib").display());
+    println!("cargo:rustc-link-lib=static=avcodec");
+    println!("cargo:rustc-link-lib=static=avutil");
+    let link = ffmpeg_dir.join("link.txt");
+    let text =
+        std::fs::read_to_string(&link).unwrap_or_else(|error| panic!("failed to read {}: {error}", link.display()));
+    for library in text.lines().filter(|line| !line.is_empty()) {
+        println!("cargo:rustc-link-lib={library}");
+    }
+    vec![ffmpeg_dir.join("include")]
 }
 
 fn configure_pkg_config() -> Vec<PathBuf> {
@@ -118,7 +122,7 @@ fn generate_ffmpeg(include_dirs: &[PathBuf]) {
 
 fn main() {
     let include_dirs = match target_os().as_str() {
-        "macos" | "windows" => configure_prebuilt(),
+        "macos" | "windows" => configure_vendored(),
         "linux" => configure_pkg_config(),
         other => panic!("unsupported target operating system {other}"),
     };
