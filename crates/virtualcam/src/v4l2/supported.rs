@@ -17,7 +17,7 @@ use v4l::video::Output;
 
 const LOOPBACK_DRIVER: &str = "v4l2 loopback";
 const PROBE_SIZE: (u32, u32) = (640, 480);
-const BUFFERS: u32 = 4;
+const BUFFERS: u32 = 8;
 const NANOSECONDS_PER_SECOND: u64 = 1_000_000_000;
 const SPACING_NUMERATOR: u64 = 3;
 const SPACING_DENOMINATOR: u64 = 4;
@@ -141,6 +141,7 @@ impl Buffers {
             &mut request as *mut _ as *mut c_void,
             "requesting buffers",
         )?;
+        log!(Level::Info, "requested {} buffers and got {}", BUFFERS, request.count);
         let mut buffers = Self {
             fd,
             mappings: Vec::new(),
