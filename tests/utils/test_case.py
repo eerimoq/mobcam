@@ -39,7 +39,15 @@ class TestCase(systest.TestCase):
 
     def assert_camera_recording(self, recording: Recording, width: int, height: int, fps: int):
         self._assert_pts_deltas(recording, fps)
-        self._assert_recorded_file(recording, width, height)
+        video = ffprobe_video(recording.video_path)
+        recorded_audio = ffprobe_audio(recording.video_path)
+        length = ffprobe_format(recording.video_path).duration
+        self.assert_equal(video.codec, "h264")
+        self.assert_equal(video.width, width)
+        self.assert_equal(video.height, height)
+        self.assert_equal(recorded_audio.codec, "aac")
+        self.assert_greater(length, recording.seconds - MAXIMUM_VIDEO_LENGTH_DIFFERENCE)
+        self.assert_less(length, recording.seconds + MAXIMUM_VIDEO_LENGTH_DIFFERENCE)
 
     def _assert_pts_deltas(self, recording: Recording, fps: int):
         deltas = recording.pts_deltas()
@@ -73,14 +81,3 @@ class TestCase(systest.TestCase):
         for delta, offset in worst[:WORST_PTS_DELTAS]:
             LOGGER.info("PTS delta %.2f ms at %.3f s into the recording", 1000 * delta, offset)
         self.assert_equal(len(outliers), 0)
-
-    def _assert_recorded_file(self, recording: Recording, width: int, height: int):
-        video = ffprobe_video(recording.video_path)
-        recorded_audio = ffprobe_audio(recording.video_path)
-        length = ffprobe_format(recording.video_path).duration
-        self.assert_equal(video.codec, "h264")
-        self.assert_equal(video.width, width)
-        self.assert_equal(video.height, height)
-        self.assert_equal(recorded_audio.codec, "aac")
-        self.assert_greater(length, recording.seconds - MAXIMUM_VIDEO_LENGTH_DIFFERENCE)
-        self.assert_less(length, recording.seconds + MAXIMUM_VIDEO_LENGTH_DIFFERENCE)
