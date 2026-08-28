@@ -92,7 +92,9 @@ fn generate_ffmpeg(include_dirs: &[PathBuf]) {
         .allowlist_item("AV_.*")
         .allowlist_item("AV(Codec|Packet|Frame|Buffer|Pixel|Sample|HWDevice|Rational|Channel|Dictionary|Class|Color|Media|Profile|Discard|Field|Chroma|Audio).*")
         .allowlist_item("AVERROR.*")
-        .allowlist_item("FF_.*");
+        .allowlist_item("FF_.*")
+        .allowlist_item("LIBAV(CODEC|UTIL)_VERSION.*")
+        .allowlist_item("avutil_version");
     for dir in include_dirs {
         builder = builder.clang_arg(format!("-I{}", dir.display()));
     }
