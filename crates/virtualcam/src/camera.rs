@@ -160,8 +160,8 @@ fn run(options: Options) -> Result<(), String> {
     let mut reported_failure = None;
     let mut buffer = Vec::new();
     while !stopping() {
-        match usbmux::connect_to_device(options.udid(), options.port, &abort) {
-            Ok((mut stream, serial)) => {
+        match session.connect(options.udid(), options.port, &abort) {
+            Ok(serial) => {
                 reported_failure = None;
                 if let Some(audio) = audio.as_mut() {
                     audio.reset();
@@ -180,7 +180,7 @@ fn run(options: Options) -> Result<(), String> {
                     previous_write_frame_timestamp: 0,
                     previous_write_frame_clock: 0,
                 };
-                session.run(&mut stream, &mut output, &abort);
+                session.run(&mut output, &abort);
                 if let Some(failure) = output.failure {
                     return Err(failure);
                 }

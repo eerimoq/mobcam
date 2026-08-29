@@ -1,6 +1,6 @@
 use crate::decoder::{Decoder, INPUT_PADDING};
 use crate::protocol::{self, DeviceHello};
-use crate::usbmux::{Abort, Stream};
+use crate::usbmux::{self, Abort, Stream};
 use crate::{Level, log};
 
 pub use crate::decoder::Sink;
@@ -11,12 +11,14 @@ pub trait Handler: Sink {
 
 pub struct Session {
     decoder: Decoder,
+    stream: Option<Stream>,
 }
 
 impl Session {
     pub fn new() -> Option<Self> {
         Some(Self {
             decoder: Decoder::new()?,
+            stream: None,
         })
     }
 
@@ -28,7 +30,16 @@ impl Session {
         self.decoder.set_audio(audio);
     }
 
-    pub fn run(&mut self, stream: &mut Stream, handler: &mut dyn Handler, abort: &dyn Abort) {
+    pub fn connect(&mut self, serial: &str, port: u16, abort: &dyn Abort) -> Result<String, usbmux::Error> {
+        let (stream, serial) = usbmux::connect_to_device(serial, port, abort)?;
+        self.stream = Some(stream);
+        Ok(serial)
+    }
+
+    pub fn run(&mut self, handler: &mut dyn Handler, abort: &dyn Abort) {
+        let Some(mut stream) = self.stream.take() else {
+            return;
+        };
         if !stream.write_all(&protocol::pack_host_hello()) {
             log!(Level::Warning, "failed to say hello");
             return;

@@ -13,7 +13,7 @@ const TYPE_PLIST: u32 = 8;
 const MAX_REPLY_SIZE: u32 = 4 * 1024 * 1024;
 const CLIENT_NAME: &str = "obs-mobcam";
 
-pub struct Stream {
+pub(crate) struct Stream {
     inner: socket::Socket,
 }
 
@@ -185,7 +185,7 @@ pub fn list_devices(abort: &dyn Abort) -> Result<Vec<Device>, Error> {
         .collect())
 }
 
-pub fn connect_to_device(serial: &str, port: u16, abort: &dyn Abort) -> Result<(Stream, String), Error> {
+pub(crate) fn connect_to_device(serial: &str, port: u16, abort: &dyn Abort) -> Result<(Stream, String), Error> {
     let devices = list_devices(abort)?;
     let chosen = devices
         .iter()

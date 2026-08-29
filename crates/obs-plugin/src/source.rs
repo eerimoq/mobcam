@@ -4,7 +4,7 @@ use mobcam_core::clock::Clock;
 use mobcam_core::ffmpeg::{self, sys as av};
 use mobcam_core::protocol::DeviceHello;
 use mobcam_core::session::{Handler, Session, Sink};
-use mobcam_core::usbmux::{self, Abort, Stream};
+use mobcam_core::usbmux::{self, Abort};
 use mobcam_core::{Level, log, panic};
 use std::ffi::{CStr, c_char, c_void};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -199,8 +199,11 @@ impl Worker {
     }
 
     fn connect(&mut self) {
-        let (stream, serial) = match usbmux::connect_to_device(&self.serial, self.port, self.shared.as_ref()) {
-            Ok(connected) => connected,
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let serial = match session.connect(&self.serial, self.port, self.shared.as_ref()) {
+            Ok(serial) => serial,
             Err(error) => {
                 if error != usbmux::Error::Aborted && self.reported_failure != Some(error) {
                     self.reported_failure = Some(error);
@@ -210,19 +213,12 @@ impl Worker {
             }
         };
         self.reported_failure = None;
-        self.stream(stream, &serial);
+        let mut output = Output::new(Arc::clone(&self.shared), &serial);
+        session.run(&mut output, self.shared.as_ref());
         if !self.shared.stopping.load(Ordering::Relaxed) {
             log!(Level::Info, "disconnected from {serial}");
         }
         self.shared.clear_video();
-    }
-
-    fn stream(&mut self, mut stream: Stream, serial: &str) {
-        let Some(session) = self.session.as_mut() else {
-            return;
-        };
-        let mut output = Output::new(Arc::clone(&self.shared), serial);
-        session.run(&mut stream, &mut output, self.shared.as_ref());
     }
 }
 
