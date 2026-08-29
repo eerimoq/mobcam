@@ -102,8 +102,8 @@ class TransportFormat(StrEnum):
 
 
 HARDWARE_VIDEO_ENCODERS = {
-    FfmpegVideoCodec.H264: "h264_videotoolbox",
-    FfmpegVideoCodec.HEVC: "hevc_videotoolbox",
+    FfmpegVideoCodec.H264: ["h264_videotoolbox", "h264_rkmpp"],
+    FfmpegVideoCodec.HEVC: ["hevc_videotoolbox", "hevc_rkmpp"],
 }
 SOFTWARE_VIDEO_ENCODERS = {
     FfmpegVideoCodec.H264: "libx264",
@@ -155,22 +155,23 @@ def ffmpeg_run(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 @functools.cache
-def video_encoder(codec: FfmpegVideoCodec) -> str:
-    hardware_encoder = HARDWARE_VIDEO_ENCODERS[codec]
-    if f" {hardware_encoder} " in ffmpeg_run("-encoders").stdout:
-        return hardware_encoder
+def video_encoder(codec: FfmpegVideoCodec) -> tuple[str, bool]:
+    hardware_encoders = HARDWARE_VIDEO_ENCODERS[codec]
+    for hardware_encoder in hardware_encoders:
+        if f" {hardware_encoder} " in ffmpeg_run("-encoders").stdout:
+            return hardware_encoder, True
     LOGGER.warning(
-        "The hardware video encoder %s is not supported by ffmpeg. Encoding %s in software.",
-        hardware_encoder,
+        "The hardware video encoders %s are not supported by ffmpeg. Encoding %s in software.",
+        hardware_encoders,
         codec,
     )
-    return SOFTWARE_VIDEO_ENCODERS[codec]
+    return SOFTWARE_VIDEO_ENCODERS[codec], False
 
 
 def video_encoder_args(bitrate: int, codec: FfmpegVideoCodec, realtime: bool) -> list[str]:
-    encoder = video_encoder(codec)
+    encoder, is_hardware = video_encoder(codec)
     args = ["-c:v", encoder, "-b:v", str(bitrate)]
-    if encoder in HARDWARE_VIDEO_ENCODERS.values():
+    if is_hardware:
         if realtime:
             args += ["-realtime", "1"]
     else:
