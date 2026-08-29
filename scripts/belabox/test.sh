@@ -22,6 +22,12 @@ die()
     exit 1
 }
 
+run_sudo()
+{
+    echo "running: sudo $*" >&2
+    sudo "$@"
+}
+
 check_machine()
 {
     if [ ! -x $MOBCAM_FFMPEG ] ; then
@@ -46,8 +52,8 @@ install_packages()
     if ! missing_packages ; then
         return
     fi
-    sudo apt-get update
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${PACKAGES[@]}"
+    run_sudo apt-get update
+    run_sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${PACKAGES[@]}"
 }
 
 add_user_to_groups()
@@ -59,7 +65,7 @@ add_user_to_groups()
     added=()
     for group in "${USER_GROUPS[@]}" ; do
         if ! id -nG "$user" | tr ' ' '\n' | grep -qx "$group" ; then
-            sudo usermod -aG "$group" "$user"
+            run_sudo usermod -aG "$group" "$user"
             added+=("$group")
         fi
     done
@@ -80,7 +86,7 @@ create_virtual_environment()
 stop_service()
 {
     if systemctl is-active --quiet $SERVICE ; then
-        sudo systemctl stop $SERVICE
+        run_sudo systemctl stop $SERVICE
     fi
 }
 
