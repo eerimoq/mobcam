@@ -47,10 +47,9 @@ impl Properties {
         Property(property)
     }
 
-    pub fn add_bool(&mut self, name: &CStr, description: &CStr) {
-        unsafe {
-            sys::obs_properties_add_bool(self.0, name.as_ptr(), description.as_ptr());
-        }
+    pub fn add_bool(&mut self, name: &CStr, description: &CStr) -> Property {
+        let property = unsafe { sys::obs_properties_add_bool(self.0, name.as_ptr(), description.as_ptr()) };
+        Property(property)
     }
 
     pub fn into_raw(self) -> *mut sys::obs_properties_t {

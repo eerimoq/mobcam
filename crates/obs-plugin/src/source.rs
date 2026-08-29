@@ -432,7 +432,7 @@ extern "C" fn get_defaults(settings: *mut sys::obs_data_t) {
         settings.set_default_string(SETTING_DEVICE, c"");
         settings.set_default_int(SETTING_PORT, DEFAULT_PORT);
         settings.set_default_bool(SETTING_HARDWARE_DECODE, true);
-        settings.set_default_bool(SETTING_BUFFERING, false);
+        settings.set_default_bool(SETTING_BUFFERING, true);
         settings.set_default_bool(SETTING_CLEAR_ON_DISCONNECT, true);
         settings.set_default_bool(SETTING_DISCONNECT_WHEN_HIDDEN, false);
     })
@@ -457,11 +457,14 @@ extern "C" fn get_properties(data: *mut c_void) -> *mut sys::obs_properties_t {
         fill_device_list(&mut list, shared_of(data));
         unsafe { properties.add_button(c"refresh", text(c"RefreshDevices"), Some(refresh_devices_clicked), data) };
         properties.add_bool(SETTING_HARDWARE_DECODE, text(c"HardwareDecode"));
-        properties.add_bool(SETTING_BUFFERING, text(c"Buffering"));
+        properties
+            .add_bool(SETTING_BUFFERING, text(c"Buffering"))
+            .set_long_description(text(c"Buffering.Description"));
         properties.add_bool(SETTING_CLEAR_ON_DISCONNECT, text(c"ClearOnDisconnect"));
         properties.add_bool(SETTING_DISCONNECT_WHEN_HIDDEN, text(c"DisconnectWhenHidden"));
-        let mut port = properties.add_int(SETTING_PORT, text(c"Port"), 1, 65535);
-        port.set_long_description(text(c"Port.Description"));
+        properties
+            .add_int(SETTING_PORT, text(c"Port"), 1, 65535)
+            .set_long_description(text(c"Port.Description"));
         properties.into_raw()
     })
 }
