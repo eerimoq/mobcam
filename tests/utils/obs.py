@@ -97,7 +97,7 @@ class ObsWebSocket:
         connection = connect(self._url, max_size=None, open_timeout=5)
         try:
             hello = json.loads(connection.recv())["d"]
-            identify = {"rpcVersion": RPC_VERSION, "eventSubscriptions": 0}
+            identify: dict[str, int | str] = {"rpcVersion": RPC_VERSION, "eventSubscriptions": 0}
             authentication = hello.get("authentication")
             if authentication is not None:
                 identify["authentication"] = _authentication(
