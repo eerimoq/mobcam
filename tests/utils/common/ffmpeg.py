@@ -122,10 +122,24 @@ def _log_level(line: str) -> int:
         return logging.DEBUG
 
 
+def _log_output(name: str, output: str | bytes | None) -> None:
+    if not output:
+        return
+    if isinstance(output, bytes):
+        output = output.decode(errors="replace")
+    for line in output.splitlines():
+        LOGGER.error("%s: %s", name, line)
+
+
 def _run_logged(command: list[str], text: bool) -> subprocess.CompletedProcess[Any]:
     started = time.monotonic()
     try:
         return subprocess.run(command, check=True, capture_output=True, text=text)
+    except subprocess.CalledProcessError as error:
+        LOGGER.error("Command failed with exit status %d: %s", error.returncode, " ".join(command))
+        _log_output("stdout", error.stdout)
+        _log_output("stderr", error.stderr)
+        raise
     finally:
         LOGGER.debug("Command (%.3f s): %s", time.monotonic() - started, " ".join(command))
 
