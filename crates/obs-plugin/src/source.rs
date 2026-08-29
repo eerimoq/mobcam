@@ -1,10 +1,9 @@
 use crate::devices::{Device, Devices};
 use crate::obs::{self, Audio, Data, Frame, Properties, media, sys, text};
 use mobcam_core::clock::Clock;
-use mobcam_core::decoder::{Decoder, Sink};
 use mobcam_core::ffmpeg::{self, sys as av};
 use mobcam_core::protocol::DeviceHello;
-use mobcam_core::session::{self, Handler};
+use mobcam_core::session::{Handler, Session, Sink};
 use mobcam_core::usbmux::{self, Abort, Stream};
 use mobcam_core::{Level, log, panic};
 use std::ffi::{CStr, c_char, c_void};
@@ -174,7 +173,7 @@ impl Handler for Output {
 
 struct Worker {
     shared: Arc<Shared>,
-    decoder: Option<Decoder>,
+    session: Option<Session>,
     serial: String,
     port: u16,
     reported_failure: Option<usbmux::Error>,
@@ -219,11 +218,11 @@ impl Worker {
     }
 
     fn stream(&mut self, mut stream: Stream, serial: &str) {
-        let Some(decoder) = self.decoder.as_mut() else {
+        let Some(session) = self.session.as_mut() else {
             return;
         };
         let mut output = Output::new(Arc::clone(&self.shared), serial);
-        session::stream(&mut stream, decoder, &mut output, self.shared.as_ref());
+        session.run(&mut stream, &mut output, self.shared.as_ref());
     }
 }
 
@@ -260,18 +259,18 @@ impl Source {
         if self.thread.is_some() {
             return;
         }
-        let Some(mut decoder) = Decoder::new() else {
+        let Some(mut session) = Session::new() else {
             log!(Level::Error, "failed to create the decoder");
             return;
         };
-        decoder.set_hardware(self.hardware_decode);
+        session.set_hardware(self.hardware_decode);
         self.shared.stopping.store(false, Ordering::Relaxed);
         if let Ok(mut signalled) = self.shared.wakeup.0.lock() {
             *signalled = false;
         }
         let worker = Worker {
             shared: Arc::clone(&self.shared),
-            decoder: Some(decoder),
+            session: Some(session),
             serial: self.serial.clone(),
             port: self.port,
             reported_failure: None,

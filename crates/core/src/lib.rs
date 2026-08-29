@@ -1,5 +1,5 @@
 pub mod clock;
-pub mod decoder;
+mod decoder;
 pub mod ffmpeg;
 mod logging;
 pub mod panic;

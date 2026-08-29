@@ -4,10 +4,9 @@ use crate::options::{Options, PixelFormat};
 use crate::v4l2;
 use clap::Parser;
 use mobcam_core::clock::Clock;
-use mobcam_core::decoder::{Decoder, Sink};
 use mobcam_core::ffmpeg::{self, sys as av};
 use mobcam_core::protocol::DeviceHello;
-use mobcam_core::session::{self, Handler};
+use mobcam_core::session::{Handler, Session, Sink};
 use mobcam_core::usbmux;
 use mobcam_core::{Level, log};
 use std::ffi::c_int;
@@ -141,9 +140,9 @@ fn run(options: Options) -> Result<(), String> {
         );
     }
     let nv12 = options.pixel_format == PixelFormat::Auto && device.takes_nv12();
-    let mut decoder = Decoder::new().ok_or("failed to create the decoder")?;
-    decoder.set_hardware(options.hardware_decode);
-    decoder.set_audio(audio.is_some());
+    let mut session = Session::new().ok_or("failed to create the decoder")?;
+    session.set_hardware(options.hardware_decode);
+    session.set_audio(audio.is_some());
     unsafe {
         signal(SIGINT, stop as extern "C" fn(c_int) as usize);
         signal(SIGTERM, stop as extern "C" fn(c_int) as usize);
@@ -181,7 +180,7 @@ fn run(options: Options) -> Result<(), String> {
                     previous_write_frame_timestamp: 0,
                     previous_write_frame_clock: 0,
                 };
-                session::stream(&mut stream, &mut decoder, &mut output, &abort);
+                session.run(&mut stream, &mut output, &abort);
                 if let Some(failure) = output.failure {
                     return Err(failure);
                 }
