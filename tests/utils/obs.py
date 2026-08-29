@@ -221,7 +221,7 @@ class Obs:
         )
 
     def wait_until_connected(self) -> None:
-        LOGGER.info("Waiting for the Mobcam source to connect to the device...")
+        LOGGER.debug("Waiting for the Mobcam source to connect to the device...")
         wait_until(self._is_connected, "the source to connect to the device")
 
     def record(self, seconds: float) -> ObsRecording:
@@ -324,8 +324,7 @@ class Obs:
         self._process.start()
 
     def _wait_until_ready(self) -> None:
-        LOGGER.info("Waiting for OBS to start...")
-
+        LOGGER.debug("Waiting for OBS to start...")
         def check() -> bool:
             try:
                 self._client.connect()
@@ -334,7 +333,6 @@ class Obs:
                 self._client.close()
                 raise
             return True
-
         wait_until(check, "OBS to start", ignore_errors=True)
 
     def _stop_recording(self) -> None:

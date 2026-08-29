@@ -168,10 +168,8 @@ class Moblin:
             "Waiting for a remote control streamer to connect to port %d...",
             self._remote_control_port,
         )
-
         def check() -> bool:
             self.ping()
             return True
-
         wait_until(check, "streamer to connect", ignore_errors=True)
         LOGGER.info("Remote control streamer connected")

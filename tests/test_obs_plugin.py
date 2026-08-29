@@ -15,7 +15,7 @@ def create_suites(moblin: Moblin, _: argparse.Namespace) -> list[list[TestCase]]
 
 def main() -> None:
     parser = create_parser("Run OBS Studio plugin tests.")
-    run("obs", parser, create_suites)
+    run("obs-plugin", parser, create_suites)
 
 
 main()
