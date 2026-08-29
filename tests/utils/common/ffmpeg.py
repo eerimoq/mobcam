@@ -25,6 +25,7 @@ FFMPEG_COMMAND = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-y"]
 RE_VOLUME_DETECT = re.compile(r"(n_samples|mean_volume|max_volume): (-?[\d.]+|-?inf)")
 RE_SILENCE_DETECT = re.compile(r"silence_(start|end): (-?[\d.]+)")
 RE_SHOWINFO_PTS = re.compile(r"^\[Parsed_showinfo.*? pts_time:(\S+)", re.MULTILINE)
+RE_DUPLICATE_FRAME = re.compile(r"drop pts:\d+ pts_time:([\d.]+) drop_count:(\d+)")
 RE_METADATA_TIME = re.compile(r"^\[Parsed_ametadata.*? pts_time:(\S+)", re.MULTILINE)
 RE_ASTATS_RMS_LEVEL = re.compile(r"^\[Parsed_ametadata.*? lavfi\.astats\.(\d)\.RMS_level=(\S+)", re.MULTILINE)
 AUDIO_BAND_SAMPLE_RATE = 16000
@@ -916,6 +917,33 @@ def detect_silence(path: Path, noise_db: float, minimum_duration: float) -> list
 
 def extract_ltc_wav(path: Path, output: Path) -> None:
     ffmpeg_run("-i", str(path), "-vn", "-map", "0:a:0", "-c:a", "pcm_s16le", str(output))
+
+
+@dataclass
+class FfmpegDuplicateFrame:
+    pts: float
+    count: int
+
+
+def ffmpeg_duplicate_frames(path: Path) -> list[FfmpegDuplicateFrame]:
+    output = ffmpeg_run(
+        "-loglevel",
+        "debug",
+        "-i",
+        str(path),
+        "-map",
+        "0:v:0",
+        "-an",
+        "-vf",
+        "mpdecimate",
+        "-f",
+        "null",
+        "-",
+    ).stderr
+    return [
+        FfmpegDuplicateFrame(pts=float(found.group(1)), count=int(found.group(2)))
+        for found in RE_DUPLICATE_FRAME.finditer(output)
+    ]
 
 
 def read_unique_frame_presentation_time_stamps(path: Path, crop: Crop | None = None) -> list[float]:

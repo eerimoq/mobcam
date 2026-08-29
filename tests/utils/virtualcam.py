@@ -5,9 +5,10 @@ from typing import Self
 
 from systest import ManagedProcess
 
+from .common.ffmpeg import FfmpegVideoCodec
+from .common.ffmpeg import ffmpeg_run
+from .common.ffmpeg import video_encoder_args
 from .config import Config
-from .ffmpeg import ffmpeg_run
-from .ffmpeg import video_encoder
 from .recording import Recording
 from .utils import FILES_DIR
 from .utils import ROOT_DIR
@@ -53,10 +54,7 @@ class VirtualCam:
             "passthrough",
             "-enc_time_base:v",
             "1/90000",
-            "-c:v",
-            video_encoder(),
-            "-b:v",
-            "5M",
+            *video_encoder_args(5_000_000, FfmpegVideoCodec.H264, True),
             "-c:a",
             "aac",
             str(video_path),

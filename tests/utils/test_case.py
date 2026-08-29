@@ -4,11 +4,11 @@ from collections.abc import Callable
 import systest
 from systest import wait_until
 
-from .ffmpeg import FfprobeVideoOutput
-from .ffmpeg import ffmpeg_duplicate_frames
-from .ffmpeg import ffprobe_audio
-from .ffmpeg import ffprobe_format
-from .ffmpeg import ffprobe_video
+from .common.ffmpeg import FfprobeVideoOutput
+from .common.ffmpeg import ffmpeg_duplicate_frames
+from .common.ffmpeg import ffprobe_audio
+from .common.ffmpeg import ffprobe_format
+from .common.ffmpeg import ffprobe_video
 from .moblin import Moblin
 from .recording import Recording
 
