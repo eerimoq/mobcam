@@ -1,7 +1,5 @@
 import logging
 import re
-from dataclasses import dataclass
-from pathlib import Path
 from types import TracebackType
 from typing import Self
 
@@ -9,35 +7,14 @@ from systest import ManagedProcess
 
 from .config import Config
 from .ffmpeg import ffmpeg_run
-from .ffmpeg import ffprobe_video
 from .ffmpeg import video_encoder
+from .recording import Recording
 from .utils import FILES_DIR
 from .utils import ROOT_DIR
 from .utils import Log
 
 LOGGER = logging.getLogger(__name__)
 BINARY = str(ROOT_DIR / "target" / "release" / "mobcam-virtualcam")
-
-
-@dataclass
-class Recording:
-    seconds: float
-    video_path: Path
-    timestamps: list[float]
-
-    @property
-    def frames(self) -> int:
-        return len(self.timestamps)
-
-    @property
-    def duration(self) -> float:
-        return self.timestamps[-1] - self.timestamps[0] if len(self.timestamps) > 1 else 0
-
-    def fps(self) -> float:
-        return self.frames / self.duration
-
-    def pts_deltas(self) -> list[float]:
-        return [after - before for before, after in zip(self.timestamps, self.timestamps[1:])]
 
 
 class VirtualCam:
@@ -84,8 +61,7 @@ class VirtualCam:
             "aac",
             str(video_path),
         )
-        timestamps = sorted(frame.pts for frame in ffprobe_video(video_path).frames)
-        return Recording(seconds=seconds, video_path=video_path, timestamps=timestamps)
+        return Recording(seconds, video_path)
 
     def _start_process(self) -> None:
         self._process = ManagedProcess(

@@ -5,7 +5,6 @@ import re
 import signal
 import subprocess
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Self
@@ -14,10 +13,9 @@ from systest import ManagedProcess
 from systest import wait_until
 
 from .config import MOBCAM_PORT
-from .ffmpeg import FfmpegDuplicateFrame
-from .ffmpeg import ffmpeg_duplicate_frames
 from .generate_device_settings import Resolution
 from .obs_websocket import ObsWebSocket
+from .recording import Recording
 from .utils import FILES_DIR
 
 LOGGER = logging.getLogger(__name__)
@@ -71,18 +69,6 @@ ColorRange=Partial
 SampleRate=48000
 ChannelSetup=Stereo
 """
-
-
-@dataclass
-class ObsRecording:
-    seconds: float
-    video_path: Path
-    fps: int
-    render_skipped: int
-    output_skipped: int
-
-    def duplicates(self) -> list[FfmpegDuplicateFrame]:
-        return ffmpeg_duplicate_frames(self.video_path)
 
 
 class Obs:
@@ -149,20 +135,12 @@ class Obs:
         LOGGER.debug("Waiting for the Mobcam source to output video...")
         wait_until(self._has_video, "the source to output video")
 
-    def record(self, seconds: float) -> ObsRecording:
-        before = self._client.request("GetStats")
+    def record(self, seconds: float) -> Recording:
         self._client.request("StartRecord")
         time.sleep(seconds)
         video_path = Path(self._client.request("StopRecord")["outputPath"])
         wait_until(self._is_not_recording, "the recording to stop")
-        after = self._client.request("GetStats")
-        return ObsRecording(
-            seconds=seconds,
-            video_path=video_path,
-            fps=self._fps,
-            render_skipped=after["renderSkippedFrames"] - before["renderSkippedFrames"],
-            output_skipped=after["outputSkippedFrames"] - before["outputSkippedFrames"],
-        )
+        return Recording(seconds, video_path)
 
     def _has_video(self) -> bool:
         if self._process is None or not self._process.is_running():
