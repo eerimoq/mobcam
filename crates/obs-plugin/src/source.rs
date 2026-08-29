@@ -173,7 +173,7 @@ impl Handler for Output {
 
 struct Worker {
     shared: Arc<Shared>,
-    session: Option<Session>,
+    session: Session,
     serial: String,
     port: u16,
     reported_failure: Option<usbmux::Error>,
@@ -199,10 +199,7 @@ impl Worker {
     }
 
     fn connect(&mut self) {
-        let Some(session) = self.session.as_mut() else {
-            return;
-        };
-        let serial = match session.connect(&self.serial, self.port, self.shared.as_ref()) {
+        let serial = match self.session.connect(&self.serial, self.port, self.shared.as_ref()) {
             Ok(serial) => serial,
             Err(error) => {
                 if error != usbmux::Error::Aborted && self.reported_failure != Some(error) {
@@ -214,7 +211,7 @@ impl Worker {
         };
         self.reported_failure = None;
         let mut output = Output::new(Arc::clone(&self.shared), &serial);
-        session.run(&mut output, self.shared.as_ref());
+        self.session.run(&mut output, self.shared.as_ref());
         if !self.shared.stopping.load(Ordering::Relaxed) {
             log!(Level::Info, "disconnected from {serial}");
         }
@@ -256,7 +253,7 @@ impl Source {
             return;
         }
         let Some(mut session) = Session::new() else {
-            log!(Level::Error, "failed to create the decoder");
+            log!(Level::Error, "failed to create the session");
             return;
         };
         session.set_hardware(self.hardware_decode);
@@ -266,7 +263,7 @@ impl Source {
         }
         let worker = Worker {
             shared: Arc::clone(&self.shared),
-            session: Some(session),
+            session,
             serial: self.serial.clone(),
             port: self.port,
             reported_failure: None,
