@@ -35,7 +35,7 @@ class ObsPluginRecord(TestCase):
         with Obs(self._resolution, self._fps, self.name) as obs:
             obs.create_source(buffering=self._buffering)
             self.moblin.go_live()
-            obs.wait_until_connected()
+            obs.wait_until_video()
             time.sleep(2)
             recording = obs.record(10)
             self.moblin.end()

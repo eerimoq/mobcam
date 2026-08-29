@@ -24,7 +24,6 @@ from .ffmpeg import FfmpegDuplicateFrame
 from .ffmpeg import ffmpeg_duplicate_frames
 from .generate_device_settings import Resolution
 from .utils import FILES_DIR
-from .utils import Log
 
 LOGGER = logging.getLogger(__name__)
 LOGGER_OBS = logging.getLogger(__name__ + ".obs")
@@ -48,7 +47,6 @@ OP_IDENTIFIED = 2
 OP_REQUEST = 6
 OP_REQUEST_RESPONSE = 7
 SHUTDOWN_SECONDS = 30
-CONNECTED_RE = re.compile(r"connected to .* on ")
 
 PROFILE_TEMPLATE = """[General]
 Name={name}
@@ -165,11 +163,11 @@ class Obs:
         self._resolution = resolution
         self._fps = fps
         self._name = name
-        self.log = Log()
         self._client = ObsWebSocket(WEBSOCKET_PORT, WEBSOCKET_PASSWORD)
         self._process: ManagedProcess | None = None
         self._websocket_config: bytes | None = None
         self._selection: dict[Path, str] = {}
+        self._scene_item_id = 0
 
     def __enter__(self) -> Self:
         _check_machine()
@@ -203,7 +201,7 @@ class Obs:
         if not any(scene["sceneName"] == SCENE for scene in scenes):
             self._client.request("CreateScene", {"sceneName": SCENE})
         self._client.request("SetCurrentProgramScene", {"sceneName": SCENE})
-        self._client.request(
+        self._scene_item_id = self._client.request(
             "CreateInput",
             {
                 "sceneName": SCENE,
@@ -218,11 +216,11 @@ class Obs:
                     "disconnect_when_hidden": False,
                 },
             },
-        )
+        )["sceneItemId"]
 
-    def wait_until_connected(self) -> None:
-        LOGGER.debug("Waiting for the Mobcam source to connect to the device...")
-        wait_until(self._is_connected, "the source to connect to the device")
+    def wait_until_video(self) -> None:
+        LOGGER.debug("Waiting for the Mobcam source to output video...")
+        wait_until(self._has_video, "the source to output video")
 
     def record(self, seconds: float) -> ObsRecording:
         before = self._client.request("GetStats")
@@ -239,10 +237,14 @@ class Obs:
             output_skipped=after["outputSkippedFrames"] - before["outputSkippedFrames"],
         )
 
-    def _is_connected(self) -> bool:
+    def _has_video(self) -> bool:
         if self._process is None or not self._process.is_running():
             raise Exception("OBS not running")
-        return self.log.match(CONNECTED_RE) is not None
+        transform = self._client.request(
+            "GetSceneItemTransform", {"sceneName": SCENE, "sceneItemId": self._scene_item_id}
+        )["sceneItemTransform"]
+        size = (transform["sourceWidth"], transform["sourceHeight"])
+        return size == self._resolution.size()
 
     def _is_not_recording(self) -> bool:
         return not self._client.request("GetRecordStatus")["outputActive"]
@@ -318,13 +320,13 @@ class Obs:
                 "--disable-missing-files-check",
             ],
             LOGGER_OBS,
-            observer=self.log.add,
             ready=self._wait_until_ready,
         )
         self._process.start()
 
     def _wait_until_ready(self) -> None:
         LOGGER.debug("Waiting for OBS to start...")
+
         def check() -> bool:
             try:
                 self._client.connect()
@@ -333,6 +335,7 @@ class Obs:
                 self._client.close()
                 raise
             return True
+
         wait_until(check, "OBS to start", ignore_errors=True)
 
     def _stop_recording(self) -> None:
