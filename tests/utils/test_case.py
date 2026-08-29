@@ -1,9 +1,6 @@
 import logging
-from collections.abc import Callable
 
-import systest
-from systest import wait_until
-
+from .common import test_case
 from .common.ffmpeg import FfprobeVideoOutput
 from .common.ffmpeg import ffmpeg_duplicate_frames
 from .common.ffmpeg import ffprobe_audio
@@ -22,7 +19,7 @@ DUPLICATE_SETTLE_SECONDS = 0.5
 WORST_DUPLICATES = 5
 
 
-class TestCase(systest.TestCase):
+class TestCase(test_case.TestCase):
     def __init__(self, moblin: Moblin, name: str | None = None) -> None:
         super().__init__(name)
         self.moblin = moblin
@@ -30,10 +27,7 @@ class TestCase(systest.TestCase):
     def teardown(self) -> None:
         self.moblin.end()
 
-    def wait_until(self, check: Callable[[], bool]) -> None:
-        wait_until(check, "condition to be true")
-
-    def assert_recording(
+    def assert_recording2(
         self,
         recording: Recording,
         width: int,

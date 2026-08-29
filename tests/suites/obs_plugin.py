@@ -40,7 +40,7 @@ class ObsPluginRecord(TestCase):
             recording = obs.record(10)
             self.moblin.end()
         width, height = self._resolution.size()
-        self.assert_recording(recording, width, height, self._fps, self._buffering)
+        self.assert_recording2(recording, width, height, self._fps, self._buffering)
 
 
 def tests(moblin: Moblin) -> list[TestCase]:

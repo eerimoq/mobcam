@@ -27,7 +27,7 @@ class VirtualcamStream(TestCase):
             recording = virtualcam.record(10, self.name)
             self.moblin.end()
         width, height = self._resolution.size()
-        self.assert_recording(recording, width, height, self._fps)
+        self.assert_recording2(recording, width, height, self._fps)
 
 
 def tests(moblin: Moblin) -> list[TestCase]:
