@@ -64,7 +64,11 @@ def base_settings(config: Config, remote_control_port: int) -> dict[str, Any]:
         },
         "verboseStatuses": True,
         "showAllSettings": True,
-        "debug": {"logLevel": "Debug"},
+        "debug": {
+            "logLevel": "Debug",
+            "builtinAudioAndVideoDelay": 0,
+            "builtinAudioAndVideoDelay70msMigrated": True,
+        },
         "show": {"stream": True, "cpu": True, "microphone": True, "cameras": True},
     }
 
