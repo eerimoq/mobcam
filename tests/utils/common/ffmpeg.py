@@ -109,6 +109,10 @@ SOFTWARE_VIDEO_ENCODERS = {
     FfmpegVideoCodec.H264: "libx264",
     FfmpegVideoCodec.HEVC: "libx265",
 }
+HARDWARE_REALTIME_ARGS = {
+    "h264_videotoolbox": ["-realtime", "1"],
+    "hevc_videotoolbox": ["-realtime", "1"],
+}
 
 
 def _log_level(line: str) -> int:
@@ -173,7 +177,7 @@ def video_encoder_args(bitrate: int, codec: FfmpegVideoCodec, realtime: bool) ->
     args = ["-c:v", encoder, "-b:v", str(bitrate)]
     if is_hardware:
         if realtime:
-            args += ["-realtime", "1"]
+            args += HARDWARE_REALTIME_ARGS.get(encoder, [])
     else:
         args += [
             "-maxrate",
