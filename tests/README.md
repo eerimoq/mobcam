@@ -76,3 +76,29 @@ copies the logs and the recordings back when it is done.
 sudo apt install rsync
 make test-virtualcam-belabox
 ```
+
+## BELABOX tips and tricks
+
+### Passwordless ssh
+
+```bash
+ssh-copy-id user@belabox.local
+```
+
+### Permanently enable ssh
+
+```bash
+sudo systemctl enable ssh
+```
+
+### Passwordless sudo
+
+```bash
+sudo visudo
+```
+
+and add this line at the end of the file
+
+```bash
+user ALL=(ALL) NOPASSWD: ALL
+```
