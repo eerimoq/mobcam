@@ -32,17 +32,17 @@ WORST_DUPLICATES = 5
 
 
 class TestCase(systest.TestCase):
-    def __init__(self, moblin: Moblin, name: str | None = None):
+    def __init__(self, moblin: Moblin, name: str | None = None) -> None:
         super().__init__(name)
         self.moblin = moblin
 
-    def teardown(self):
+    def teardown(self) -> None:
         self.moblin.end()
 
-    def wait_until(self, check: Callable[[], bool]):
+    def wait_until(self, check: Callable[[], bool]) -> None:
         wait_until(check, "condition to be true")
 
-    def assert_camera_recording(self, recording: Recording, width: int, height: int, fps: int):
+    def assert_camera_recording(self, recording: Recording, width: int, height: int, fps: int) -> None:
         self._assert_pts_deltas(recording, fps)
         video = ffprobe_video(recording.video_path)
         recorded_audio = ffprobe_audio(recording.video_path)
@@ -56,7 +56,7 @@ class TestCase(systest.TestCase):
 
     def assert_obs_recording(
         self, recording: ObsRecording, width: int, height: int, fps: int, buffering: bool
-    ):
+    ) -> None:
         video = ffprobe_video(recording.video_path)
         recorded_audio = ffprobe_audio(recording.video_path)
         length = ffprobe_format(recording.video_path).duration
@@ -74,7 +74,7 @@ class TestCase(systest.TestCase):
         self.assert_equal(recording.render_skipped, 0)
         self.assert_equal(recording.output_skipped, 0)
 
-    def _assert_duplicate_frames(self, recording: ObsRecording, length: float):
+    def _assert_duplicate_frames(self, recording: ObsRecording, length: float) -> None:
         all_duplicates = recording.duplicates()
         duplicates = [
             duplicate
@@ -97,7 +97,7 @@ class TestCase(systest.TestCase):
             )
         self.assert_equal(len(duplicates), 0)
 
-    def _assert_pts_deltas(self, recording: Recording, fps: int):
+    def _assert_pts_deltas(self, recording: Recording, fps: int) -> None:
         deltas = recording.pts_deltas()
         if len(deltas) == 0:
             return

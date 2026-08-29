@@ -8,9 +8,10 @@ import systest
 
 from .config import Config
 from .moblin import Moblin
+from .test_case import TestCase
 from .utils import FILES_DIR
 
-MakeTests = Callable[[Moblin, argparse.Namespace], list]
+MakeTests = Callable[[Moblin, argparse.Namespace], list[list[TestCase]]]
 
 
 class HelpFormatter(argparse.HelpFormatter):
@@ -27,12 +28,12 @@ def create_parser(description: str) -> argparse.ArgumentParser:
     return parser
 
 
-def _remove_previous_run_artifacts():
+def _remove_previous_run_artifacts() -> None:
     shutil.rmtree(FILES_DIR, ignore_errors=True)
     FILES_DIR.mkdir(parents=True)
 
 
-def run(name: str, parser: argparse.ArgumentParser, make_tests: MakeTests):
+def run(name: str, parser: argparse.ArgumentParser, make_tests: MakeTests) -> None:
     _remove_previous_run_artifacts()
     sequencer = systest.setup(name, parser, add_date_to_log_filename=False)
     sequencer.remove_filtered_testcases = True

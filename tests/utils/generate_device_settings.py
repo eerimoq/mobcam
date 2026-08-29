@@ -2,6 +2,7 @@ import json
 import zipfile
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from .config import MOBCAM_URL
@@ -44,7 +45,7 @@ def uuid() -> str:
     return str(uuid4()).upper()
 
 
-def base_settings(config: Config, remote_control_port: int):
+def base_settings(config: Config, remote_control_port: int) -> dict[str, Any]:
     return {
         "scenes": [
             {
@@ -68,7 +69,7 @@ def base_settings(config: Config, remote_control_port: int):
     }
 
 
-def stream_settings(video_codec: VideoCodec, resolution: Resolution, fps: int):
+def stream_settings(video_codec: VideoCodec, resolution: Resolution, fps: int) -> dict[str, Any]:
     return {
         "id": uuid(),
         "name": "Mobcam",
@@ -83,7 +84,9 @@ def stream_settings(video_codec: VideoCodec, resolution: Resolution, fps: int):
     }
 
 
-def create_settings_file(settings, output_file: Path, files: dict[str, Path] | None = None):
+def create_settings_file(
+    settings: dict[str, Any], output_file: Path, files: dict[str, Path] | None = None
+) -> None:
     with zipfile.ZipFile(output_file, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("settings.json", json.dumps(settings, indent=4))
         for name, path in (files or {}).items():

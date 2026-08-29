@@ -1,5 +1,6 @@
 import tomllib
 from pathlib import Path
+from typing import Any
 
 from xdg_base_dirs import xdg_config_home
 
@@ -20,30 +21,38 @@ def find_config_toml() -> Path:
 
 
 class Config:
-    def __init__(self):
+    def __init__(self) -> None:
         self.config_toml = find_config_toml()
-        self._config = tomllib.loads(self.config_toml.read_text())
+        self._config: dict[str, Any] = tomllib.loads(self.config_toml.read_text())
 
-    def general(self):
-        return self._config["general"]
+    def general(self) -> dict[str, Any]:
+        general: dict[str, Any] = self._config["general"]
+        return general
 
     def remote_control_port(self) -> int:
-        return self.general()["remote-control-port"]
+        port: int = self.general()["remote-control-port"]
+        return port
 
     def tester_ip_address(self) -> str:
-        return self.general()["tester-ip-address"]
+        address: str = self.general()["tester-ip-address"]
+        return address
 
     def virtualcam_service(self) -> str:
-        return self._virtualcam()["service"]
+        service: str = self._virtualcam()["service"]
+        return service
 
     def video_device(self) -> str:
-        return self._virtualcam()["video-device"]
+        device: str = self._virtualcam()["video-device"]
+        return device
 
     def audio_playback_device(self) -> str:
-        return self._virtualcam()["audio-playback-device"]
+        device: str = self._virtualcam()["audio-playback-device"]
+        return device
 
     def audio_capture_device(self) -> str:
-        return self._virtualcam()["audio-capture-device"]
+        device: str = self._virtualcam()["audio-capture-device"]
+        return device
 
-    def _virtualcam(self):
-        return self._config["virtualcam"]
+    def _virtualcam(self) -> dict[str, Any]:
+        virtualcam: dict[str, Any] = self._config["virtualcam"]
+        return virtualcam

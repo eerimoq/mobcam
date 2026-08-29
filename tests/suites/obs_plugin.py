@@ -26,12 +26,12 @@ class ObsPluginRecord(TestCase):
         self._fps = fps
         self._buffering = buffering
 
-    def setup(self):
+    def setup(self) -> None:
         self.moblin.import_settings(
             overrides={"streams": [stream_settings(self._video_codec, self._resolution, self._fps)]}
         )
 
-    def run(self):
+    def run(self) -> None:
         with Obs(self._resolution, self._fps, self.name) as obs:
             obs.create_source(buffering=self._buffering)
             self.moblin.go_live()
@@ -43,7 +43,7 @@ class ObsPluginRecord(TestCase):
         self.assert_obs_recording(recording, width, height, self._fps, self._buffering)
 
 
-def tests(moblin: Moblin):
+def tests(moblin: Moblin) -> list[TestCase]:
     return [
         ObsPluginRecord(moblin, VideoCodec.H264, Resolution.FULL_HD, 30, True),
         ObsPluginRecord(moblin, VideoCodec.H264, Resolution.FULL_HD, 60, True),

@@ -8,6 +8,7 @@ from dataclasses import field
 from fractions import Fraction
 from functools import cache
 from pathlib import Path
+from typing import Any
 
 LOGGER = logging.getLogger(__name__)
 FFMPEG = "ffmpeg"
@@ -16,7 +17,7 @@ FFMPEG_COMMAND = [FFMPEG, "-hide_banner", "-nostdin", "-nostats", "-y"]
 DUPLICATE_FRAME_RE = re.compile(r"drop pts:\d+ pts_time:([\d.]+) drop_count:(\d+)")
 
 
-def _run_logged(command: list[str], text: bool):
+def _run_logged(command: list[str], text: bool) -> subprocess.CompletedProcess[Any]:
     started = time.monotonic()
     try:
         return subprocess.run(command, check=True, capture_output=True, text=text)
@@ -24,11 +25,11 @@ def _run_logged(command: list[str], text: bool):
         LOGGER.debug("Command (%.3f s): %s", time.monotonic() - started, " ".join(command))
 
 
-def _run(command: list[str]):
+def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     return _run_logged(command, True)
 
 
-def ffprobe_run(path: Path, *args):
+def ffprobe_run(path: Path, *args: str) -> dict[str, Any]:
     command = [
         FFPROBE,
         "-of",
@@ -36,11 +37,11 @@ def ffprobe_run(path: Path, *args):
         *args,
         str(path),
     ]
-    output = _run(command).stdout
-    return json.loads(output)
+    output: dict[str, Any] = json.loads(_run(command).stdout)
+    return output
 
 
-def ffmpeg_run(*args):
+def ffmpeg_run(*args: str) -> subprocess.CompletedProcess[str]:
     return _run(FFMPEG_COMMAND + [*args])
 
 
@@ -59,8 +60,9 @@ def video_encoder() -> str:
     return "h264_rkmpp" if ffmpeg_supports("encoders", "h264_rkmpp") else "libx264"
 
 
-def _frame_pts(frame) -> float:
-    return float(frame.get("pts_time", frame.get("pkt_pts_time")))
+def _frame_pts(frame: dict[str, Any]) -> float:
+    pts: Any = frame.get("pts_time", frame.get("pkt_pts_time"))
+    return float(pts)
 
 
 @dataclass
@@ -68,7 +70,7 @@ class FfprobeVideoOutputFrame:
     pts: float
     picture_type: str
 
-    def __init__(self, frame):
+    def __init__(self, frame: dict[str, Any]) -> None:
         self.pts = _frame_pts(frame)
         self.picture_type = frame["pict_type"]
 
@@ -89,7 +91,7 @@ class FfprobeAudioOutputFrame:
     channels: int
     number_of_samples: int
 
-    def __init__(self, frame):
+    def __init__(self, frame: dict[str, Any]) -> None:
         self.pts = _frame_pts(frame)
         self.channels = frame["channels"]
         self.number_of_samples = frame["nb_samples"]
@@ -147,7 +149,7 @@ def ffmpeg_duplicate_frames(path: Path) -> list[FfmpegDuplicateFrame]:
     ]
 
 
-def ffprobe_video(path: Path):
+def ffprobe_video(path: Path) -> FfprobeVideoOutput:
     output = ffprobe_run(
         path,
         "-select_streams",
@@ -167,14 +169,14 @@ def ffprobe_video(path: Path):
     )
 
 
-def _get_fps(stream, name: str) -> Fraction | None:
+def _get_fps(stream: dict[str, Any], name: str) -> Fraction | None:
     try:
         return Fraction(stream[name])
     except Exception:
         return None
 
 
-def ffprobe_audio(path) -> FfprobeAudioOutput:
+def ffprobe_audio(path: Path) -> FfprobeAudioOutput:
     output = ffprobe_run(
         path,
         "-select_streams",
@@ -197,7 +199,7 @@ def ffprobe_audio(path) -> FfprobeAudioOutput:
     )
 
 
-def ffprobe_format(path):
+def ffprobe_format(path: Path) -> FfprobeFormatOutput:
     output = ffprobe_run(path, "-show_entries", "format=duration,start_time")
     return FfprobeFormatOutput(
         duration=float(output["format"]["duration"]),
@@ -205,7 +207,7 @@ def ffprobe_format(path):
     )
 
 
-def ffprobe(path: Path):
+def ffprobe(path: Path) -> FfprobeOutput:
     return FfprobeOutput(
         video=ffprobe_video(path),
         audio=ffprobe_audio(path),

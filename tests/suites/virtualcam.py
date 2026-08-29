@@ -10,17 +10,17 @@ from ..utils.virtualcam import VirtualCam
 
 class VirtualcamStream(TestCase):
     def __init__(self, moblin: Moblin, video_codec: VideoCodec, resolution: Resolution, fps: int):
-        super().__init__(moblin, f"Stream{video_codec.name}-{resolution}@{fps}")
+        super().__init__(moblin, f"Stream{resolution}@{fps}{video_codec.name}")
         self._video_codec = video_codec
         self._resolution = resolution
         self._fps = fps
 
-    def setup(self):
+    def setup(self) -> None:
         self.moblin.import_settings(
             overrides={"streams": [stream_settings(self._video_codec, self._resolution, self._fps)]}
         )
 
-    def run(self):
+    def run(self) -> None:
         with VirtualCam(self.moblin.config) as virtualcam:
             self.moblin.go_live()
             time.sleep(2)
@@ -30,7 +30,7 @@ class VirtualcamStream(TestCase):
         self.assert_camera_recording(recording, width=width, height=height, fps=self._fps)
 
 
-def tests(moblin: Moblin):
+def tests(moblin: Moblin) -> list[TestCase]:
     return [
         VirtualcamStream(moblin, VideoCodec.H264, Resolution.FULL_HD, 30),
         VirtualcamStream(moblin, VideoCodec.H264, Resolution.FULL_HD, 60),

@@ -7,7 +7,7 @@ from .utils.config import Config
 from .utils.generate_device_settings import base_settings
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--force-stdout", action="store_true")
     args = parser.parse_args()

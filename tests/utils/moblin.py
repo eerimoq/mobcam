@@ -6,6 +6,9 @@ import threading
 import time
 from base64 import b64encode
 from pathlib import Path
+from types import TracebackType
+from typing import Any
+from typing import Self
 
 from systest import ManagedProcess
 from systest import wait_until
@@ -25,29 +28,29 @@ HOST = "127.0.0.1"
 
 
 class AssistantEvents:
-    def __init__(self, port: int):
+    def __init__(self, port: int) -> None:
         self._port = port
         self._stopped = threading.Event()
         self._connection: ClientConnection | None = None
         self._thread = threading.Thread(target=self._listen, daemon=True)
         self._state_lock = threading.Lock()
-        self._state: dict = {}
+        self._state: dict[str, Any] = {}
 
-    def state(self) -> dict:
+    def state(self) -> dict[str, Any]:
         with self._state_lock:
             return dict(self._state)
 
-    def start(self):
+    def start(self) -> None:
         self._thread.start()
 
-    def stop(self):
+    def stop(self) -> None:
         self._stopped.set()
         connection = self._connection
         if connection is not None:
             connection.close()
         self._thread.join(timeout=5)
 
-    def _listen(self):
+    def _listen(self) -> None:
         while not self._stopped.is_set():
             try:
                 with connect(f"ws://{HOST}:{self._port}/events", max_size=None) as connection:
@@ -60,7 +63,7 @@ class AssistantEvents:
                 self._connection = None
             self._stopped.wait(1)
 
-    def _handle_message(self, message):
+    def _handle_message(self, message: str | bytes) -> None:
         for kind, data in json.loads(message).items():
             if kind == "log":
                 LOGGER_EVENTS.debug("%s", data["entry"])
@@ -72,7 +75,7 @@ class AssistantEvents:
 
 
 class Moblin:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config) -> None:
         self.config = config
         self._remote_control_port = config.remote_control_port()
         self._server = ManagedProcess(
@@ -92,16 +95,21 @@ class Moblin:
         )
         self._events = AssistantEvents(self._remote_control_port)
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         self._server.start()
         self._events.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         self._events.stop()
         self._server.stop()
 
-    def import_settings(self, overrides, files: dict[str, Path] | None = None):
+    def import_settings(self, overrides: dict[str, Any], files: dict[str, Path] | None = None) -> None:
         settings = base_settings(self.config, self._remote_control_port)
         settings.update(overrides)
         with tempfile.TemporaryDirectory() as settings_dir:
@@ -115,43 +123,47 @@ class Moblin:
                 pass
             time.sleep(2)
 
-    def set_scene(self, name: SceneName):
+    def set_scene(self, name: SceneName) -> None:
         self._request({"setScene": {"id": self._get_settings_id("scenes", name)}})
 
-    def set_muted(self, on: bool):
+    def set_muted(self, on: bool) -> None:
         self._request({"setMute": {"on": on}})
 
-    def get_state(self) -> dict:
+    def get_state(self) -> dict[str, Any]:
         return self._events.state()
 
-    def go_live(self):
+    def go_live(self) -> None:
         self._request({"setLive": {"on": True}})
 
-    def end(self):
+    def end(self) -> None:
         self._request({"setLive": {"on": False}})
 
-    def ping(self):
+    def ping(self) -> None:
         self._get_settings()
 
-    def get_status(self):
-        return self._request({"getStatus": {}})["data"]["getStatus"]
+    def get_status(self) -> dict[str, Any]:
+        status: dict[str, Any] = self._request({"getStatus": {}})["data"]["getStatus"]
+        return status
 
-    def _request(self, data):
+    def _request(self, data: dict[str, Any]) -> dict[str, Any]:
         url = f"ws://{HOST}:{self._remote_control_port}/client"
         with connect(url, max_size=None) as server:
             server.send(json.dumps({"type": "request", "data": data}))
-            return json.loads(server.recv())["data"]
+            response: dict[str, Any] = json.loads(server.recv())["data"]
+            return response
 
-    def _get_settings(self):
-        return self._request({"getSettings": {}})["data"]["getSettings"]["data"]
+    def _get_settings(self) -> dict[str, Any]:
+        settings: dict[str, Any] = self._request({"getSettings": {}})["data"]["getSettings"]["data"]
+        return settings
 
     def _get_settings_id(self, kind: str, name: str) -> str:
         for item in self._get_settings()[kind]:
             if item["name"] == name:
-                return item["id"]
+                item_id: str = item["id"]
+                return item_id
         raise Exception(f"Unknown {kind} item {name}")
 
-    def _wait_until_streamer_is_connected(self):
+    def _wait_until_streamer_is_connected(self) -> None:
         LOGGER.info(
             "Waiting for a remote control streamer to connect to port %d...",
             self._remote_control_port,

@@ -2,6 +2,8 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from types import TracebackType
+from typing import Self
 
 from systest import ManagedProcess
 
@@ -39,7 +41,7 @@ class Recording:
 
 
 class VirtualCam:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config) -> None:
         self._config = config
         self._service = config.virtualcam_service()
         self._video_device = config.video_device()
@@ -47,11 +49,16 @@ class VirtualCam:
         self.log = Log()
         self._process: ManagedProcess | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         self._start_process()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         self._stop_process()
 
     def record(self, seconds: float, name: str) -> Recording:
@@ -80,7 +87,7 @@ class VirtualCam:
         timestamps = sorted(frame.pts for frame in ffprobe_video(video_path).frames)
         return Recording(seconds=seconds, video_path=video_path, timestamps=timestamps)
 
-    def _start_process(self):
+    def _start_process(self) -> None:
         self._process = ManagedProcess(
             [
                 BINARY,
@@ -97,12 +104,12 @@ class VirtualCam:
         )
         self._process.start()
 
-    def _stop_process(self):
+    def _stop_process(self) -> None:
         if self._process is not None:
             self._process.stop()
             self._process = None
 
-    def _is_running_and(self, pattern: re.Pattern) -> bool:
+    def _is_running_and(self, pattern: re.Pattern[str]) -> bool:
         if self._process is None or not self._process.is_running():
             raise Exception("mobcam-virtualcam not running")
         return self.log.match(pattern) is not None

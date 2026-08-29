@@ -1,12 +1,5 @@
-MYPY_DIRS += scripts/build.py
-MYPY_DIRS += scripts/ci.py
-
-PYTHON_DIRS += $(MYPY_DIRS)
-PYTHON_DIRS += tests
-
-CODE_DIRS += $(PYTHON_DIRS)
-CODE_DIRS += scripts/belabox/install.sh
-CODE_DIRS += scripts/belabox/test.sh
+CODE_DIRS += scripts
+CODE_DIRS += tests
 
 CONFIG_DIR = .config
 PYTHON = python
@@ -63,18 +56,18 @@ test-generate-device-settings-stdout:
 
 style:
 	cargo fmt -- --config-path $(CONFIG_DIR)/rustfmt.toml
-	isort --settings-path $(CONFIG_DIR)/isort.cfg $(PYTHON_DIRS)
-	ruff format --config $(CONFIG_DIR)/ruff.toml $(PYTHON_DIRS)
+	isort --settings-path $(CONFIG_DIR)/isort.cfg $(CODE_DIRS)
+	ruff format --config $(CONFIG_DIR)/ruff.toml $(CODE_DIRS)
 
 style-check:
 	cargo fmt --check -- --config-path $(CONFIG_DIR)/rustfmt.toml
-	isort --settings-path $(CONFIG_DIR)/isort.cfg $(PYTHON_DIRS) --check
-	ruff format --config $(CONFIG_DIR)/ruff.toml $(PYTHON_DIRS) --check
+	isort --settings-path $(CONFIG_DIR)/isort.cfg $(CODE_DIRS) --check
+	ruff format --config $(CONFIG_DIR)/ruff.toml $(CODE_DIRS) --check
 
 lint:
 	cargo clippy --workspace --all-targets -- --deny warnings
-	ruff check --config $(CONFIG_DIR)/ruff.toml $(PYTHON_DIRS)
-	mypy --config-file $(CONFIG_DIR)/mypy.ini $(MYPY_DIRS)
+	ruff check --config $(CONFIG_DIR)/ruff.toml $(CODE_DIRS)
+	mypy --config-file $(CONFIG_DIR)/mypy.ini $(CODE_DIRS)
 
 spell-check:
 	codespell --config $(CONFIG_DIR)/codespellrc $(CODE_DIRS)

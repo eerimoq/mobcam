@@ -9,6 +9,9 @@ from base64 import b64encode
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
+from types import TracebackType
+from typing import Any
+from typing import Self
 from uuid import uuid4
 
 from systest import ManagedProcess
@@ -88,12 +91,12 @@ def _authentication(password: str, salt: str, challenge: str) -> str:
 
 
 class ObsWebSocket:
-    def __init__(self, port: int, password: str):
+    def __init__(self, port: int, password: str) -> None:
         self._url = f"ws://{HOST}:{port}"
         self._password = password
         self._connection: ClientConnection | None = None
 
-    def connect(self):
+    def connect(self) -> None:
         connection = connect(self._url, max_size=None, open_timeout=5)
         try:
             hello = json.loads(connection.recv())["d"]
@@ -112,12 +115,12 @@ class ObsWebSocket:
             raise
         self._connection = connection
 
-    def close(self):
+    def close(self) -> None:
         if self._connection is not None:
             self._connection.close()
             self._connection = None
 
-    def request(self, request_type: str, data: dict | None = None) -> dict:
+    def request(self, request_type: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
         if self._connection is None:
             raise Exception("Not connected to OBS")
         request_id = str(uuid4())
@@ -141,7 +144,8 @@ class ObsWebSocket:
             status = response["requestStatus"]
             if not status["result"]:
                 raise Exception(f"{request_type} failed: {status}")
-            return response.get("responseData") or {}
+            response_data: dict[str, Any] = response.get("responseData") or {}
+            return response_data
 
 
 @dataclass
@@ -157,7 +161,7 @@ class ObsRecording:
 
 
 class Obs:
-    def __init__(self, resolution: Resolution, fps: int, name: str):
+    def __init__(self, resolution: Resolution, fps: int, name: str) -> None:
         self._resolution = resolution
         self._fps = fps
         self._name = name
@@ -167,7 +171,7 @@ class Obs:
         self._websocket_config: bytes | None = None
         self._selection: dict[Path, str] = {}
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         _check_machine()
         self._write_profile()
         self._write_collection()
@@ -181,7 +185,12 @@ class Obs:
             raise
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         self._stop_recording()
         self._client.close()
         self._stop_process()
@@ -189,7 +198,7 @@ class Obs:
         _restore_selection(self._selection)
         _remove_sentinel()
 
-    def create_source(self, hardware_decode: bool = True, buffering: bool = False):
+    def create_source(self, hardware_decode: bool = True, buffering: bool = False) -> None:
         scenes = self._client.request("GetSceneList")["scenes"]
         if not any(scene["sceneName"] == SCENE for scene in scenes):
             self._client.request("CreateScene", {"sceneName": SCENE})
@@ -211,7 +220,7 @@ class Obs:
             },
         )
 
-    def wait_until_connected(self):
+    def wait_until_connected(self) -> None:
         LOGGER.info("Waiting for the Mobcam source to connect to the device...")
         wait_until(self._is_connected, "the source to connect to the device")
 
@@ -238,7 +247,7 @@ class Obs:
     def _is_not_recording(self) -> bool:
         return not self._client.request("GetRecordStatus")["outputActive"]
 
-    def _write_profile(self):
+    def _write_profile(self) -> None:
         width, height = self._resolution.size()
         directory = CONFIG_DIR / "basic" / "profiles" / PROFILE
         directory.mkdir(parents=True, exist_ok=True)
@@ -253,7 +262,7 @@ class Obs:
             )
         )
 
-    def _write_collection(self):
+    def _write_collection(self) -> None:
         directory = CONFIG_DIR / "basic" / "scenes"
         directory.mkdir(parents=True, exist_ok=True)
         (directory / f"{COLLECTION}.json").write_text(
@@ -271,7 +280,7 @@ class Obs:
             )
         )
 
-    def _enable_websocket(self):
+    def _enable_websocket(self) -> None:
         WEBSOCKET_CONFIG.parent.mkdir(parents=True, exist_ok=True)
         if WEBSOCKET_CONFIG.exists():
             self._websocket_config = WEBSOCKET_CONFIG.read_bytes()
@@ -289,14 +298,14 @@ class Obs:
             )
         )
 
-    def _restore_websocket(self):
+    def _restore_websocket(self) -> None:
         if self._websocket_config is None:
             WEBSOCKET_CONFIG.unlink(missing_ok=True)
         else:
             WEBSOCKET_CONFIG.write_bytes(self._websocket_config)
             self._websocket_config = None
 
-    def _start_process(self):
+    def _start_process(self) -> None:
         self._process = ManagedProcess(
             [
                 str(BINARY),
@@ -314,7 +323,7 @@ class Obs:
         )
         self._process.start()
 
-    def _wait_until_ready(self):
+    def _wait_until_ready(self) -> None:
         LOGGER.info("Waiting for OBS to start...")
 
         def check() -> bool:
@@ -328,14 +337,14 @@ class Obs:
 
         wait_until(check, "OBS to start", ignore_errors=True)
 
-    def _stop_recording(self):
+    def _stop_recording(self) -> None:
         try:
             if self._client.request("GetRecordStatus")["outputActive"]:
                 self._client.request("StopRecord")
         except Exception:
             pass
 
-    def _stop_process(self):
+    def _stop_process(self) -> None:
         process = self._process
         if process is None:
             return
@@ -350,7 +359,7 @@ class Obs:
         self._process = None
 
 
-def _check_machine():
+def _check_machine() -> None:
     if not BINARY.is_file():
         raise Exception(f"No OBS Studio in {BINARY}")
     if not CONFIG_DIR.is_dir():
@@ -364,7 +373,7 @@ def _read_selection() -> dict[Path, str]:
     return {path: path.read_text() for path in SELECTION_FILES if path.is_file()}
 
 
-def _restore_selection(selection: dict[Path, str]):
+def _restore_selection(selection: dict[Path, str]) -> None:
     for path, text in selection.items():
         if not path.is_file():
             continue
@@ -374,11 +383,11 @@ def _restore_selection(selection: dict[Path, str]):
             if found is None:
                 continue
             line = f"{key}={found.group(1)}"
-            current = re.sub(rf"^{key}=.*$", lambda _, line=line: line, current, count=1, flags=re.MULTILINE)
+            current = re.sub(rf"^{key}=.*$", lambda _: line, current, count=1, flags=re.MULTILINE)
         path.write_text(current)
 
 
-def _remove_sentinel():
+def _remove_sentinel() -> None:
     if SENTINEL_DIR.is_dir():
         for path in SENTINEL_DIR.iterdir():
             path.unlink(missing_ok=True)
