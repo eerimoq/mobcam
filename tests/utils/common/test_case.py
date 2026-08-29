@@ -71,13 +71,14 @@ class TestCase(systest.TestCase):
         fps: int = 30,
         video_codec: FfmpegVideoCodec = FfmpegVideoCodec.HEVC,
         channels: int = 1,
+        check_presentation_time_stamps: bool = True,
     ) -> None:
         probe = probe_recording(
             recording, has_qr_codes, duplicated_frames_crops, has_audio_time_codes, files_dir
         )
         self.assert_greater(probe.format.duration, 8, "Minimum recording length.")
         self.assert_less(probe.format.duration, 14, "Maximum recording length.")
-        self._assert_video(probe, recording, width, height, fps, video_codec)
+        self._assert_video(probe, recording, width, height, fps, video_codec, check_presentation_time_stamps)
         self._assert_audio(probe, recording, channels)
 
     def assert_timecodes(self, recording: Path, start: datetime, end: datetime, fps: int = 30) -> None:
@@ -155,15 +156,17 @@ class TestCase(systest.TestCase):
         height: int,
         fps: int,
         video_codec: FfmpegVideoCodec,
+        check_presentation_time_stamps: bool,
     ) -> None:
         video = probe.video
         self.assert_equal(video.codec, video_codec)
         self.assert_equal(video.width, width)
         self.assert_equal(video.height, height)
         self.assert_fps(video.average_fps, fps)
-        self.assert_presentation_time_stamps(
-            recording, 1 / fps, [frame.pts for frame in video.frames], "video"
-        )
+        if check_presentation_time_stamps:
+            self.assert_presentation_time_stamps(
+                recording, 1 / fps, [frame.pts for frame in video.frames], "video"
+            )
         self._assert_video_frame_numbers_increasing(probe.qr_codes)
         picture_types = {frame.picture_type for frame in video.frames}
         self.assert_equal(len(picture_types), 3)
@@ -171,7 +174,9 @@ class TestCase(systest.TestCase):
         self.assert_in("P", picture_types)
         self.assert_in("B", picture_types)
         for presentation_time_stamps in probe.unique_frame_presentation_time_stamps:
-            self._assert_no_duplicated_frames(fps, video, recording, presentation_time_stamps)
+            self._assert_no_duplicated_frames(
+                fps, video, recording, presentation_time_stamps, check_presentation_time_stamps
+            )
 
     def _assert_no_duplicated_frames(
         self,
@@ -179,8 +184,10 @@ class TestCase(systest.TestCase):
         video: FfprobeVideoOutput,
         recording: Path,
         presentation_time_stamps: list[float],
+        check_presentation_time_stamps: bool,
     ) -> None:
-        self.assert_presentation_time_stamps(recording, 1 / fps, presentation_time_stamps, "video")
+        if check_presentation_time_stamps:
+            self.assert_presentation_time_stamps(recording, 1 / fps, presentation_time_stamps, "video")
         self.assert_equal(len(presentation_time_stamps), len(video.frames))
 
     def _assert_audio(self, probe: RecordingProbe, recording: Path, channels: int) -> None:
