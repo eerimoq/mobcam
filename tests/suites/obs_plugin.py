@@ -8,18 +8,18 @@ from ..utils.obs import Obs
 from ..utils.test_case import TestCase
 
 
-class Record(TestCase):
+class ObsPluginRecord(TestCase):
     def __init__(
         self,
         moblin: Moblin,
         video_codec: VideoCodec,
         resolution: Resolution,
         fps: int,
-        buffering: bool = False,
+        buffering: bool,
     ):
-        name = f"Record{video_codec.name}-{resolution}@{fps}"
-        if buffering:
-            name += "-Buffering"
+        name = f"ObsPluginRecord{resolution}@{fps}{video_codec.name}"
+        if not buffering:
+            name += "Unbuffered"
         super().__init__(moblin, name)
         self._video_codec = video_codec
         self._resolution = resolution
@@ -40,14 +40,15 @@ class Record(TestCase):
             recording = obs.record(10)
             self.moblin.end()
         width, height = self._resolution.size()
-        self.assert_obs_recording(recording, width=width, height=height, fps=self._fps)
+        self.assert_obs_recording(recording, width, height, self._fps, self._buffering)
 
 
 def tests(moblin: Moblin):
     return [
-        Record(moblin, VideoCodec.H264, Resolution.FULL_HD, 30),
-        Record(moblin, VideoCodec.H264, Resolution.FULL_HD, 60),
-        Record(moblin, VideoCodec.H265, Resolution.FULL_HD, 30),
-        Record(moblin, VideoCodec.H265, Resolution.FULL_HD, 60),
-        Record(moblin, VideoCodec.H265, Resolution.FULL_HD, 30, buffering=True),
+        ObsPluginRecord(moblin, VideoCodec.H264, Resolution.FULL_HD, 30, True),
+        ObsPluginRecord(moblin, VideoCodec.H264, Resolution.FULL_HD, 60, True),
+        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 30, True),
+        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 60, True),
+        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 30, False),
+        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 60, False),
     ]

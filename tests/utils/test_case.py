@@ -54,11 +54,14 @@ class TestCase(systest.TestCase):
         self.assert_greater(length, recording.seconds - MAXIMUM_VIDEO_LENGTH_DIFFERENCE)
         self.assert_less(length, recording.seconds + MAXIMUM_VIDEO_LENGTH_DIFFERENCE)
 
-    def assert_obs_recording(self, recording: ObsRecording, width: int, height: int, fps: int):
+    def assert_obs_recording(
+        self, recording: ObsRecording, width: int, height: int, fps: int, buffering: bool
+    ):
         video = ffprobe_video(recording.video_path)
         recorded_audio = ffprobe_audio(recording.video_path)
         length = ffprobe_format(recording.video_path).duration
-        self._assert_duplicate_frames(recording, length)
+        if buffering:
+            self._assert_duplicate_frames(recording, length)
         self.assert_equal(video.codec, "h264")
         self.assert_equal(video.width, width)
         self.assert_equal(video.height, height)

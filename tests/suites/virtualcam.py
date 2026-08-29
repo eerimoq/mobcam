@@ -8,7 +8,7 @@ from ..utils.test_case import TestCase
 from ..utils.virtualcam import VirtualCam
 
 
-class Stream(TestCase):
+class VirtualcamStream(TestCase):
     def __init__(self, moblin: Moblin, video_codec: VideoCodec, resolution: Resolution, fps: int):
         super().__init__(moblin, f"Stream{video_codec.name}-{resolution}@{fps}")
         self._video_codec = video_codec
@@ -32,8 +32,8 @@ class Stream(TestCase):
 
 def tests(moblin: Moblin):
     return [
-        Stream(moblin, VideoCodec.H264, Resolution.FULL_HD, 30),
-        Stream(moblin, VideoCodec.H264, Resolution.FULL_HD, 60),
-        Stream(moblin, VideoCodec.H265, Resolution.FULL_HD, 30),
-        Stream(moblin, VideoCodec.H265, Resolution.FULL_HD, 60),
+        VirtualcamStream(moblin, VideoCodec.H264, Resolution.FULL_HD, 30),
+        VirtualcamStream(moblin, VideoCodec.H264, Resolution.FULL_HD, 60),
+        VirtualcamStream(moblin, VideoCodec.H265, Resolution.FULL_HD, 30),
+        VirtualcamStream(moblin, VideoCodec.H265, Resolution.FULL_HD, 60),
     ]

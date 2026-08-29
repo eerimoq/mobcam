@@ -74,5 +74,5 @@ copies the logs and the recordings back when it is done.
 
 ```bash
 sudo apt install rsync
-make test-belabox
+make test-virtualcam-belabox
 ```

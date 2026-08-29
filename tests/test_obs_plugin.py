@@ -1,11 +1,11 @@
-from .suites import obs
+from .suites import obs_plugin
 from .utils.runner import create_parser
 from .utils.runner import run
 
 
 def create_suites(moblin, _):
     return [
-        obs.tests(moblin),
+        obs_plugin.tests(moblin),
     ]
 
 
