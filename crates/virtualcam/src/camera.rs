@@ -140,9 +140,7 @@ fn run(options: Options) -> Result<(), String> {
         );
     }
     let nv12 = options.pixel_format == PixelFormat::Auto && device.takes_nv12();
-    let mut session = Session::new().ok_or("failed to create the decoder")?;
-    session.set_hardware(options.hardware_decode);
-    session.set_audio(audio.is_some());
+    let mut session = Session::new(options.hardware_decode, audio.is_some()).ok_or("failed to create the decoder")?;
     unsafe {
         signal(SIGINT, stop as extern "C" fn(c_int) as usize);
         signal(SIGTERM, stop as extern "C" fn(c_int) as usize);

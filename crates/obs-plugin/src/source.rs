@@ -252,11 +252,10 @@ impl Source {
         if self.thread.is_some() {
             return;
         }
-        let Some(mut session) = Session::new() else {
+        let Some(session) = Session::new(self.hardware_decode, true) else {
             log!(Level::Error, "failed to create the session");
             return;
         };
-        session.set_hardware(self.hardware_decode);
         self.shared.stopping.store(false, Ordering::Relaxed);
         if let Ok(mut signalled) = self.shared.wakeup.0.lock() {
             *signalled = false;

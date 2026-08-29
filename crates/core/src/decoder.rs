@@ -214,25 +214,14 @@ pub struct Decoder {
 unsafe impl Send for Decoder {}
 
 impl Decoder {
-    pub fn new() -> Option<Self> {
+    pub fn new(hardware: bool, audio: bool) -> Option<Self> {
         Some(Self {
             video: Stream::new()?,
             audio: Stream::new()?,
-            hardware: false,
-            audio_wanted: true,
+            hardware,
+            audio_wanted: audio,
             got_keyframe: false,
         })
-    }
-
-    pub fn set_hardware(&mut self, hardware: bool) {
-        self.hardware = hardware;
-    }
-
-    pub fn set_audio(&mut self, audio: bool) {
-        self.audio_wanted = audio;
-        if !audio {
-            self.audio.close();
-        }
     }
 
     pub fn reset(&mut self) {

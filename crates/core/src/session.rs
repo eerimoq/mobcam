@@ -15,19 +15,11 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new() -> Option<Self> {
+    pub fn new(hardware: bool, audio: bool) -> Option<Self> {
         Some(Self {
-            decoder: Decoder::new()?,
+            decoder: Decoder::new(hardware, audio)?,
             stream: None,
         })
-    }
-
-    pub fn set_hardware(&mut self, hardware: bool) {
-        self.decoder.set_hardware(hardware);
-    }
-
-    pub fn set_audio(&mut self, audio: bool) {
-        self.decoder.set_audio(audio);
     }
 
     pub fn connect(&mut self, serial: &str, port: u16, abort: &dyn Abort) -> Result<String, usbmux::Error> {
