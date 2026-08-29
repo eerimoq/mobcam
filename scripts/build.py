@@ -332,7 +332,7 @@ def codesign(path: Path, identity: str | None) -> None:
     ]
     if identity != "-":
         command.append("--timestamp")
-    run(command + [path])
+    run(command + [path], capture_output=True)
 
 
 def macos_paths() -> tuple[Path, Path, Path]:
