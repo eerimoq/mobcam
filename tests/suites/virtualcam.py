@@ -1,10 +1,12 @@
 import time
 
+from ..utils.common.ffmpeg import FfmpegVideoCodec
 from ..utils.generate_device_settings import Resolution
 from ..utils.generate_device_settings import VideoCodec
 from ..utils.generate_device_settings import stream_settings
 from ..utils.moblin import Moblin
 from ..utils.test_case import TestCase
+from ..utils.utils import FILES_DIR
 from ..utils.virtualcam import VirtualCam
 
 
@@ -27,7 +29,20 @@ class VirtualcamStream(TestCase):
             recording = virtualcam.record(10, self.name)
             self.moblin.end()
         width, height = self._resolution.size()
-        self.assert_recording2(recording, width, height, self._fps)
+        self.assert_recording(
+            recording.video_path,
+            FILES_DIR,
+            has_qr_codes=False,
+            duplicated_frames_crops=[],
+            width=width,
+            height=height,
+            fps=self._fps,
+            video_codec=FfmpegVideoCodec.H264,
+            channels=2,
+            check_video_presentation_time_stamps=False,
+            check_picture_types=False,
+            check_audio_presentation_time_stamps=False,
+        )
 
 
 def tests(moblin: Moblin) -> list[TestCase]:
