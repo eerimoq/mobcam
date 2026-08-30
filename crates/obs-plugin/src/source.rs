@@ -205,7 +205,6 @@ impl Worker {
 }
 
 struct Source {
-    this: *mut c_void,
     shared: Arc<Shared>,
     thread: Option<std::thread::JoinHandle<()>>,
     serial: String,
@@ -217,7 +216,6 @@ struct Source {
 impl Source {
     fn new(source: obs::Source, settings: &Data) -> Self {
         let mut source = Self {
-            this: std::ptr::null_mut(),
             shared: Arc::new(Shared {
                 source,
                 stopping: AtomicBool::new(false),
@@ -296,10 +294,6 @@ impl Source {
         self.update(settings);
     }
 
-    fn obs_save(&mut self, settings: &Data) {
-        self.shared.save(settings);
-    }
-
     fn obs_show(&mut self) {
         if self.disconnect_when_hidden {
             self.start();
@@ -310,30 +304,6 @@ impl Source {
         if self.disconnect_when_hidden {
             self.stop();
         }
-    }
-
-    fn obs_get_properties(&self) -> *mut sys::obs_properties_t {
-        let mut properties = Properties::new();
-        let mut list = properties.add_string_list(SETTING_DEVICE, text(c"Device"));
-        fill_device_list(&mut list, Some(&self.shared));
-        unsafe {
-            properties.add_button(
-                c"refresh",
-                text(c"RefreshDevices"),
-                Some(refresh_devices_clicked),
-                self.this,
-            )
-        };
-        properties.add_bool(SETTING_HARDWARE_DECODE, text(c"HardwareDecode"));
-        properties
-            .add_bool(SETTING_BUFFERING, text(c"Buffering"))
-            .set_long_description(text(c"Buffering.Description"));
-        properties.add_bool(SETTING_CLEAR_ON_DISCONNECT, text(c"ClearOnDisconnect"));
-        properties.add_bool(SETTING_DISCONNECT_WHEN_HIDDEN, text(c"DisconnectWhenHidden"));
-        properties
-            .add_int(SETTING_PORT, text(c"Port"), 1, 65535)
-            .set_long_description(text(c"Port.Description"));
-        properties.into_raw()
     }
 }
 
@@ -385,6 +355,29 @@ fn obs_get_defaults(settings: Data) {
     settings.set_default_bool(SETTING_DISCONNECT_WHEN_HIDDEN, false);
 }
 
+fn obs_save(shared: Option<&Shared>, settings: &Data) {
+    if let Some(shared) = shared {
+        shared.save(settings);
+    }
+}
+
+fn obs_get_properties(data: *mut c_void, shared: Option<&Shared>) -> *mut sys::obs_properties_t {
+    let mut properties = Properties::new();
+    let mut list = properties.add_string_list(SETTING_DEVICE, text(c"Device"));
+    fill_device_list(&mut list, shared);
+    unsafe { properties.add_button(c"refresh", text(c"RefreshDevices"), Some(refresh_devices_clicked), data) };
+    properties.add_bool(SETTING_HARDWARE_DECODE, text(c"HardwareDecode"));
+    properties
+        .add_bool(SETTING_BUFFERING, text(c"Buffering"))
+        .set_long_description(text(c"Buffering.Description"));
+    properties.add_bool(SETTING_CLEAR_ON_DISCONNECT, text(c"ClearOnDisconnect"));
+    properties.add_bool(SETTING_DISCONNECT_WHEN_HIDDEN, text(c"DisconnectWhenHidden"));
+    properties
+        .add_int(SETTING_PORT, text(c"Port"), 1, 65535)
+        .set_long_description(text(c"Port.Description"));
+    properties.into_raw()
+}
+
 fn obs_refresh_devices_clicked(list: &mut Property, shared: Option<&Shared>) -> bool {
     fill_device_list(list, shared);
     true
@@ -397,9 +390,7 @@ extern "C" fn get_name(_type_data: *mut c_void) -> *const c_char {
 extern "C" fn create(settings: *mut sys::obs_data_t, source: *mut sys::obs_source_t) -> *mut c_void {
     panic::guard("create", std::ptr::null_mut(), || {
         let source = Source::new(obs::Source::from_raw(source), &Data::from_raw(settings));
-        let source = Box::into_raw(Box::new(source));
-        unsafe { (*source).this = source as *mut c_void };
-        source as *mut c_void
+        Box::into_raw(Box::new(source)) as *mut c_void
     })
 }
 
@@ -412,7 +403,7 @@ extern "C" fn update(data: *mut c_void, settings: *mut sys::obs_data_t) {
 }
 
 extern "C" fn save(data: *mut c_void, settings: *mut sys::obs_data_t) {
-    panic::guard("save", (), || source_of(data).obs_save(&Data::from_raw(settings)))
+    panic::guard("save", (), || obs_save(shared_of(data), &Data::from_raw(settings)))
 }
 
 extern "C" fn show(data: *mut c_void) {
@@ -429,7 +420,7 @@ extern "C" fn get_defaults(settings: *mut sys::obs_data_t) {
 
 extern "C" fn get_properties(data: *mut c_void) -> *mut sys::obs_properties_t {
     panic::guard("get_properties", std::ptr::null_mut(), || {
-        source_of(data).obs_get_properties()
+        obs_get_properties(data, shared_of(data))
     })
 }
 
