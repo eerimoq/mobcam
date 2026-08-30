@@ -95,14 +95,6 @@ Build and install Mobcam Virtual Camera on a BELABOX.
   --no-pipeline  do not add the belacoder pipeline belaUI streams with
   --no-service   do not run mobcam-virtualcam as a service
   --help         print this text and exit
-
-The source is the clone this script is part of, or a clone of
-$REPOSITORY
-in $CLONE_DIR. Set MOBCAM_REPOSITORY and MOBCAM_SOURCE_DIR to
-change either, and MOBCAM_BUILD_DIR to build FFmpeg and MPP somewhere else
-than $BUILD_DIR. MOBCAM_FFMPEG_REPOSITORY, MOBCAM_FFMPEG_BRANCH,
-MOBCAM_MPP_REPOSITORY and MOBCAM_MPP_BRANCH pick which ffmpeg-rockchip and
-MPP to build.
 EOF
 }
 
@@ -475,21 +467,25 @@ install_pipeline()
     local template
     local expressions
 
-    dir=$(pipelines_dir)
-    template=$dir/$(setup_value hw)/$PIPELINE_TEMPLATE
-    if [ ! -f "$template" ] ; then
-        warn "no $template to make the pipeline from; skipping it"
-        pipeline=no
-        return
-    fi
-
-    # The template streams a USB camera and its audio, which is the same
-    # pipeline as this one but for the two devices it reads from.
+    template=$PIPELINE.tmp
+cat << EOF > $template
+v4l2src device=/dev/usb_capture !
+identity name=ptsfixup signal-handoffs=TRUE ! identity drop-buffer-flags=GST_BUFFER_FLAG_DROPPABLE !
+identity name=v_delay signal-handoffs=TRUE !
+textoverlay text='' valignment=top halignment=right font-desc="Monospace, 5" name=overlay ! queue !
+mpph265enc zero-copy-pkt=0 qp-max=51 gop=120 name=venc_bps !
+h265parse config-interval=-1 ! queue max-size-time=10000000000 max-size-buffers=1000 max-size-bytes=41943040 ! mux.
+alsasrc device=hw:CARD=rockchiphdmiin ! identity name=a_delay signal-handoffs=TRUE ! volume volume=1.0 !
+audioconvert ! voaacenc bitrate=128000 ! aacparse ! queue max-size-time=10000000000 max-size-buffers=1000 ! mux.
+mpegtsmux name=mux !
+appsink name=appsink
+EOF
     step "Installing the $PIPELINE pipeline."
     expressions=(-e "s|\(v4l2src device=\)[^ ]*|\1$VIDEO_DEVICE|")
     if [ $audio = yes ] ; then
         expressions+=(-e "s|\(alsasrc device=\)[^ ]*|\1hw:$CARD|")
     fi
+    dir=$(pipelines_dir)
     $sudo mkdir -p "$dir/custom"
     sed "${expressions[@]}" "$template" | write_file "$dir/custom/$PIPELINE"
 }
