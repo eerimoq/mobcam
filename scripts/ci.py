@@ -36,7 +36,6 @@ TARGETS: dict[Platform, list[str]] = {
     "windows": ["x86_64-pc-windows-msvc"],
     "linux": [],
 }
-ARCHITECTURES = sorted(MACOS_TARGETS)
 KEYCHAIN_TIMEOUT = "21600"
 KEYCHAIN_TOOLS = ["/usr/bin/codesign", "/usr/bin/security", "/usr/bin/xcrun"]
 VARIANTS: dict[str, list[str]] = {
@@ -113,11 +112,6 @@ def import_certificate(args: argparse.Namespace, password: str) -> None:
         stderr=subprocess.DEVNULL,
     )
     run(["security", "list-keychain", "-d", "user", "-s", keychain, "login-keychain"])
-
-
-def codesigning(args: argparse.Namespace) -> bool:
-    import_certificate(args, os.urandom(16).hex())
-    return True
 
 
 def style_and_lint(_: argparse.Namespace) -> None:

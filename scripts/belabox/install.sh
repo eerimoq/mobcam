@@ -41,7 +41,6 @@ VIDEO_DEVICE=/dev/mobcam
 CAMERA_BUFFERS=2
 SETUP_FILE=/opt/belaUI/setup.json
 PIPELINES_DIR=/usr/share/belacoder/pipelines
-PIPELINE_TEMPLATE=h265_camlink
 PIPELINE=h265_mobcam
 AUDIO_DEVICE=plughw:CARD=$CARD,DEV=1
 AUDIO_CAPTURE_DEVICE=plughw:CARD=$CARD,DEV=0
