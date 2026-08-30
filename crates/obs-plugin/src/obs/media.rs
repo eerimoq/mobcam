@@ -87,30 +87,3 @@ pub fn set_color_parameters(frame: &mut Frame, colorspace: sys::video_colorspace
         );
     }
 }
-
-pub fn audio_channels(speakers: sys::speaker_layout) -> usize {
-    match speakers {
-        sys::SPEAKERS_MONO => 1,
-        sys::SPEAKERS_STEREO => 2,
-        sys::SPEAKERS_2POINT1 => 3,
-        sys::SPEAKERS_4POINT0 => 4,
-        sys::SPEAKERS_4POINT1 => 5,
-        sys::SPEAKERS_5POINT1 => 6,
-        sys::SPEAKERS_7POINT1 => 8,
-        _ => 0,
-    }
-}
-
-fn is_planar(format: sys::audio_format) -> bool {
-    matches!(
-        format,
-        sys::AUDIO_FORMAT_U8BIT_PLANAR
-            | sys::AUDIO_FORMAT_16BIT_PLANAR
-            | sys::AUDIO_FORMAT_32BIT_PLANAR
-            | sys::AUDIO_FORMAT_FLOAT_PLANAR
-    )
-}
-
-pub fn audio_planes(format: sys::audio_format, speakers: sys::speaker_layout) -> usize {
-    if is_planar(format) { audio_channels(speakers) } else { 1 }
-}

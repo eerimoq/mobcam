@@ -153,7 +153,7 @@ impl Sink for Output {
             timestamp: self.clock.timestamp(source.pts() as u64, obs::now_ns),
             ..Default::default()
         };
-        let planes = media::audio_planes(format, speakers).min(sys::MAX_AV_PLANES as usize);
+        let planes = source.audio_planes().min(sys::MAX_AV_PLANES as usize);
         for plane in 0..planes {
             audio.data[plane] = source.audio_plane(plane);
         }
