@@ -17,6 +17,7 @@ class SceneName(StrEnum):
 
 class CameraPosition(StrEnum):
     BACK = "Back"
+    BACK_TRIPLE_LOW_POWER = "Back triple"
     FRONT = "Front"
 
 
@@ -50,7 +51,7 @@ def base_settings(config: Config, remote_control_port: int) -> dict[str, Any]:
         "scenes": [
             {
                 "name": SceneName.BACK,
-                "cameraPosition": CameraPosition.BACK,
+                "cameraPosition": CameraPosition.BACK_TRIPLE_LOW_POWER,
                 "enabled": True,
             }
         ],
