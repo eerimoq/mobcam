@@ -212,6 +212,8 @@ ffmpeg_is_installed()
         && ffmpeg_supports encoders aac \
         && ffmpeg_supports encoders pcm_s16le \
         && ffmpeg_supports filters volumedetect \
+        && ffmpeg_supports filters mpdecimate \
+        && ffmpeg_supports filters showinfo \
         && ffmpeg_supports devices v4l2 \
         && ffmpeg_supports devices alsa \
         && ffmpeg_supports muxers mp4
@@ -298,7 +300,7 @@ build_ffmpeg()
             --enable-muxer=mp4,null \
             --enable-indev=v4l2,alsa \
             --enable-protocol=file,pipe \
-            --enable-filter=format,scale,fps,copy,hwupload,hwdownload,null,anull,aformat,aresample,volumedetect \
+            --enable-filter=format,scale,fps,copy,hwupload,hwdownload,null,anull,aformat,aresample,volumedetect,mpdecimate,showinfo \
             --enable-bsf=extract_extradata,h264_mp4toannexb,hevc_mp4toannexb \
             --extra-ldflags="-Wl,-rpath,$MPP_PREFIX/lib"
         make -j"$(nproc)"
