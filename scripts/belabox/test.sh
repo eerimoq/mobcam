@@ -60,6 +60,7 @@ add_user_to_groups()
 {
     local user
     local added
+    local group
 
     user=$(id -un)
     added=()
@@ -100,9 +101,15 @@ build()
 
 run_tests()
 {
+    local arguments
+
+    arguments=
+    if [ $# -gt 0 ] ; then
+        arguments=$(printf '%q ' "$@")
+    fi
     export PATH=$FFMPEG_PREFIX/bin:$PATH
     . $VENV/bin/activate
-    make test-virtualcam TEST_ARGS="$*"
+    make test-virtualcam TEST_ARGS="$arguments"
 }
 
 main()

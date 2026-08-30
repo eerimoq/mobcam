@@ -273,6 +273,7 @@ def dependencies(target_platform: Platform | None = None) -> None:
             extract_stripped(archive, directory)
         else:
             extract(archive, directory)
+        remove(archive)
         marker.write_text(sha256 + "\n")
 
 
@@ -517,7 +518,7 @@ def package_macos(
     base = OBS_PLUGIN.output_name("macos")
     bundle, _, symbols = macos_paths()
     if not bundle.is_dir():
-        raise Error("no staged plugin found; run `python3 scripts/build.py build` first")
+        raise Error("no staged plugin found; run `python scripts/build.py build` first")
     if installer:
         package_macos_installer(
             base,
@@ -648,7 +649,7 @@ def notarize(
 
 def package_linux(installer: bool) -> None:
     if not (OBS_PLUGIN.install_dir / "lib").is_dir():
-        raise Error("no staged plugin found; run `python3 scripts/build.py build` first")
+        raise Error("no staged plugin found; run `python scripts/build.py build` first")
     plugin_base = OBS_PLUGIN.output_name("linux")
     tar_xz(RELEASE_DIR / f"{plugin_base}.tar.xz", OBS_PLUGIN.install_dir, ["lib", "share"])
     source_tarball()
@@ -660,12 +661,7 @@ def package_deb(product: Product, base: str) -> None:
     staging = RELEASE_DIR / f"deb-{product.directory}"
     remove(staging)
     shutil.copytree(product.install_dir, staging / "usr", symlinks=True)
-    architecture = subprocess.run(
-        ["dpkg", "--print-architecture"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    architecture = run(["dpkg", "--print-architecture"], capture_output=True, text=True).stdout.strip()
     render(
         product.packaging_dir / "linux" / "control.in",
         staging / "DEBIAN" / "control",
@@ -694,7 +690,7 @@ def package_windows(installer: bool) -> None:
     base = OBS_PLUGIN.output_name("windows")
     root = OBS_PLUGIN.install_dir / OBS_PLUGIN.module
     if not root.is_dir():
-        raise Error("no staged plugin found; run `python3 scripts/build.py build` first")
+        raise Error("no staged plugin found; run `python scripts/build.py build` first")
     archive = RELEASE_DIR / f"{base}.zip"
     remove(archive)
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
@@ -807,8 +803,7 @@ def install(_: argparse.Namespace) -> None:
 
 def clean(_: argparse.Namespace) -> None:
     for path in [RELEASE_DIR, cargo_target_dir()]:
-        if path.exists():
-            remove(path)
+        remove(path)
 
 
 def main() -> None:

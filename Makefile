@@ -8,17 +8,17 @@ BELABOX = user@belabox.local
 default:
 
 build:
-	python scripts/build.py deps
-	python scripts/build.py build
+	$(PYTHON) scripts/build.py deps
+	$(PYTHON) scripts/build.py build
 
 package:
-	python scripts/build.py package --installer
+	$(PYTHON) scripts/build.py package --installer
 
 install:
-	python scripts/build.py install
+	$(PYTHON) scripts/build.py install
 
 clean:
-	python scripts/build.py clean
+	$(PYTHON) scripts/build.py clean
 
 unit-test:
 	cargo test --workspace
