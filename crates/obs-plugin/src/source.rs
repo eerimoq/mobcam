@@ -32,6 +32,14 @@ struct Shared {
 }
 
 impl Shared {
+    fn set_stopping(&self, value: bool) {
+        self.stopping.store(value, Ordering::Relaxed);
+    }
+
+    fn is_stopping(&self) -> bool {
+        self.stopping.load(Ordering::Relaxed)
+    }
+
     fn remember(&self, serial: &str, name: &str) {
         if let Ok(mut devices) = self.devices.lock() {
             devices.remember(serial, name);
@@ -62,7 +70,7 @@ impl Shared {
 
 impl Abort for Shared {
     fn aborted(&self) -> bool {
-        self.stopping.load(Ordering::Relaxed)
+        self.is_stopping()
     }
 }
 
@@ -76,11 +84,11 @@ struct Output {
 }
 
 impl Output {
-    fn new(shared: Arc<Shared>, serial: &str) -> Self {
+    fn new(shared: Arc<Shared>, serial: String) -> Self {
         Self {
             shared,
             clock: Clock::default(),
-            serial: serial.to_string(),
+            serial,
             logged_pixel_format: None,
             logged_sample_format: None,
             logged_channels: None,
@@ -180,10 +188,20 @@ struct Worker {
 }
 
 impl Worker {
+    fn new(shared: Arc<Shared>, session: Session, serial: String, port: u16) -> Self {
+        Self {
+            shared,
+            session,
+            serial,
+            port,
+            reported_failure: None,
+        }
+    }
+
     fn run(mut self) {
-        while !self.shared.stopping.load(Ordering::Relaxed) {
+        while !self.shared.is_stopping() {
             self.connect();
-            if self.shared.stopping.load(Ordering::Relaxed) {
+            if self.shared.is_stopping() {
                 break;
             }
             self.wait_before_reconnecting();
@@ -210,9 +228,9 @@ impl Worker {
             }
         };
         self.reported_failure = None;
-        let mut output = Output::new(Arc::clone(&self.shared), &serial);
+        let mut output = Output::new(self.shared.clone(), serial.clone());
         self.session.run(&mut output, self.shared.as_ref());
-        if !self.shared.stopping.load(Ordering::Relaxed) {
+        if !self.shared.is_stopping() {
             log!(Level::Info, "disconnected from {serial}");
         }
         self.shared.clear_video();
@@ -220,6 +238,7 @@ impl Worker {
 }
 
 struct Source {
+    this: *mut c_void,
     shared: Arc<Shared>,
     thread: Option<std::thread::JoinHandle<()>>,
     serial: String,
@@ -229,8 +248,9 @@ struct Source {
 }
 
 impl Source {
-    fn new(source: obs::Source) -> Self {
-        Self {
+    fn new(source: obs::Source, settings: &Data) -> Self {
+        let mut source = Self {
+            this: std::ptr::null_mut(),
             shared: Arc::new(Shared {
                 source,
                 stopping: AtomicBool::new(false),
@@ -245,7 +265,10 @@ impl Source {
             port: DEFAULT_PORT as u16,
             hardware_decode: false,
             disconnect_when_hidden: false,
-        }
+        };
+        source.shared.load(settings);
+        source.update(settings);
+        source
     }
 
     fn start(&mut self) {
@@ -256,17 +279,11 @@ impl Source {
             log!(Level::Error, "failed to create the session");
             return;
         };
-        self.shared.stopping.store(false, Ordering::Relaxed);
+        self.shared.set_stopping(false);
         if let Ok(mut signalled) = self.shared.wakeup.0.lock() {
             *signalled = false;
         }
-        let worker = Worker {
-            shared: Arc::clone(&self.shared),
-            session,
-            serial: self.serial.clone(),
-            port: self.port,
-            reported_failure: None,
-        };
+        let worker = Worker::new(self.shared.clone(), session, self.serial.clone(), self.port);
         match std::thread::Builder::new()
             .name(String::from("mobcam"))
             .spawn(|| panic::guard("the receive thread", (), || worker.run()))
@@ -280,7 +297,7 @@ impl Source {
         let Some(thread) = self.thread.take() else {
             return;
         };
-        self.shared.stopping.store(true, Ordering::Relaxed);
+        self.shared.set_stopping(true);
         if let Ok(mut signalled) = self.shared.wakeup.0.lock() {
             *signalled = true;
             self.shared.wakeup.1.notify_all();
@@ -313,6 +330,60 @@ impl Source {
         } else {
             self.stop();
         }
+    }
+}
+
+impl Source {
+    fn obs_update(&mut self, settings: &Data) {
+        self.update(settings);
+    }
+
+    fn obs_save(&mut self, settings: &Data) {
+        self.shared.save(settings);
+    }
+
+    fn obs_show(&mut self) {
+        if self.disconnect_when_hidden {
+            self.start();
+        }
+    }
+
+    fn obs_hide(&mut self) {
+        if self.disconnect_when_hidden {
+            self.stop();
+        }
+    }
+
+    fn obs_get_width(&self) -> u32 {
+        self.shared.width.load(Ordering::Relaxed)
+    }
+
+    fn obs_get_height(&self) -> u32 {
+        self.shared.height.load(Ordering::Relaxed)
+    }
+
+    fn obs_get_properties(&self) -> *mut sys::obs_properties_t {
+        let mut properties = Properties::new();
+        let mut list = properties.add_string_list(SETTING_DEVICE, text(c"Device"));
+        fill_device_list(&mut list, Some(&self.shared));
+        unsafe {
+            properties.add_button(
+                c"refresh",
+                text(c"RefreshDevices"),
+                Some(refresh_devices_clicked),
+                self.this,
+            )
+        };
+        properties.add_bool(SETTING_HARDWARE_DECODE, text(c"HardwareDecode"));
+        properties
+            .add_bool(SETTING_BUFFERING, text(c"Buffering"))
+            .set_long_description(text(c"Buffering.Description"));
+        properties.add_bool(SETTING_CLEAR_ON_DISCONNECT, text(c"ClearOnDisconnect"));
+        properties.add_bool(SETTING_DISCONNECT_WHEN_HIDDEN, text(c"DisconnectWhenHidden"));
+        properties
+            .add_int(SETTING_PORT, text(c"Port"), 1, 65535)
+            .set_long_description(text(c"Port.Description"));
+        properties.into_raw()
     }
 }
 
@@ -363,58 +434,39 @@ extern "C" fn get_name(_type_data: *mut c_void) -> *const c_char {
 
 extern "C" fn create(settings: *mut sys::obs_data_t, source: *mut sys::obs_source_t) -> *mut c_void {
     panic::guard("create", std::ptr::null_mut(), || {
-        let mut context = Box::new(Source::new(obs::Source::from_raw(source)));
-        let settings = Data::from_raw(settings);
-        context.shared.load(&settings);
-        context.update(&settings);
-        Box::into_raw(context) as *mut c_void
+        let source = Source::new(obs::Source::from_raw(source), &Data::from_raw(settings));
+        let source = Box::into_raw(Box::new(source));
+        unsafe { (*source).this = source as *mut c_void };
+        source as *mut c_void
     })
 }
 
 extern "C" fn destroy(data: *mut c_void) {
-    panic::guard("destroy", (), || {
-        drop(unsafe { Box::from_raw(data as *mut Source) });
-    })
+    panic::guard("destroy", (), || drop(unsafe { Box::from_raw(data as *mut Source) }))
 }
 
 extern "C" fn update(data: *mut c_void, settings: *mut sys::obs_data_t) {
-    panic::guard("update", (), || {
-        source_of(data).update(&Data::from_raw(settings));
-    })
+    panic::guard("update", (), || source_of(data).obs_update(&Data::from_raw(settings)))
 }
 
 extern "C" fn save(data: *mut c_void, settings: *mut sys::obs_data_t) {
-    panic::guard("save", (), || {
-        source_of(data).shared.save(&Data::from_raw(settings));
-    })
+    panic::guard("save", (), || source_of(data).obs_save(&Data::from_raw(settings)))
 }
 
 extern "C" fn show(data: *mut c_void) {
-    panic::guard("show", (), || {
-        let context = source_of(data);
-        if context.disconnect_when_hidden {
-            context.start();
-        }
-    })
+    panic::guard("show", (), || source_of(data).obs_show())
 }
 
 extern "C" fn hide(data: *mut c_void) {
-    panic::guard("hide", (), || {
-        let context = source_of(data);
-        if context.disconnect_when_hidden {
-            context.stop();
-        }
-    })
+    panic::guard("hide", (), || source_of(data).obs_hide())
 }
 
 extern "C" fn get_width(data: *mut c_void) -> u32 {
-    panic::guard("get_width", 0, || source_of(data).shared.width.load(Ordering::Relaxed))
+    panic::guard("get_width", 0, || source_of(data).obs_get_width())
 }
 
 extern "C" fn get_height(data: *mut c_void) -> u32 {
-    panic::guard("get_height", 0, || {
-        source_of(data).shared.height.load(Ordering::Relaxed)
-    })
+    panic::guard("get_height", 0, || source_of(data).obs_get_height())
 }
 
 extern "C" fn get_defaults(settings: *mut sys::obs_data_t) {
@@ -426,6 +478,12 @@ extern "C" fn get_defaults(settings: *mut sys::obs_data_t) {
         settings.set_default_bool(SETTING_BUFFERING, true);
         settings.set_default_bool(SETTING_CLEAR_ON_DISCONNECT, true);
         settings.set_default_bool(SETTING_DISCONNECT_WHEN_HIDDEN, false);
+    })
+}
+
+extern "C" fn get_properties(data: *mut c_void) -> *mut sys::obs_properties_t {
+    panic::guard("get_properties", std::ptr::null_mut(), || {
+        source_of(data).obs_get_properties()
     })
 }
 
@@ -441,31 +499,11 @@ extern "C" fn refresh_devices_clicked(
     })
 }
 
-extern "C" fn get_properties(data: *mut c_void) -> *mut sys::obs_properties_t {
-    panic::guard("get_properties", std::ptr::null_mut(), || {
-        let mut properties = Properties::new();
-        let mut list = properties.add_string_list(SETTING_DEVICE, text(c"Device"));
-        fill_device_list(&mut list, shared_of(data));
-        unsafe { properties.add_button(c"refresh", text(c"RefreshDevices"), Some(refresh_devices_clicked), data) };
-        properties.add_bool(SETTING_HARDWARE_DECODE, text(c"HardwareDecode"));
-        properties
-            .add_bool(SETTING_BUFFERING, text(c"Buffering"))
-            .set_long_description(text(c"Buffering.Description"));
-        properties.add_bool(SETTING_CLEAR_ON_DISCONNECT, text(c"ClearOnDisconnect"));
-        properties.add_bool(SETTING_DISCONNECT_WHEN_HIDDEN, text(c"DisconnectWhenHidden"));
-        properties
-            .add_int(SETTING_PORT, text(c"Port"), 1, 65535)
-            .set_long_description(text(c"Port.Description"));
-        properties.into_raw()
-    })
-}
-
 pub fn info() -> sys::obs_source_info {
     sys::obs_source_info {
         id: c"mobcam_source".as_ptr(),
         type_: sys::OBS_SOURCE_TYPE_INPUT,
         output_flags: sys::OBS_SOURCE_ASYNC_VIDEO | sys::OBS_SOURCE_AUDIO | sys::OBS_SOURCE_DO_NOT_DUPLICATE,
-        icon_type: sys::OBS_ICON_TYPE_CAMERA,
         get_name: Some(get_name),
         create: Some(create),
         destroy: Some(destroy),
@@ -477,6 +515,7 @@ pub fn info() -> sys::obs_source_info {
         get_height: Some(get_height),
         get_defaults: Some(get_defaults),
         get_properties: Some(get_properties),
+        icon_type: sys::OBS_ICON_TYPE_CAMERA,
         ..Default::default()
     }
 }

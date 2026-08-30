@@ -156,7 +156,6 @@ fn run(options: Options) -> Result<(), String> {
     );
     let abort = || stopping();
     let mut reported_failure = None;
-    let mut buffer = Vec::new();
     while !stopping() {
         match session.connect(options.udid(), options.port, &abort) {
             Ok(serial) => {
@@ -164,20 +163,7 @@ fn run(options: Options) -> Result<(), String> {
                 if let Some(audio) = audio.as_mut() {
                     audio.reset();
                 }
-                let mut output = Output {
-                    device: &mut device,
-                    audio: audio.as_mut(),
-                    buffer: &mut buffer,
-                    nv12,
-                    clock: Clock::default(),
-                    serial: serial.clone(),
-                    logged_conversion: None,
-                    logged_pixel_format: None,
-                    failure: None,
-                    debug: options.debug,
-                    previous_write_frame_timestamp: 0,
-                    previous_write_frame_clock: 0,
-                };
+                let mut output = Output::new(&mut device, audio.as_mut(), nv12, serial.clone(), options.debug);
                 session.run(&mut output, &abort);
                 if let Some(failure) = output.failure {
                     return Err(failure);
@@ -209,7 +195,7 @@ fn wait_before_reconnecting() {
 struct Output<'a> {
     device: &'a mut v4l2::Device,
     audio: Option<&'a mut Audio>,
-    buffer: &'a mut Vec<u8>,
+    buffer: Vec<u8>,
     nv12: bool,
     clock: Clock,
     serial: String,
@@ -221,10 +207,35 @@ struct Output<'a> {
     previous_write_frame_clock: u64,
 }
 
+impl<'a> Output<'a> {
+    pub fn new(
+        device: &'a mut v4l2::Device,
+        audio: Option<&'a mut Audio>,
+        nv12: bool,
+        serial: String,
+        debug: bool,
+    ) -> Output<'a> {
+        Self {
+            device,
+            audio,
+            buffer: Vec::new(),
+            nv12,
+            clock: Clock::default(),
+            serial,
+            logged_conversion: None,
+            logged_pixel_format: None,
+            failure: None,
+            debug,
+            previous_write_frame_timestamp: 0,
+            previous_write_frame_clock: 0,
+        }
+    }
+}
+
 impl Sink for Output<'_> {
     fn video(&mut self, frame: &ffmpeg::Frame) {
         let decoded = frame.pixel_format();
-        let Some(image) = convert::image(frame, self.buffer, self.nv12) else {
+        let Some(image) = convert::image(frame, &mut self.buffer, self.nv12) else {
             if self.logged_pixel_format != Some(decoded) {
                 self.logged_pixel_format = Some(decoded);
                 log!(
@@ -275,7 +286,7 @@ impl Sink for Output<'_> {
                 clock_delta / 1_000_000
             );
         }
-        if let Err(error) = self.device.write_frame(picture, self.buffer, timestamp) {
+        if let Err(error) = self.device.write_frame(picture, &self.buffer, timestamp) {
             self.failure = Some(format!("failed to write a frame: {error}"));
             STOPPING.store(true, Ordering::Relaxed);
         }
