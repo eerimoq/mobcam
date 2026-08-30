@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+pub const DEFAULT_PORT: u16 = 7790;
 pub const MESSAGE_HEADER_SIZE: usize = 5;
 pub const MAX_MESSAGE_SIZE: u32 = 100 * 1024 * 1024;
 pub const MESSAGE_HOST_HELLO: u8 = 0x01;

@@ -6,33 +6,65 @@ use crate::{Level, log};
 pub use crate::decoder::Sink;
 
 pub trait Handler: Sink {
-    fn hello(&mut self, hello: &DeviceHello);
+    fn hello(&mut self, _hello: &DeviceHello) {}
 }
 
 pub struct Session {
     decoder: Decoder,
-    stream: Option<Stream>,
+    udid: String,
+    port: u16,
+    reported_failure: Option<usbmux::Error>,
 }
 
 impl Session {
-    pub fn new(hardware: bool, audio: bool) -> Option<Self> {
+    pub fn new(udid: String, port: u16, hardware: bool, audio: bool) -> Option<Self> {
         Some(Self {
             decoder: Decoder::new(hardware, audio)?,
-            stream: None,
+            udid,
+            port,
+            reported_failure: None,
         })
     }
 
-    pub fn connect(&mut self, serial: &str, port: u16, abort: &dyn Abort) -> Result<String, usbmux::Error> {
-        let (stream, serial) = usbmux::connect_to_device(serial, port, abort)?;
-        self.stream = Some(stream);
-        Ok(serial)
+    pub fn attempt<H: Handler>(&mut self, abort: &dyn Abort, handler: impl FnOnce(&str) -> H) -> Option<H> {
+        let (stream, serial) = match usbmux::connect_to_device(&self.udid, self.port, abort) {
+            Ok(connected) => connected,
+            Err(error) => {
+                if error != usbmux::Error::Aborted && self.reported_failure != Some(error) {
+                    self.reported_failure = Some(error);
+                    log!(Level::Info, "not connected: {}", error.message());
+                }
+                return None;
+            }
+        };
+        self.reported_failure = None;
+        let mut handler = handler(&serial);
+        let connection = Connection {
+            decoder: &mut self.decoder,
+            stream,
+            serial,
+        };
+        connection.run(&mut handler, abort);
+        Some(handler)
+    }
+}
+
+struct Connection<'a> {
+    decoder: &'a mut Decoder,
+    stream: Stream,
+    serial: String,
+}
+
+impl Connection<'_> {
+    fn run(mut self, handler: &mut dyn Handler, abort: &dyn Abort) {
+        self.receive(handler, abort);
+        if !abort.aborted() {
+            log!(Level::Info, "disconnected from {}", self.serial);
+        }
     }
 
-    pub fn run(&mut self, handler: &mut dyn Handler, abort: &dyn Abort) {
-        let Some(mut stream) = self.stream.take() else {
-            return;
-        };
-        if !stream.write_all(&protocol::pack_host_hello()) {
+    fn receive(&mut self, handler: &mut dyn Handler, abort: &dyn Abort) {
+        if !self.stream.write_all(&protocol::pack_host_hello()) {
             log!(Level::Warning, "failed to say hello");
             return;
         }
@@ -40,7 +72,7 @@ impl Session {
         let mut buffer: Vec<u8> = Vec::new();
         loop {
             let mut header = [0u8; protocol::MESSAGE_HEADER_SIZE];
-            if stream.read_exact(&mut header, abort).is_err() {
+            if self.stream.read_exact(&mut header, abort).is_err() {
                 break;
             }
             let (kind, length) = protocol::unpack_message_header(&header);
@@ -51,7 +83,7 @@ impl Session {
             let payload_size = length as usize;
             buffer.resize(payload_size + INPUT_PADDING, 0);
             buffer[payload_size..].fill(0);
-            if stream.read_exact(&mut buffer[..payload_size], abort).is_err() {
+            if self.stream.read_exact(&mut buffer[..payload_size], abort).is_err() {
                 break;
             }
             if !self.handle_message(handler, kind, &buffer[..payload_size]) {
@@ -76,6 +108,13 @@ impl Session {
             log!(Level::Warning, "malformed device hello");
             return false;
         };
+        log!(
+            Level::Info,
+            "connected to {} (Moblin {}) on {}",
+            hello.name,
+            hello.app_version,
+            self.serial
+        );
         handler.hello(&hello);
         true
     }

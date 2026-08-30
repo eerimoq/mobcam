@@ -5,10 +5,9 @@ use crate::v4l2;
 use clap::Parser;
 use mobcam_core::clock::Clock;
 use mobcam_core::ffmpeg::{self, sys as av};
-use mobcam_core::protocol::DeviceHello;
 use mobcam_core::session::{Handler, Session, Sink};
 use mobcam_core::usbmux;
-use mobcam_core::{Level, log};
+use mobcam_core::{Changed, Level, log};
 use std::ffi::c_int;
 use std::path::Path;
 use std::process::ExitCode;
@@ -17,7 +16,6 @@ use std::time::Duration;
 
 const RECONNECT_DELAY: Duration = Duration::from_millis(1000);
 const STOP_POLL_INTERVAL: Duration = Duration::from_millis(100);
-const DEVICE_LIST_TIMEOUT: Duration = Duration::from_secs(2);
 const SIGINT: c_int = 2;
 const SIGTERM: c_int = 15;
 
@@ -87,10 +85,8 @@ fn acceleration_name(codec: ffmpeg::Codec) -> &'static str {
 }
 
 fn list() -> ExitCode {
-    let deadline = std::time::Instant::now() + DEVICE_LIST_TIMEOUT;
-    let expired = move || std::time::Instant::now() >= deadline;
     println!("iPhones and iPads:");
-    match usbmux::list_devices(&expired) {
+    match usbmux::list_attached_devices() {
         Ok(devices) if devices.is_empty() => println!("  none attached"),
         Ok(devices) => devices.iter().for_each(|device| println!("  {}", device.serial)),
         Err(error) => println!("  {}", error.message()),
@@ -140,7 +136,13 @@ fn run(options: Options) -> Result<(), String> {
         );
     }
     let nv12 = options.pixel_format == PixelFormat::Auto && device.takes_nv12();
-    let mut session = Session::new(options.hardware_decode, audio.is_some()).ok_or("failed to create the decoder")?;
+    let mut session = Session::new(
+        options.udid().to_string(),
+        options.port,
+        options.hardware_decode,
+        audio.is_some(),
+    )
+    .ok_or("failed to create the decoder")?;
     unsafe {
         signal(SIGINT, stop as extern "C" fn(c_int) as usize);
         signal(SIGTERM, stop as extern "C" fn(c_int) as usize);
@@ -155,29 +157,15 @@ fn run(options: Options) -> Result<(), String> {
         }
     );
     let abort = || stopping();
-    let mut reported_failure = None;
     while !stopping() {
-        match session.connect(options.udid(), options.port, &abort) {
-            Ok(serial) => {
-                reported_failure = None;
-                if let Some(audio) = audio.as_mut() {
-                    audio.reset();
-                }
-                let mut output = Output::new(&mut device, audio.as_mut(), nv12, serial.clone(), options.debug);
-                session.run(&mut output, &abort);
-                if let Some(failure) = output.failure {
-                    return Err(failure);
-                }
-                if !stopping() {
-                    log!(Level::Info, "disconnected from {serial}");
-                }
+        let output = session.attempt(&abort, |_serial| {
+            if let Some(audio) = audio.as_mut() {
+                audio.reset();
             }
-            Err(error) => {
-                if error != usbmux::Error::Aborted && reported_failure != Some(error) {
-                    reported_failure = Some(error);
-                    log!(Level::Info, "not connected: {}", error.message());
-                }
-            }
+            Output::new(&mut device, audio.as_mut(), nv12, options.debug)
+        });
+        if let Some(failure) = output.and_then(|output| output.failure) {
+            return Err(failure);
         }
         wait_before_reconnecting();
     }
@@ -198,9 +186,8 @@ struct Output<'a> {
     buffer: Vec<u8>,
     nv12: bool,
     clock: Clock,
-    serial: String,
-    logged_conversion: Option<(av::AVPixelFormat, v4l2::Format)>,
-    logged_pixel_format: Option<av::AVPixelFormat>,
+    logged_conversion: Changed<(av::AVPixelFormat, v4l2::Format)>,
+    logged_pixel_format: Changed<av::AVPixelFormat>,
     failure: Option<String>,
     debug: bool,
     previous_write_frame_timestamp: u64,
@@ -208,22 +195,15 @@ struct Output<'a> {
 }
 
 impl<'a> Output<'a> {
-    pub fn new(
-        device: &'a mut v4l2::Device,
-        audio: Option<&'a mut Audio>,
-        nv12: bool,
-        serial: String,
-        debug: bool,
-    ) -> Output<'a> {
+    pub fn new(device: &'a mut v4l2::Device, audio: Option<&'a mut Audio>, nv12: bool, debug: bool) -> Output<'a> {
         Self {
             device,
             audio,
             buffer: Vec::new(),
             nv12,
             clock: Clock::default(),
-            serial,
-            logged_conversion: None,
-            logged_pixel_format: None,
+            logged_conversion: Changed::default(),
+            logged_pixel_format: Changed::default(),
             failure: None,
             debug,
             previous_write_frame_timestamp: 0,
@@ -236,8 +216,7 @@ impl Sink for Output<'_> {
     fn video(&mut self, frame: &ffmpeg::Frame) {
         let decoded = frame.pixel_format();
         let Some(image) = convert::image(frame, &mut self.buffer, self.nv12) else {
-            if self.logged_pixel_format != Some(decoded) {
-                self.logged_pixel_format = Some(decoded);
+            if self.logged_pixel_format.changed(decoded) {
                 log!(
                     Level::Warning,
                     "no conversion from {} to anything the camera takes; dropping the frames",
@@ -246,8 +225,7 @@ impl Sink for Output<'_> {
             }
             return;
         };
-        if self.logged_conversion != Some((decoded, image.format)) {
-            self.logged_conversion = Some((decoded, image.format));
+        if self.logged_conversion.changed((decoded, image.format)) {
             match image.format {
                 v4l2::Format::Nv12 => log!(
                     Level::Info,
@@ -299,17 +277,7 @@ impl Sink for Output<'_> {
     }
 }
 
-impl Handler for Output<'_> {
-    fn hello(&mut self, hello: &DeviceHello) {
-        log!(
-            Level::Info,
-            "connected to {} (Moblin {}) on {}",
-            hello.name,
-            hello.app_version,
-            self.serial
-        );
-    }
-}
+impl Handler for Output<'_> {}
 
 fn colorspace(frame: &ffmpeg::Frame) -> v4l2::Colorspace {
     match frame.colorspace() {

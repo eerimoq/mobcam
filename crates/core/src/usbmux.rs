@@ -7,6 +7,7 @@ use std::time::Duration;
 mod socket;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+const LIST_TIMEOUT: Duration = Duration::from_secs(2);
 const HEADER_SIZE: usize = 16;
 const VERSION_PLIST: u32 = 1;
 const TYPE_PLIST: u32 = 8;
@@ -159,7 +160,7 @@ fn create_request(message_type: &str) -> Dictionary {
     body
 }
 
-pub fn list_devices(abort: &dyn Abort) -> Result<Vec<Device>, Error> {
+pub(crate) fn list_devices(abort: &dyn Abort) -> Result<Vec<Device>, Error> {
     let mut session = Session::open()?;
     let reply = session.request(create_request("ListDevices"), abort)?;
     Ok(reply
@@ -183,6 +184,11 @@ pub fn list_devices(abort: &dyn Abort) -> Result<Vec<Device>, Error> {
             })
         })
         .collect())
+}
+
+pub fn list_attached_devices() -> Result<Vec<Device>, Error> {
+    let deadline = std::time::Instant::now() + LIST_TIMEOUT;
+    list_devices(&move || std::time::Instant::now() >= deadline)
 }
 
 pub(crate) fn connect_to_device(serial: &str, port: u16, abort: &dyn Abort) -> Result<(Stream, String), Error> {

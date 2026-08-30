@@ -1,7 +1,6 @@
 use clap::{ArgAction, Parser, ValueEnum};
+use mobcam_core::protocol::DEFAULT_PORT;
 use std::path::PathBuf;
-
-pub const DEFAULT_PORT: u16 = 7790;
 
 const ABOUT: &str = "\
 Use an iPhone or iPad running Moblin as a camera in any program, over USB.

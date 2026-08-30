@@ -27,3 +27,21 @@ macro_rules! log {
         $crate::log($level, &::std::format!($($arg)*))
     };
 }
+
+pub struct Changed<T>(Option<T>);
+
+impl<T> Default for Changed<T> {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
+impl<T: PartialEq> Changed<T> {
+    pub fn changed(&mut self, value: T) -> bool {
+        if self.0.as_ref() == Some(&value) {
+            return false;
+        }
+        self.0 = Some(value);
+        true
+    }
+}

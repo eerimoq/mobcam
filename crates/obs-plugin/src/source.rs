@@ -2,10 +2,10 @@ use crate::devices::{Device, Devices};
 use crate::obs::{self, Audio, Data, Frame, Properties, Property, media, sys, text};
 use mobcam_core::clock::Clock;
 use mobcam_core::ffmpeg::{self, sys as av};
-use mobcam_core::protocol::DeviceHello;
+use mobcam_core::protocol::{DEFAULT_PORT, DeviceHello};
 use mobcam_core::session::{Handler, Session, Sink};
 use mobcam_core::usbmux::{self, Abort};
-use mobcam_core::{Level, log, panic};
+use mobcam_core::{Changed, Level, log, panic};
 use std::ffi::{CStr, c_char, c_void};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -17,9 +17,7 @@ const SETTING_HARDWARE_DECODE: &CStr = c"hardware_decode";
 const SETTING_BUFFERING: &CStr = c"buffering";
 const SETTING_CLEAR_ON_DISCONNECT: &CStr = c"clear_on_disconnect";
 const SETTING_DISCONNECT_WHEN_HIDDEN: &CStr = c"disconnect_when_hidden";
-const DEFAULT_PORT: i64 = 7790;
 const RECONNECT_DELAY: Duration = Duration::from_millis(1000);
-const DEVICE_LIST_TIMEOUT: Duration = Duration::from_secs(2);
 
 struct Shared {
     source: obs::Source,
@@ -78,9 +76,9 @@ struct Output {
     shared: Arc<Shared>,
     clock: Clock,
     serial: String,
-    logged_pixel_format: Option<av::AVPixelFormat>,
-    logged_sample_format: Option<av::AVSampleFormat>,
-    logged_channels: Option<i32>,
+    logged_pixel_format: Changed<av::AVPixelFormat>,
+    logged_sample_format: Changed<av::AVSampleFormat>,
+    logged_channels: Changed<i32>,
 }
 
 impl Output {
@@ -89,9 +87,9 @@ impl Output {
             shared,
             clock: Clock::default(),
             serial,
-            logged_pixel_format: None,
-            logged_sample_format: None,
-            logged_channels: None,
+            logged_pixel_format: Changed::default(),
+            logged_sample_format: Changed::default(),
+            logged_channels: Changed::default(),
         }
     }
 }
@@ -99,8 +97,7 @@ impl Output {
 impl Sink for Output {
     fn video(&mut self, source: &ffmpeg::Frame) {
         let Some((format, format_is_full_range)) = media::video_format(source.pixel_format()) else {
-            if self.logged_pixel_format != Some(source.pixel_format()) {
-                self.logged_pixel_format = Some(source.pixel_format());
+            if self.logged_pixel_format.changed(source.pixel_format()) {
                 log!(
                     Level::Warning,
                     "unsupported pixel format {}",
@@ -132,8 +129,7 @@ impl Sink for Output {
 
     fn audio(&mut self, source: &ffmpeg::Frame) {
         let Some(format) = media::audio_format(source.sample_format()) else {
-            if self.logged_sample_format != Some(source.sample_format()) {
-                self.logged_sample_format = Some(source.sample_format());
+            if self.logged_sample_format.changed(source.sample_format()) {
                 log!(
                     Level::Warning,
                     "unsupported sample format {}",
@@ -144,8 +140,7 @@ impl Sink for Output {
         };
         let channels = source.channels();
         let Some(speakers) = media::speakers(channels) else {
-            if self.logged_channels != Some(channels) {
-                self.logged_channels = Some(channels);
+            if self.logged_channels.changed(channels) {
                 log!(Level::Warning, "unsupported channel count {channels}");
             }
             return;
@@ -168,13 +163,6 @@ impl Sink for Output {
 
 impl Handler for Output {
     fn hello(&mut self, hello: &DeviceHello) {
-        log!(
-            Level::Info,
-            "connected to {} (Moblin {}) on {}",
-            hello.name,
-            hello.app_version,
-            self.serial
-        );
         self.shared.remember(&self.serial, &hello.name);
     }
 }
@@ -182,20 +170,11 @@ impl Handler for Output {
 struct Worker {
     shared: Arc<Shared>,
     session: Session,
-    serial: String,
-    port: u16,
-    reported_failure: Option<usbmux::Error>,
 }
 
 impl Worker {
-    fn new(shared: Arc<Shared>, session: Session, serial: String, port: u16) -> Self {
-        Self {
-            shared,
-            session,
-            serial,
-            port,
-            reported_failure: None,
-        }
+    fn new(shared: Arc<Shared>, session: Session) -> Self {
+        Self { shared, session }
     }
 
     fn run(mut self) {
@@ -208,32 +187,22 @@ impl Worker {
         }
     }
 
+    fn connect(&mut self) {
+        let shared = self.shared.clone();
+        let output = self.session.attempt(shared.as_ref(), |serial| {
+            Output::new(shared.clone(), serial.to_string())
+        });
+        if output.is_some() {
+            shared.clear_video();
+        }
+    }
+
     fn wait_before_reconnecting(&self) {
         let (lock, condvar) = &self.shared.wakeup;
         let Ok(signalled) = lock.lock() else {
             return;
         };
         let _ = condvar.wait_timeout_while(signalled, RECONNECT_DELAY, |signalled| !*signalled);
-    }
-
-    fn connect(&mut self) {
-        let serial = match self.session.connect(&self.serial, self.port, self.shared.as_ref()) {
-            Ok(serial) => serial,
-            Err(error) => {
-                if error != usbmux::Error::Aborted && self.reported_failure != Some(error) {
-                    self.reported_failure = Some(error);
-                    log!(Level::Info, "not connected: {}", error.message());
-                }
-                return;
-            }
-        };
-        self.reported_failure = None;
-        let mut output = Output::new(self.shared.clone(), serial.clone());
-        self.session.run(&mut output, self.shared.as_ref());
-        if !self.shared.is_stopping() {
-            log!(Level::Info, "disconnected from {serial}");
-        }
-        self.shared.clear_video();
     }
 }
 
@@ -262,7 +231,7 @@ impl Source {
             }),
             thread: None,
             serial: String::new(),
-            port: DEFAULT_PORT as u16,
+            port: DEFAULT_PORT,
             hardware_decode: false,
             disconnect_when_hidden: false,
         };
@@ -275,7 +244,7 @@ impl Source {
         if self.thread.is_some() {
             return;
         }
-        let Some(session) = Session::new(self.hardware_decode, true) else {
+        let Some(session) = Session::new(self.serial.clone(), self.port, self.hardware_decode, true) else {
             log!(Level::Error, "failed to create the session");
             return;
         };
@@ -283,7 +252,7 @@ impl Source {
         if let Ok(mut signalled) = self.shared.wakeup.0.lock() {
             *signalled = false;
         }
-        let worker = Worker::new(self.shared.clone(), session, self.serial.clone(), self.port);
+        let worker = Worker::new(self.shared.clone(), session);
         match std::thread::Builder::new()
             .name(String::from("mobcam"))
             .spawn(|| panic::guard("the receive thread", (), || worker.run()))
@@ -394,11 +363,9 @@ impl Drop for Source {
 }
 
 fn fill_device_list(list: &mut obs::Property, shared: Option<&Shared>) {
-    let deadline = std::time::Instant::now() + DEVICE_LIST_TIMEOUT;
-    let expired = move || std::time::Instant::now() >= deadline;
     list.clear_list();
     list.add_translated_list_entry(text(c"Device.Automatic"), "");
-    let attached = usbmux::list_devices(&expired).unwrap_or_default();
+    let attached = usbmux::list_attached_devices().unwrap_or_default();
     let mut without_source = Devices::default();
     let mut locked = shared.and_then(|shared| shared.devices.lock().ok());
     let known = locked.as_deref_mut().unwrap_or(&mut without_source);
@@ -430,7 +397,7 @@ fn shared_of<'a>(data: *mut c_void) -> Option<&'a Shared> {
 
 fn obs_get_defaults(settings: Data) {
     settings.set_default_string(SETTING_DEVICE, c"");
-    settings.set_default_int(SETTING_PORT, DEFAULT_PORT);
+    settings.set_default_int(SETTING_PORT, DEFAULT_PORT as i64);
     settings.set_default_bool(SETTING_HARDWARE_DECODE, true);
     settings.set_default_bool(SETTING_BUFFERING, true);
     settings.set_default_bool(SETTING_CLEAR_ON_DISCONNECT, true);
