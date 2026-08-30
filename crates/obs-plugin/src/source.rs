@@ -7,7 +7,7 @@ use mobcam_core::session::{Handler, Session, Sink};
 use mobcam_core::usbmux::{self, Abort};
 use mobcam_core::{Changed, Level, log, panic};
 use std::ffi::{CStr, c_char, c_void};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -23,8 +23,6 @@ struct Shared {
     source: obs::Source,
     stopping: AtomicBool,
     clear_on_disconnect: AtomicBool,
-    width: AtomicU32,
-    height: AtomicU32,
     wakeup: (Mutex<bool>, Condvar),
     devices: Mutex<Devices>,
 }
@@ -49,8 +47,6 @@ impl Shared {
             return;
         }
         self.source.clear_video();
-        self.width.store(0, Ordering::Relaxed);
-        self.height.store(0, Ordering::Relaxed);
     }
 
     fn load(&self, settings: &Data) {
@@ -122,8 +118,6 @@ impl Sink for Output {
             frame.linesize[plane] = linesize as u32;
         }
         media::set_color_parameters(&mut frame, media::colorspace(source), full_range);
-        self.shared.width.store(frame.width, Ordering::Relaxed);
-        self.shared.height.store(frame.height, Ordering::Relaxed);
         self.shared.source.output_video(&frame);
     }
 
@@ -224,8 +218,6 @@ impl Source {
                 source,
                 stopping: AtomicBool::new(false),
                 clear_on_disconnect: AtomicBool::new(true),
-                width: AtomicU32::new(0),
-                height: AtomicU32::new(0),
                 wakeup: (Mutex::new(false), Condvar::new()),
                 devices: Mutex::new(Devices::default()),
             }),
@@ -321,14 +313,6 @@ impl Source {
         if self.disconnect_when_hidden {
             self.stop();
         }
-    }
-
-    fn obs_get_width(&self) -> u32 {
-        self.shared.width.load(Ordering::Relaxed)
-    }
-
-    fn obs_get_height(&self) -> u32 {
-        self.shared.height.load(Ordering::Relaxed)
     }
 
     fn obs_get_properties(&self) -> *mut sys::obs_properties_t {
@@ -442,14 +426,6 @@ extern "C" fn hide(data: *mut c_void) {
     panic::guard("hide", (), || source_of(data).obs_hide())
 }
 
-extern "C" fn get_width(data: *mut c_void) -> u32 {
-    panic::guard("get_width", 0, || source_of(data).obs_get_width())
-}
-
-extern "C" fn get_height(data: *mut c_void) -> u32 {
-    panic::guard("get_height", 0, || source_of(data).obs_get_height())
-}
-
 extern "C" fn get_defaults(settings: *mut sys::obs_data_t) {
     panic::guard("get_defaults", (), || obs_get_defaults(Data::from_raw(settings)))
 }
@@ -483,8 +459,6 @@ pub fn info() -> sys::obs_source_info {
         save: Some(save),
         show: Some(show),
         hide: Some(hide),
-        get_width: Some(get_width),
-        get_height: Some(get_height),
         get_defaults: Some(get_defaults),
         get_properties: Some(get_properties),
         icon_type: sys::OBS_ICON_TYPE_CAMERA,
