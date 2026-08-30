@@ -182,12 +182,11 @@ impl Worker {
     }
 
     fn connect(&mut self) {
-        let shared = self.shared.clone();
-        let output = self.session.attempt(shared.as_ref(), |serial| {
-            Output::new(shared.clone(), serial.to_string())
+        let output = self.session.attempt(self.shared.as_ref(), |serial| {
+            Output::new(self.shared.clone(), serial.to_string())
         });
         if output.is_some() {
-            shared.clear_video();
+            self.shared.clear_video();
         }
     }
 
