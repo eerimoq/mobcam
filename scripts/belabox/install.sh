@@ -207,8 +207,11 @@ ffmpeg_is_installed()
     PKG_CONFIG_PATH=$FFMPEG_PREFIX/lib/pkgconfig \
         pkg-config --atleast-version=$FFMPEG_MINIMUM libavcodec 2>/dev/null \
         && ffmpeg_supports decoders h264_rkmpp \
+        && ffmpeg_supports decoders opus \
         && ffmpeg_supports encoders h264_rkmpp \
         && ffmpeg_supports encoders aac \
+        && ffmpeg_supports encoders pcm_s16le \
+        && ffmpeg_supports filters volumedetect \
         && ffmpeg_supports devices v4l2 \
         && ffmpeg_supports devices alsa \
         && ffmpeg_supports muxers mp4
@@ -288,14 +291,14 @@ build_ffmpeg()
             --enable-libdrm \
             --enable-rkmpp \
             --enable-alsa \
-            --enable-decoder=h264,hevc,aac,rawvideo,mjpeg,pcm_s16le,h264_rkmpp,hevc_rkmpp \
-            --enable-encoder=h264_rkmpp,hevc_rkmpp,aac,wrapped_avframe \
+            --enable-decoder=h264,hevc,aac,opus,rawvideo,mjpeg,pcm_s16le,h264_rkmpp,hevc_rkmpp \
+            --enable-encoder=pcm_s16le,h264_rkmpp,hevc_rkmpp,aac,wrapped_avframe \
             --enable-parser=h264,hevc,aac,mjpeg \
             --enable-demuxer=mov,h264,hevc \
             --enable-muxer=mp4,null \
             --enable-indev=v4l2,alsa \
             --enable-protocol=file,pipe \
-            --enable-filter=format,scale,fps,copy,hwupload,hwdownload,null,anull,aformat,aresample \
+            --enable-filter=format,scale,fps,copy,hwupload,hwdownload,null,anull,aformat,aresample,volumedetect \
             --enable-bsf=extract_extradata,h264_mp4toannexb,hevc_mp4toannexb \
             --extra-ldflags="-Wl,-rpath,$MPP_PREFIX/lib"
         make -j"$(nproc)"
