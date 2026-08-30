@@ -47,7 +47,7 @@ class VirtualcamStream(TestCase):
             recording.video_path,
             FILES_DIR,
             has_qr_codes=False,
-            duplicated_frames_crops=[],
+            duplicated_frames_crops=None,
             width=width,
             height=height,
             fps=self._fps,
