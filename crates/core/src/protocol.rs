@@ -13,6 +13,7 @@ pub const HOST_HELLO_SIZE: usize = 6;
 pub const VIDEO_CODEC_H264: u8 = 0;
 pub const VIDEO_CODEC_HEVC: u8 = 1;
 pub const AUDIO_CODEC_AAC_LC: u8 = 0;
+pub const AUDIO_CODEC_OPUS: u8 = 1;
 
 #[derive(Deserialize)]
 struct DeviceHelloJson {
@@ -62,6 +63,7 @@ impl<'a> AudioConfig<'a> {
     pub fn audio_codec_name(&self) -> &'static str {
         match self.codec {
             AUDIO_CODEC_AAC_LC => "AAC-LC",
+            AUDIO_CODEC_OPUS => "Opus",
             _ => "unknown",
         }
     }

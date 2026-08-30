@@ -12,7 +12,6 @@ Linux only.
 ## Requirements
 
 - Moblin, with the stream URL set to `mobcam://localhost:7790`.
-- Moblin's audio codec set to AAC.
 - `usbmuxd`, to talk to the iPhone or iPad over the USB cable.
 - The `v4l2loopback` kernel module.
 - PulseAudio, PipeWire or ALSA, for the microphone, and its development

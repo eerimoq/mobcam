@@ -74,14 +74,19 @@ def base_settings(config: Config, remote_control_port: int) -> dict[str, Any]:
     }
 
 
-def stream_settings(video_codec: VideoCodec, resolution: Resolution, fps: int) -> dict[str, Any]:
+def stream_settings(
+    video_codec: VideoCodec,
+    resolution: Resolution,
+    fps: int,
+    audio_codec: AudioCodec,
+) -> dict[str, Any]:
     return {
         "id": uuid(),
         "name": "Mobcam",
         "enabled": True,
         "url": MOBCAM_URL,
         "codec": video_codec,
-        "audioCodec": AudioCodec.AAC,
+        "audioCodec": audio_codec,
         "resolution": resolution,
         "fps": fps,
         "bitrate": 5_000_000,

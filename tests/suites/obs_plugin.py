@@ -1,6 +1,7 @@
 import time
 
 from ..utils.common.ffmpeg import FfmpegVideoCodec
+from ..utils.generate_device_settings import AudioCodec
 from ..utils.generate_device_settings import Resolution
 from ..utils.generate_device_settings import VideoCodec
 from ..utils.generate_device_settings import stream_settings
@@ -17,9 +18,10 @@ class ObsPluginRecord(TestCase):
         video_codec: VideoCodec,
         resolution: Resolution,
         fps: int,
+        audio_codec: AudioCodec,
         buffering: bool,
     ):
-        name = f"ObsPluginRecord{resolution}@{fps}{video_codec.name}"
+        name = f"ObsPluginRecord{resolution}@{fps}{video_codec.name}{audio_codec.name.capitalize()}"
         if not buffering:
             name += "Unbuffered"
         super().__init__(moblin, name)
@@ -27,10 +29,15 @@ class ObsPluginRecord(TestCase):
         self._resolution = resolution
         self._fps = fps
         self._buffering = buffering
+        self._audio_codec = audio_codec
 
     def setup(self) -> None:
         self.moblin.import_settings(
-            overrides={"streams": [stream_settings(self._video_codec, self._resolution, self._fps)]}
+            overrides={
+                "streams": [
+                    stream_settings(self._video_codec, self._resolution, self._fps, self._audio_codec)
+                ]
+            }
         )
 
     def run(self) -> None:
@@ -61,10 +68,11 @@ class ObsPluginRecord(TestCase):
 
 def tests(moblin: Moblin) -> list[TestCase]:
     return [
-        ObsPluginRecord(moblin, VideoCodec.H264, Resolution.FULL_HD, 30, True),
-        ObsPluginRecord(moblin, VideoCodec.H264, Resolution.FULL_HD, 60, True),
-        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 30, True),
-        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 60, True),
-        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 30, False),
-        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 60, False),
+        ObsPluginRecord(moblin, VideoCodec.H264, Resolution.FULL_HD, 30, AudioCodec.AAC, True),
+        ObsPluginRecord(moblin, VideoCodec.H264, Resolution.FULL_HD, 60, AudioCodec.AAC, True),
+        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 30, AudioCodec.AAC, True),
+        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 60, AudioCodec.AAC, True),
+        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 30, AudioCodec.OPUS, True),
+        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 30, AudioCodec.AAC, False),
+        ObsPluginRecord(moblin, VideoCodec.H265, Resolution.FULL_HD, 60, AudioCodec.AAC, False),
     ]

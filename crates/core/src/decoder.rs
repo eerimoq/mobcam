@@ -1,6 +1,7 @@
 use crate::ffmpeg::{self, Codec, Context, Device, Packet, Status, sys as av};
 use crate::protocol::{
-    AUDIO_CODEC_AAC_LC, AudioConfig, AudioFrame, VIDEO_CODEC_H264, VIDEO_CODEC_HEVC, VideoConfig, VideoFrame,
+    AUDIO_CODEC_AAC_LC, AUDIO_CODEC_OPUS, AudioConfig, AudioFrame, VIDEO_CODEC_H264, VIDEO_CODEC_HEVC, VideoConfig,
+    VideoFrame,
 };
 use crate::{Level, log};
 
@@ -281,6 +282,7 @@ impl Decoder {
         }
         let codec_id = match config.codec {
             AUDIO_CODEC_AAC_LC => av::AV_CODEC_ID_AAC,
+            AUDIO_CODEC_OPUS => av::AV_CODEC_ID_OPUS,
             codec => {
                 log!(Level::Warning, "unsupported audio codec {codec}");
                 return false;

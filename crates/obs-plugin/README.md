@@ -11,7 +11,6 @@ low latency camera in OBS Studio over USB.
 
 - OBS Studio 28 or newer.
 - Moblin, with the stream URL set to `mobcam://localhost:7790`.
-- Moblin's audio codec set to AAC.
 
 The iPhone or iPad is connected over a USB cable, so the computer must be able
 to talk to it. Each operating system needs something different for that; see the

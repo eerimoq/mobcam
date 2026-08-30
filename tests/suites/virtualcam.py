@@ -1,6 +1,7 @@
 import time
 
 from ..utils.common.ffmpeg import FfmpegVideoCodec
+from ..utils.generate_device_settings import AudioCodec
 from ..utils.generate_device_settings import Resolution
 from ..utils.generate_device_settings import VideoCodec
 from ..utils.generate_device_settings import stream_settings
@@ -11,15 +12,28 @@ from ..utils.virtualcam import VirtualCam
 
 
 class VirtualcamStream(TestCase):
-    def __init__(self, moblin: Moblin, video_codec: VideoCodec, resolution: Resolution, fps: int):
-        super().__init__(moblin, f"Stream{resolution}@{fps}{video_codec.name}")
+    def __init__(
+        self,
+        moblin: Moblin,
+        video_codec: VideoCodec,
+        resolution: Resolution,
+        fps: int,
+        audio_codec: AudioCodec,
+    ):
+        name = f"Stream{resolution}@{fps}{video_codec.name}{audio_codec.name.capitalize()}"
+        super().__init__(moblin, name)
         self._video_codec = video_codec
         self._resolution = resolution
         self._fps = fps
+        self._audio_codec = audio_codec
 
     def setup(self) -> None:
         self.moblin.import_settings(
-            overrides={"streams": [stream_settings(self._video_codec, self._resolution, self._fps)]}
+            overrides={
+                "streams": [
+                    stream_settings(self._video_codec, self._resolution, self._fps, self._audio_codec)
+                ]
+            }
         )
 
     def run(self) -> None:
@@ -47,8 +61,9 @@ class VirtualcamStream(TestCase):
 
 def tests(moblin: Moblin) -> list[TestCase]:
     return [
-        VirtualcamStream(moblin, VideoCodec.H264, Resolution.FULL_HD, 30),
-        VirtualcamStream(moblin, VideoCodec.H264, Resolution.FULL_HD, 60),
-        VirtualcamStream(moblin, VideoCodec.H265, Resolution.FULL_HD, 30),
-        VirtualcamStream(moblin, VideoCodec.H265, Resolution.FULL_HD, 60),
+        VirtualcamStream(moblin, VideoCodec.H264, Resolution.FULL_HD, 30, AudioCodec.AAC),
+        VirtualcamStream(moblin, VideoCodec.H264, Resolution.FULL_HD, 60, AudioCodec.AAC),
+        VirtualcamStream(moblin, VideoCodec.H265, Resolution.FULL_HD, 30, AudioCodec.AAC),
+        VirtualcamStream(moblin, VideoCodec.H265, Resolution.FULL_HD, 60, AudioCodec.AAC),
+        VirtualcamStream(moblin, VideoCodec.H265, Resolution.FULL_HD, 30, AudioCodec.OPUS),
     ]
