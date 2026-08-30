@@ -23,13 +23,18 @@ struct Shared {
     source: obs::Source,
     stopping: AtomicBool,
     clear_on_disconnect: AtomicBool,
-    wakeup: (Mutex<bool>, Condvar),
+    wakeup: (Mutex<()>, Condvar),
     devices: Mutex<Devices>,
 }
 
 impl Shared {
     fn set_stopping(&self, value: bool) {
-        self.stopping.store(value, Ordering::Relaxed);
+        let (lock, condvar) = &self.wakeup;
+        {
+            let _guard = lock.lock();
+            self.stopping.store(value, Ordering::Relaxed);
+        }
+        condvar.notify_all();
     }
 
     fn is_stopping(&self) -> bool {
@@ -192,10 +197,10 @@ impl Worker {
 
     fn wait_before_reconnecting(&self) {
         let (lock, condvar) = &self.shared.wakeup;
-        let Ok(signalled) = lock.lock() else {
+        let Ok(guard) = lock.lock() else {
             return;
         };
-        let _ = condvar.wait_timeout_while(signalled, RECONNECT_DELAY, |signalled| !*signalled);
+        let _ = condvar.wait_timeout_while(guard, RECONNECT_DELAY, |_| !self.shared.is_stopping());
     }
 }
 
@@ -217,7 +222,7 @@ impl Source {
                 source,
                 stopping: AtomicBool::new(false),
                 clear_on_disconnect: AtomicBool::new(true),
-                wakeup: (Mutex::new(false), Condvar::new()),
+                wakeup: (Mutex::new(()), Condvar::new()),
                 devices: Mutex::new(Devices::default()),
             }),
             thread: None,
@@ -240,9 +245,6 @@ impl Source {
             return;
         };
         self.shared.set_stopping(false);
-        if let Ok(mut signalled) = self.shared.wakeup.0.lock() {
-            *signalled = false;
-        }
         let worker = Worker::new(self.shared.clone(), session);
         match std::thread::Builder::new()
             .name(String::from("mobcam"))
@@ -258,10 +260,6 @@ impl Source {
             return;
         };
         self.shared.set_stopping(true);
-        if let Ok(mut signalled) = self.shared.wakeup.0.lock() {
-            *signalled = true;
-            self.shared.wakeup.1.notify_all();
-        }
         let _ = thread.join();
         self.shared.clear_video();
     }
