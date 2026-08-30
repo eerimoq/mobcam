@@ -1,5 +1,5 @@
 use crate::devices::{Device, Devices};
-use crate::obs::{self, Audio, Data, Frame, Properties, media, sys, text};
+use crate::obs::{self, Audio, Data, Frame, Properties, Property, media, sys, text};
 use mobcam_core::clock::Clock;
 use mobcam_core::ffmpeg::{self, sys as av};
 use mobcam_core::protocol::DeviceHello;
@@ -428,6 +428,20 @@ fn shared_of<'a>(data: *mut c_void) -> Option<&'a Shared> {
     Some(&unsafe { &*(data as *const Source) }.shared)
 }
 
+fn obs_get_defaults(settings: Data) {
+    settings.set_default_string(SETTING_DEVICE, c"");
+    settings.set_default_int(SETTING_PORT, DEFAULT_PORT);
+    settings.set_default_bool(SETTING_HARDWARE_DECODE, true);
+    settings.set_default_bool(SETTING_BUFFERING, true);
+    settings.set_default_bool(SETTING_CLEAR_ON_DISCONNECT, true);
+    settings.set_default_bool(SETTING_DISCONNECT_WHEN_HIDDEN, false);
+}
+
+fn obs_refresh_devices_clicked(list: &mut Property, shared: Option<&Shared>) -> bool {
+    fill_device_list(list, shared);
+    true
+}
+
 extern "C" fn get_name(_type_data: *mut c_void) -> *const c_char {
     panic::guard("get_name", c"Mobcam".as_ptr(), || text(c"Mobcam").as_ptr())
 }
@@ -470,15 +484,7 @@ extern "C" fn get_height(data: *mut c_void) -> u32 {
 }
 
 extern "C" fn get_defaults(settings: *mut sys::obs_data_t) {
-    panic::guard("get_defaults", (), || {
-        let settings = Data::from_raw(settings);
-        settings.set_default_string(SETTING_DEVICE, c"");
-        settings.set_default_int(SETTING_PORT, DEFAULT_PORT);
-        settings.set_default_bool(SETTING_HARDWARE_DECODE, true);
-        settings.set_default_bool(SETTING_BUFFERING, true);
-        settings.set_default_bool(SETTING_CLEAR_ON_DISCONNECT, true);
-        settings.set_default_bool(SETTING_DISCONNECT_WHEN_HIDDEN, false);
-    })
+    panic::guard("get_defaults", (), || obs_get_defaults(Data::from_raw(settings)))
 }
 
 extern "C" fn get_properties(data: *mut c_void) -> *mut sys::obs_properties_t {
@@ -494,8 +500,7 @@ extern "C" fn refresh_devices_clicked(
 ) -> bool {
     panic::guard("refresh_devices", false, || {
         let mut list = unsafe { obs::properties::get(properties, SETTING_DEVICE) };
-        fill_device_list(&mut list, shared_of(data));
-        true
+        obs_refresh_devices_clicked(&mut list, shared_of(data))
     })
 }
 
