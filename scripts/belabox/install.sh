@@ -77,22 +77,17 @@ PACKAGES=(
 )
 
 audio=yes
-packages=yes
-pipeline=yes
 service=yes
 sudo=
 
 usage()
 {
     cat <<EOF
-usage: $(basename "$0") [--no-audio] [--no-packages] [--no-pipeline]
-       [--no-service] [--help]
+usage: $(basename "$0") [--no-audio] [--no-service] [--help]
 
 Build and install Mobcam Virtual Camera on a BELABOX.
 
   --no-audio     do not set up the Mobcam sound card, video only
-  --no-packages  do not install the build dependencies, they are already there
-  --no-pipeline  do not add the belacoder pipeline belaUI streams with
   --no-service   do not run mobcam-virtualcam as a service
   --help         print this text and exit
 EOF
@@ -119,8 +114,6 @@ parse_arguments()
     while [ $# -gt 0 ] ; do
         case $1 in
             --no-audio) audio=no ;;
-            --no-packages) packages=no ;;
-            --no-pipeline) pipeline=no ;;
             --no-service) service=no ;;
             --help) usage ; exit 0 ;;
             *) usage >&2 ; die "unknown argument $1" ;;
@@ -546,15 +539,13 @@ summary()
     if [ $audio = yes ] ; then
         echo "Microphone: $CARD"
     fi
-    if [ $pipeline = yes ] ; then
-        echo "Pipeline:   $(pipelines_dir)/custom/$PIPELINE"
-    fi
+    echo "Pipeline:   $(pipelines_dir)/custom/$PIPELINE"
     if [ $service = yes ] ; then
         echo "Service:    $SERVICE"
     fi
-    echo "Test: sudo $FFMPEG_CLI -f v4l2 -i $VIDEO_DEVICE -f alsa -i \\"
-    echo "          $AUDIO_CAPTURE_DEVICE -c:v h264_rkmpp -c:a aac \\"
-    echo "          recording.mp4"
+    echo "Test:       sudo $FFMPEG_CLI -f v4l2 -i $VIDEO_DEVICE -f alsa -i \\"
+    echo "                $AUDIO_CAPTURE_DEVICE -c:v h264_rkmpp -c:a aac \\"
+    echo "                recording.mp4"
 }
 
 main()
@@ -563,9 +554,7 @@ main()
     check_machine
     setup_tmp_dir
     stop_service
-    if [ $packages = yes ] ; then
-        install_packages
-    fi
+    install_packages
     install_rust
     setup_ffmpeg
     find_source
@@ -577,15 +566,11 @@ main()
         setup_microphone
     fi
     setup_modules_load
-    if [ $pipeline = yes ] ; then
-        install_pipeline
-    fi
+    install_pipeline
     if [ $service = yes ] ; then
         install_service
     fi
-    if [ $pipeline = yes ] ; then
-        restart_belaui
-    fi
+    restart_belaui
     summary
 }
 
