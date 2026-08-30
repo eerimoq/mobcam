@@ -125,5 +125,5 @@ machine with those two devices in it, so it encodes the same way the BELABOX
 already encodes a USB camera. Pick it and `Mobcam` in belaUI and start
 streaming.
 
-Pass `--no-audio`, `--no-pipeline` or `--no-service` to leave any of them out,
-and `--help` to see the rest.
+Pass `--no-audio` or `--no-service` to leave either of them out, and
+`--help` to see the rest.

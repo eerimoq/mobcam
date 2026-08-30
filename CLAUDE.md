@@ -28,24 +28,42 @@ make package     # release artifacts, with installers
 make clean       # removes release/ and target/
 ```
 
-Quality gates, all four of which CI runs (`scripts/ci.py style_and_lint`):
+Quality gates. `scripts/ci.py style_and_lint` runs all of them but `make style`, which is the one
+that rewrites files:
 
 ```shell
 make style        # cargo fmt, isort, ruff format
 make style-check
 make lint         # clippy --deny warnings, ruff check, mypy --strict
-make test         # cargo test --workspace
+make unit-test    # cargo test --workspace
 make spell-check  # codespell
 ```
 
 Every tool is invoked with an explicit config out of `.config/`. Plain `cargo fmt` uses the wrong
 width — always `cargo fmt -- --config-path .config/rustfmt.toml`, or just `make style`.
 
-A single test: `cargo test -p mobcam-virtualcam convert::tests::every_other_row_and_column_is_kept`. Tests live in
-`crates/virtualcam` (`convert.rs`, `audio.rs`, `alsa.rs`); `mobcam-obs-plugin` sets `test = false`
-because it is a bare `cdylib` against libobs.
+A single test:
+`cargo test -p mobcam-virtualcam convert::tests::every_other_row_and_column_is_kept`. Unit tests live
+in `crates/virtualcam` (`convert.rs`, `audio.rs`, `alsa.rs`) and `crates/core`
+(`ffmpeg/version.rs`); `mobcam-obs-plugin` sets `test = false` because it is a bare `cdylib` against
+libobs.
+
+`tests/` is the system test suite, in Python: it streams from an iPhone or iPad running Moblin,
+records what comes out and asserts on the recording. Read `tests/README.md` before touching it — the
+tests need a device on a USB cable, a `tests/config.toml` copied from `tests/config.example.toml`
+and settings imported into Moblin.
+
+```shell
+make test-generate-device-settings-clipboard   # the Moblin settings to import on the device
+make test-obs-plugin        # macOS; drives OBS Studio and records with it
+make test-virtualcam        # Linux; records the camera and the microphone with ffmpeg
+make test-virtualcam-belabox  # rsyncs the clone to a BELABOX over ssh and runs it there
+```
+
+Both runners take extra arguments through `TEST_ARGS`, and write to `logs/` and `tests/files/`.
 
 Python tooling comes from `scripts/requirements.txt` (`.venv/` is already set up in a clone).
+`scripts` and `tests` are the `CODE_DIRS` the Python gates run over.
 
 ## Dependencies and code generation
 
@@ -70,16 +88,16 @@ signed before the bundle is, and `verify_macos()` fails the build if anything in
 loaded libavcodec and libavutil have the major version the plugin was built against and are no
 older than it — which is the only guard on Linux, where the libraries come from the distribution.
 
-Each crate's `build.rs` runs bindgen at build time and writes `$OUT_DIR/{ffmpeg,obs}.rs`, included by
-`ffmpeg/sys.rs` and `obs/sys.rs`. Generation is skipped when a `.stamp` file matches the flags,
-header text and the OBS source hash, so touching an allowlist in `build.rs` regenerates and nothing
-else does. On Windows there is no libobs import library, so `obs-plugin/build.rs` parses the
-generated bindings into an `obs.def` and calls `lib.exe`.
+`core/build.rs` and `obs-plugin/build.rs` run bindgen at build time and write `$OUT_DIR/ffmpeg.rs`
+and `$OUT_DIR/obs.rs`, included by `ffmpeg/sys.rs` and `obs/sys.rs`. Generation is skipped when a
+`.stamp` file matches the flags, header text and the OBS source hash, so touching an allowlist in
+`build.rs` regenerates and nothing else does. On Windows there is no libobs import library, so
+`obs-plugin/build.rs` parses the generated bindings into an `obs.def` and calls `lib.exe`.
 
-`virtualcam/build.rs` probes `pkg-config` for `libpulse-simple` and `alsa` and emits `cfg(pulse)` /
-`cfg(alsa)` — these are build-script cfgs, not Cargo features, so `#[cfg(pulse)]` code is only
-compiled where the library was present at build time. A machine with neither builds a camera without
-a microphone.
+`virtualcam/build.rs` runs no bindgen. It probes `pkg-config` for `libpulse-simple` and `alsa` and
+emits `cfg(pulse)` / `cfg(alsa)` — these are build-script cfgs, not Cargo features, so
+`#[cfg(pulse)]` code is only compiled where the library was present at build time. A machine with
+neither builds a camera without a microphone.
 
 The workspace version in the root `Cargo.toml` is the single source of truth; `scripts/build.py`
 reads it out with `tomllib` and it flows into every packaging template (`packaging/**/*.in`,
@@ -90,7 +108,7 @@ rendered by `render()`).
 The pipeline is the same for both products:
 
 ```
-usbmux::Stream  →  session::stream()  →  protocol::unpack_*  →  Decoder  →  Sink
+usbmux::Stream  →  Session::attempt()  →  protocol::unpack_*  →  Decoder  →  Sink
 ```
 
 - `core/usbmux.rs` speaks the plist protocol of `usbmuxd` (a unix socket on Unix, TCP 127.0.0.1:27015
@@ -99,8 +117,10 @@ usbmux::Stream  →  session::stream()  →  protocol::unpack_*  →  Decoder  �
 - `core/protocol.rs` is the Moblin wire format: a 5 byte header (kind, big-endian length) then hello,
   video/audio config and frame messages. Pure `unpack_*` functions returning `Option`, borrowing from
   the caller's buffer.
-- `core/session.rs` owns the message loop and defines `Handler: Sink` — the one trait a consumer
-  implements: `hello()` for the device name, plus `Sink::video`/`Sink::audio` for decoded frames.
+- `core/session.rs` owns the message loop. `Session::attempt()` connects, builds the consumer's
+  handler and runs a `Connection` until the device goes away. It defines `Handler: Sink` — the one
+  trait a consumer implements: `hello()` for the device name, plus `Sink::video`/`Sink::audio` for
+  decoded frames.
 - `core/decoder.rs` holds one `Stream` for video and one for audio. `Codec::decoders_for()` returns
   every decoder for the codec id, sorted so hardware comes first when hardware decoding is on and
   last when it is off, and the decoder walks that list until one opens. Hardware frames are either
@@ -108,22 +128,28 @@ usbmux::Stream  →  session::stream()  →  protocol::unpack_*  →  Decoder  �
   the choice made once from the first frame and cached in `Access`.
 - `core/ffmpeg/` is the safe wrapper over the generated `sys` bindings; nothing outside it should
   touch raw FFmpeg pointers.
+- `core/clock.rs` turns the device's presentation timestamp into one on the host's monotonic clock,
+  re-anchoring on any PTS jump over five seconds. Both products feed their frames through it.
+- `core/panic.rs` is `panic::guard`, which catches an unwind at every boundary a Rust panic must not
+  cross: each `extern "C"` entry point of the plugin, and the plugin's receive thread.
 - `core/logging.rs` is a `OnceLock<fn(Level, &str)>` set by each product (`obs::install_logger`,
   `write_log` in virtualcam), used through the `log!` macro.
 
-**OBS plugin.** `obs/` wraps libobs the same way `ffmpeg/` wraps FFmpeg: `Source`, `Data`,
-`Properties`, `Frame`/`Audio`. `source.rs` is the source type — a worker thread reconnects every
-second, an `Output` implements `Sink` and pushes into libobs, and `Clock` re-anchors OBS timestamps
-on any PTS jump over five seconds. Every `extern "C"` entry point goes through `panic::guard` so a
-Rust panic never unwinds into C. UI strings are keys looked up via `obs::text()` against
+**OBS plugin.** `obs/` wraps libobs the same way `ffmpeg/` wraps FFmpeg: `Source`, `Data` and
+`Properties`, plus `obs/media.rs`, which holds the `Frame`/`Audio` aliases and the mapping from
+FFmpeg pixel formats, colorspaces, sample formats and channel counts to the libobs ones. `source.rs`
+is the source type — a worker thread reconnects every second and an `Output` implements `Sink` and
+pushes into libobs, stamped with `core::clock::Clock`. `devices.rs` remembers the name of every
+device that has said hello and saves it into the source settings, so the property dropdown can list
+a device that is not attached right now. Every `extern "C"` entry point goes through `panic::guard`
+so a Rust panic never unwinds into C. UI strings are keys looked up via `obs::text()` against
 `data/locale/en-US.ini` — add both when adding a setting.
 
 **Virtual camera.** `camera.rs` is the main loop, `convert.rs` the pixel format conversions,
 `audio.rs` the resampling and the backend choice. Frames are queued into v4l2loopback rather than
 written to it, because a `write()` makes the kernel stamp the buffer with the time of the write,
-while `VIDIOC_QBUF` carries a timestamp of the caller's choosing: `core/clock.rs` turns the device's
-presentation timestamp into one on the monotonic clock, the same `Clock` the OBS plugin anchors OBS
-timestamps with. The buffer index has to be a strict rotation, as the output `VIDIOC_DQBUF` of
+while `VIDIOC_QBUF` carries a timestamp of the caller's choosing, which is the one `core/clock.rs`
+hands out. The buffer index has to be a strict rotation, as the output `VIDIOC_DQBUF` of
 v4l2loopback hands back the buffer that was queued last. Frames are also spaced out before they are
 queued, to three quarters of the frame interval the timestamps carry: v4l2loopback fast-forwards a
 reader that has fallen more than two frames behind, so a writer that empties a burst of frames

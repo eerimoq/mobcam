@@ -45,7 +45,7 @@ Point the device at something that moves. A still scene gives a recording of ide
 is exactly what the duplicated frame check looks for, and every test fails.
 
 ```bash
-make test-obs
+make test-obs-plugin
 ```
 
 # Virtual camera
