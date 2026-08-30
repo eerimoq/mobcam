@@ -190,15 +190,18 @@ class TestCase(systest.TestCase):
             )
         self._assert_video_frame_numbers_increasing(probe.qr_codes)
         if check_picture_types:
-            picture_types = {frame.picture_type for frame in video.frames}
-            self.assert_equal(len(picture_types), 3)
-            self.assert_in("I", picture_types)
-            self.assert_in("P", picture_types)
-            self.assert_in("B", picture_types)
+            self._assert_picture_types(video)
         for presentation_time_stamps in probe.unique_frame_presentation_time_stamps:
             self._assert_no_duplicated_frames(
                 fps, video, recording, presentation_time_stamps, check_presentation_time_stamps
             )
+
+    def _assert_picture_types(self, video: FfprobeVideoOutput):
+        picture_types = {frame.picture_type for frame in video.frames}
+        self.assert_equal(len(picture_types), 3)
+        self.assert_in("I", picture_types)
+        self.assert_in("P", picture_types)
+        self.assert_in("B", picture_types)
 
     def _assert_no_duplicated_frames(
         self,
