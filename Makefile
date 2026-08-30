@@ -44,8 +44,8 @@ test-virtualcam-belabox:
 		$(BELABOX):mobcam/
 	status=0 ; \
 	ssh -t $(BELABOX) 'cd mobcam && ./scripts/belabox/test.sh $(TEST_ARGS)' || status=$$? ; \
-	rsync -a $(BELABOX):mobcam/logs/ logs/ ; \
-	rsync -a $(BELABOX):mobcam/tests/files/ tests/files/ ; \
+	rsync --archive $(BELABOX):mobcam/logs/ logs/ ; \
+	rsync --archive $(BELABOX):mobcam/tests/files/ tests/files/ ; \
 	exit $$status
 
 test-generate-device-settings-clipboard:
