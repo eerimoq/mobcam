@@ -4,7 +4,7 @@ use crate::alsa;
 use crate::options::AudioBackend;
 use crate::pulse;
 use mobcam_core::ffmpeg::{self, sys as av};
-use mobcam_core::{Level, log};
+use mobcam_core::{Changed, Level, log};
 
 pub const LATENCY_US: u32 = 100_000;
 pub const DEFAULT_SINK: &str = "Mobcam";
@@ -167,7 +167,7 @@ pub struct Audio {
     playback: Option<Playback>,
     spec: Option<Spec>,
     pcm: Vec<u8>,
-    logged_sample_format: Option<av::AVSampleFormat>,
+    logged_sample_format: Changed<av::AVSampleFormat>,
     failed: bool,
 }
 
@@ -181,7 +181,7 @@ impl Audio {
             playback: None,
             spec: None,
             pcm: Vec::new(),
-            logged_sample_format: None,
+            logged_sample_format: Changed::default(),
             failed: false,
         })
     }
@@ -195,8 +195,7 @@ impl Audio {
             return;
         }
         let Some(sample) = Sample::of(frame.sample_format()) else {
-            if self.logged_sample_format != Some(frame.sample_format()) {
-                self.logged_sample_format = Some(frame.sample_format());
+            if self.logged_sample_format.changed(frame.sample_format()) {
                 log!(
                     Level::Warning,
                     "unsupported sample format {}",
