@@ -456,30 +456,27 @@ pipelines_dir()
 install_pipeline()
 {
     local dir
-    local template
-    local expressions
+    local audio_device
 
-    template=$PIPELINE.tmp
-cat << EOF > $template
-v4l2src device=/dev/usb_capture !
+    step "Installing the $PIPELINE pipeline."
+    audio_device=hw:CARD=rockchiphdmiin
+    if [ $audio = yes ] ; then
+        audio_device=hw:$CARD
+    fi
+    dir=$(pipelines_dir)
+    $sudo mkdir -p "$dir/custom"
+    write_file "$dir/custom/$PIPELINE" <<EOF
+v4l2src device=$VIDEO_DEVICE !
 identity name=ptsfixup signal-handoffs=TRUE ! identity drop-buffer-flags=GST_BUFFER_FLAG_DROPPABLE !
 identity name=v_delay signal-handoffs=TRUE !
 textoverlay text='' valignment=top halignment=right font-desc="Monospace, 5" name=overlay ! queue !
 mpph265enc zero-copy-pkt=0 qp-max=51 gop=120 name=venc_bps !
 h265parse config-interval=-1 ! queue max-size-time=10000000000 max-size-buffers=1000 max-size-bytes=41943040 ! mux.
-alsasrc device=hw:CARD=rockchiphdmiin ! identity name=a_delay signal-handoffs=TRUE ! volume volume=1.0 !
+alsasrc device=$audio_device ! identity name=a_delay signal-handoffs=TRUE ! volume volume=1.0 !
 audioconvert ! voaacenc bitrate=128000 ! aacparse ! queue max-size-time=10000000000 max-size-buffers=1000 ! mux.
 mpegtsmux name=mux !
 appsink name=appsink
 EOF
-    step "Installing the $PIPELINE pipeline."
-    expressions=(-e "s|\(v4l2src device=\)[^ ]*|\1$VIDEO_DEVICE|")
-    if [ $audio = yes ] ; then
-        expressions+=(-e "s|\(alsasrc device=\)[^ ]*|\1hw:$CARD|")
-    fi
-    dir=$(pipelines_dir)
-    $sudo mkdir -p "$dir/custom"
-    sed "${expressions[@]}" "$template" | write_file "$dir/custom/$PIPELINE"
 }
 
 restart_belaui()
