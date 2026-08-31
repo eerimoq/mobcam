@@ -38,7 +38,7 @@ pub struct VideoConfig<'a> {
 }
 
 impl<'a> VideoConfig<'a> {
-    pub fn video_codec_name(&self) -> &'static str {
+    pub fn codec_name(&self) -> &'static str {
         match self.codec {
             VIDEO_CODEC_H264 => "H.264",
             VIDEO_CODEC_HEVC => "HEVC",
@@ -61,7 +61,7 @@ pub struct AudioConfig<'a> {
 }
 
 impl<'a> AudioConfig<'a> {
-    pub fn audio_codec_name(&self) -> &'static str {
+    pub fn codec_name(&self) -> &'static str {
         match self.codec {
             AUDIO_CODEC_AAC_LC => "AAC-LC",
             AUDIO_CODEC_OPUS => "Opus",

@@ -232,13 +232,8 @@ impl Decoder {
     }
 
     pub fn configure_video(&mut self, config: &VideoConfig<'_>) -> bool {
-        let codec_id = match config.codec {
-            VIDEO_CODEC_H264 => av::AV_CODEC_ID_H264,
-            VIDEO_CODEC_HEVC => av::AV_CODEC_ID_HEVC,
-            codec => {
-                log!(Level::Warning, "unsupported video codec {codec}");
-                return false;
-            }
+        let Some(codec_id) = video_codec_id(config.codec) else {
+            return false;
         };
         if self.video.configured(config.codec, config.record) {
             return true;
@@ -261,18 +256,14 @@ impl Decoder {
             log!(
                 Level::Info,
                 "decoding {} {}x{} in {}",
-                config.video_codec_name(),
+                config.codec_name(),
                 config.width,
                 config.height,
                 self.video.decoder_name()
             );
             return true;
         }
-        log!(
-            Level::Error,
-            "no working {} decoder available",
-            config.video_codec_name()
-        );
+        log!(Level::Error, "no working {} decoder available", config.codec_name());
         false
     }
 
@@ -280,13 +271,8 @@ impl Decoder {
         if !self.audio_wanted {
             return true;
         }
-        let codec_id = match config.codec {
-            AUDIO_CODEC_AAC_LC => av::AV_CODEC_ID_AAC,
-            AUDIO_CODEC_OPUS => av::AV_CODEC_ID_OPUS,
-            codec => {
-                log!(Level::Warning, "unsupported audio codec {codec}");
-                return false;
-            }
+        let Some(codec_id) = audio_codec_id(config.codec) else {
+            return false;
         };
         if self.audio.configured(config.codec, config.record) {
             return true;
@@ -304,18 +290,14 @@ impl Decoder {
             log!(
                 Level::Info,
                 "decoding {} {} Hz {} channel in {}",
-                config.audio_codec_name(),
+                config.codec_name(),
                 config.sample_rate,
                 config.channels,
                 self.audio.decoder_name()
             );
             return true;
         }
-        log!(
-            Level::Error,
-            "no working {} decoder available",
-            config.audio_codec_name()
-        );
+        log!(Level::Error, "no working {} decoder available", config.codec_name());
         false
     }
 
@@ -335,17 +317,10 @@ impl Decoder {
             self.got_keyframe = false;
             return true;
         }
-        loop {
-            match self.video.receive() {
-                Received::Drained => break,
-                Received::Failed => {
-                    log!(Level::Warning, "failed to receive a frame, reopening the decoder");
-                    self.video.close();
-                    return false;
-                }
-                Received::Frame => sink.video(&self.video.frame),
-            }
-            self.video.release();
+        if !drain(&mut self.video, sink, |sink, frame| sink.video(frame)) {
+            log!(Level::Warning, "failed to receive a frame, reopening the decoder");
+            self.video.close();
+            return false;
         }
         true
     }
@@ -354,22 +329,45 @@ impl Decoder {
         if !self.audio.is_open() {
             return;
         }
-        if !self.audio.send(frame.data, frame.pts_us as i64, true) {
-            log!(Level::Warning, "failed to decode audio, flushing the decoder");
-            self.audio.flush();
+        if self.audio.send(frame.data, frame.pts_us as i64, true)
+            && drain(&mut self.audio, sink, |sink, frame| sink.audio(frame))
+        {
             return;
         }
-        loop {
-            match self.audio.receive() {
-                Received::Drained => break,
-                Received::Failed => {
-                    log!(Level::Warning, "failed to decode audio, flushing the decoder");
-                    self.audio.flush();
-                    break;
-                }
-                Received::Frame => sink.audio(&self.audio.frame),
-            }
-            self.audio.release();
+        log!(Level::Warning, "failed to decode audio, flushing the decoder");
+        self.audio.flush();
+    }
+}
+
+fn drain(stream: &mut Stream, sink: &mut dyn Sink, emit: impl Fn(&mut dyn Sink, &ffmpeg::Frame)) -> bool {
+    loop {
+        match stream.receive() {
+            Received::Drained => return true,
+            Received::Failed => return false,
+            Received::Frame => emit(sink, &stream.frame),
+        }
+        stream.release();
+    }
+}
+
+fn video_codec_id(codec: u8) -> Option<av::AVCodecID> {
+    match codec {
+        VIDEO_CODEC_H264 => Some(av::AV_CODEC_ID_H264),
+        VIDEO_CODEC_HEVC => Some(av::AV_CODEC_ID_HEVC),
+        codec => {
+            log!(Level::Warning, "unsupported video codec {codec}");
+            None
+        }
+    }
+}
+
+fn audio_codec_id(codec: u8) -> Option<av::AVCodecID> {
+    match codec {
+        AUDIO_CODEC_AAC_LC => Some(av::AV_CODEC_ID_AAC),
+        AUDIO_CODEC_OPUS => Some(av::AV_CODEC_ID_OPUS),
+        codec => {
+            log!(Level::Warning, "unsupported audio codec {codec}");
+            None
         }
     }
 }
