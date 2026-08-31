@@ -84,8 +84,17 @@ fn descriptor(index: u32) -> v4l2_buffer {
     }
 }
 
-fn call(fd: c_int, request: v4l2::vidioc::_IOC_TYPE, argument: *mut c_void, what: &str) -> Result<(), String> {
-    unsafe { v4l2::ioctl(fd, request, argument) }.map_err(|error| format!("{what} failed: {error}"))
+fn call<T>(fd: c_int, request: v4l2::vidioc::_IOC_TYPE, argument: &mut T, what: &str) -> Result<(), String> {
+    unsafe { v4l2::ioctl(fd, request, (argument as *mut T).cast()) }.map_err(|error| format!("{what} failed: {error}"))
+}
+
+fn request_buffers(count: u32) -> v4l2_requestbuffers {
+    v4l2_requestbuffers {
+        count,
+        type_: Type::VideoOutput as u32,
+        memory: Memory::Mmap as u32,
+        ..unsafe { std::mem::zeroed() }
+    }
 }
 
 struct Mapping {
@@ -128,18 +137,8 @@ struct Buffers {
 
 impl Buffers {
     fn open(fd: c_int, debug: bool) -> Result<Self, String> {
-        let mut request = v4l2_requestbuffers {
-            count: BUFFERS,
-            type_: Type::VideoOutput as u32,
-            memory: Memory::Mmap as u32,
-            ..unsafe { std::mem::zeroed() }
-        };
-        call(
-            fd,
-            v4l2::vidioc::VIDIOC_REQBUFS,
-            &mut request as *mut _ as *mut c_void,
-            "requesting buffers",
-        )?;
+        let mut request = request_buffers(BUFFERS);
+        call(fd, v4l2::vidioc::VIDIOC_REQBUFS, &mut request, "requesting buffers")?;
         log!(Level::Info, "requested {} buffers and got {}", BUFFERS, request.count);
         let mut buffers = Self {
             fd,
@@ -157,23 +156,13 @@ impl Buffers {
             return Err(String::from("no buffers to write frames into"));
         }
         let mut kind = Type::VideoOutput as c_int;
-        call(
-            fd,
-            v4l2::vidioc::VIDIOC_STREAMON,
-            &mut kind as *mut _ as *mut c_void,
-            "starting the stream",
-        )?;
+        call(fd, v4l2::vidioc::VIDIOC_STREAMON, &mut kind, "starting the stream")?;
         Ok(buffers)
     }
 
     fn map(&self, index: u32) -> Result<Mapping, String> {
         let mut buffer = descriptor(index);
-        call(
-            self.fd,
-            v4l2::vidioc::VIDIOC_QUERYBUF,
-            &mut buffer as *mut _ as *mut c_void,
-            "querying a buffer",
-        )?;
+        call(self.fd, v4l2::vidioc::VIDIOC_QUERYBUF, &mut buffer, "querying a buffer")?;
         let length = buffer.length as usize;
         let data = unsafe {
             v4l2::mmap(
@@ -221,49 +210,34 @@ impl Buffers {
             tv_sec: (timestamp_ns / NANOSECONDS_PER_SECOND) as libc::time_t,
             tv_usec: (timestamp_ns % NANOSECONDS_PER_SECOND / 1000) as libc::suseconds_t,
         };
-        call(
-            self.fd,
-            v4l2::vidioc::VIDIOC_QBUF,
-            &mut buffer as *mut _ as *mut c_void,
-            "queueing a buffer",
-        )
+        call(self.fd, v4l2::vidioc::VIDIOC_QBUF, &mut buffer, "queueing a buffer")
     }
 
     fn dequeue(&self) -> Result<(), String> {
         let mut buffer = descriptor(0);
-        call(
-            self.fd,
-            v4l2::vidioc::VIDIOC_DQBUF,
-            &mut buffer as *mut _ as *mut c_void,
-            "dequeueing a buffer",
-        )
+        call(self.fd, v4l2::vidioc::VIDIOC_DQBUF, &mut buffer, "dequeueing a buffer")
     }
 }
 
 impl Drop for Buffers {
     fn drop(&mut self) {
         let mut kind = Type::VideoOutput as c_int;
-        unsafe {
-            let _ = v4l2::ioctl(
-                self.fd,
-                v4l2::vidioc::VIDIOC_STREAMOFF,
-                &mut kind as *mut _ as *mut c_void,
-            );
-            for mapping in &self.mappings {
-                let _ = v4l2::munmap(mapping.data as *mut c_void, mapping.length);
-            }
-            let mut request = v4l2_requestbuffers {
-                count: 0,
-                type_: Type::VideoOutput as u32,
-                memory: Memory::Mmap as u32,
-                ..std::mem::zeroed()
-            };
-            let _ = v4l2::ioctl(
-                self.fd,
-                v4l2::vidioc::VIDIOC_REQBUFS,
-                &mut request as *mut _ as *mut c_void,
-            );
+        let _ = call(
+            self.fd,
+            v4l2::vidioc::VIDIOC_STREAMOFF,
+            &mut kind,
+            "stopping the stream",
+        );
+        for mapping in &self.mappings {
+            let _ = unsafe { v4l2::munmap(mapping.data as *mut c_void, mapping.length) };
         }
+        let mut request = request_buffers(0);
+        let _ = call(
+            self.fd,
+            v4l2::vidioc::VIDIOC_REQBUFS,
+            &mut request,
+            "releasing the buffers",
+        );
     }
 }
 
