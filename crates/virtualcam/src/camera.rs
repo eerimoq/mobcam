@@ -190,8 +190,7 @@ struct Output<'a> {
     logged_pixel_format: Changed<av::AVPixelFormat>,
     failure: Option<String>,
     debug: bool,
-    previous_write_frame_timestamp: u64,
-    previous_write_frame_clock: u64,
+    deltas: v4l2::Deltas,
 }
 
 impl<'a> Output<'a> {
@@ -206,8 +205,7 @@ impl<'a> Output<'a> {
             logged_pixel_format: Changed::default(),
             failure: None,
             debug,
-            previous_write_frame_timestamp: 0,
-            previous_write_frame_clock: 0,
+            deltas: v4l2::Deltas::default(),
         }
     }
 }
@@ -252,17 +250,7 @@ impl Sink for Output<'_> {
         };
         let timestamp = self.clock.timestamp(frame.pts() as u64, v4l2::now_ns);
         if self.debug {
-            let timestamp_delta = timestamp - self.previous_write_frame_timestamp;
-            self.previous_write_frame_timestamp = timestamp;
-            let clock = v4l2::now_ns();
-            let clock_delta = clock - self.previous_write_frame_clock;
-            self.previous_write_frame_clock = clock;
-            log!(
-                Level::Info,
-                "writing frame with timestamp delta {} ms and clock delta {} ms",
-                timestamp_delta / 1_000_000,
-                clock_delta / 1_000_000
-            );
+            self.deltas.log("writing", timestamp);
         }
         if let Err(error) = self.device.write_frame(picture, &self.buffer, timestamp) {
             self.failure = Some(format!("failed to write a frame: {error}"));

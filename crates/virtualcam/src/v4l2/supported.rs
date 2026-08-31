@@ -1,4 +1,4 @@
-use crate::v4l2::{Colorspace, Format, Picture, Quantization};
+use crate::v4l2::{Colorspace, Deltas, Format, Picture, Quantization};
 use mobcam_core::{Level, log};
 use std::os::raw::{c_int, c_void};
 use std::path::Path;
@@ -123,8 +123,7 @@ struct Buffers {
     queued: usize,
     spacing: Spacing,
     debug: bool,
-    previous_timestamp: u64,
-    previous_clock: u64,
+    deltas: Deltas,
 }
 
 impl Buffers {
@@ -149,8 +148,7 @@ impl Buffers {
             queued: 0,
             spacing: Spacing::default(),
             debug,
-            previous_timestamp: 0,
-            previous_clock: 0,
+            deltas: Deltas::default(),
         };
         for index in 0..request.count {
             buffers.mappings.push(buffers.map(index)?);
@@ -207,17 +205,7 @@ impl Buffers {
         unsafe { ptr::copy_nonoverlapping(data.as_ptr(), mapping.data, data.len()) };
         self.spacing.wait(timestamp_ns);
         if self.debug {
-            let timestamp_delta = timestamp_ns - self.previous_timestamp;
-            self.previous_timestamp = timestamp_ns;
-            let clock = now_ns();
-            let clock_delta = clock - self.previous_clock;
-            self.previous_clock = clock;
-            log!(
-                Level::Info,
-                "queuing frame with timestamp delta {} ms and clock delta {} ms",
-                timestamp_delta / 1_000_000,
-                clock_delta / 1_000_000
-            );
+            self.deltas.log("queuing", timestamp_ns);
         }
         self.queue(index, data.len(), timestamp_ns)?;
         self.next = (index + 1) % self.mappings.len();

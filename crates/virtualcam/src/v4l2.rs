@@ -1,3 +1,5 @@
+use mobcam_core::{Level, log};
+
 #[cfg_attr(target_os = "linux", path = "v4l2/supported.rs")]
 #[cfg_attr(not(target_os = "linux"), path = "v4l2/unsupported.rs")]
 mod device;
@@ -43,4 +45,24 @@ pub struct Picture {
     pub format: Format,
     pub colorspace: Colorspace,
     pub quantization: Quantization,
+}
+
+#[derive(Default)]
+pub struct Deltas {
+    previous_timestamp_ns: u64,
+    previous_clock_ns: u64,
+}
+
+impl Deltas {
+    pub fn log(&mut self, what: &str, timestamp_ns: u64) {
+        let clock_ns = now_ns();
+        log!(
+            Level::Info,
+            "{what} frame with timestamp delta {} ms and clock delta {} ms",
+            (timestamp_ns - self.previous_timestamp_ns) / 1_000_000,
+            (clock_ns - self.previous_clock_ns) / 1_000_000
+        );
+        self.previous_timestamp_ns = timestamp_ns;
+        self.previous_clock_ns = clock_ns;
+    }
 }
