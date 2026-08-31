@@ -3,7 +3,7 @@ members = ["crates/build", "crates/core", "crates/obs-plugin", "crates/virtualca
 resolver = "3"
 
 [workspace.package]
-version = "0.32.0"
+version = "0.33.0"
 edition = "2024"
 rust-version = "1.98"
 license = "GPL-2.0-or-later"
