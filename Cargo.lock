@@ -350,14 +350,14 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "mobcam-build"
-version = "0.33.0"
+version = "1.0.0"
 dependencies = [
  "bindgen 0.72.1",
 ]
 
 [[package]]
 name = "mobcam-core"
-version = "0.33.0"
+version = "1.0.0"
 dependencies = [
  "mobcam-build",
  "plist",
@@ -367,7 +367,7 @@ dependencies = [
 
 [[package]]
 name = "mobcam-obs-plugin"
-version = "0.33.0"
+version = "1.0.0"
 dependencies = [
  "cc",
  "mobcam-build",
@@ -376,7 +376,7 @@ dependencies = [
 
 [[package]]
 name = "mobcam-virtualcam"
-version = "0.33.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "libc",
