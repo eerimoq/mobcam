@@ -53,7 +53,7 @@ impl Backend {
 
     fn hint(self, device: &str) -> String {
         match self {
-            Self::Pulse => format!("create it with `pactl load-module module-null-sink sink_name={device}`"),
+            Self::Pulse => format!("create a sink with `pactl load-module module-null-sink sink_name={device}`"),
             Self::Alsa => String::from("load the module with `sudo modprobe snd-aloop`"),
         }
     }
@@ -289,12 +289,10 @@ fn resolve(backend: AudioBackend, device: Option<&str>) -> Option<(Backend, Stri
 pub fn hint() -> String {
     let mut hints = Vec::new();
     if cfg!(pulse) {
-        hints.push(format!(
-            "create a sink with `pactl load-module module-null-sink sink_name={DEFAULT_SINK}`"
-        ));
+        hints.push(Backend::Pulse.hint(DEFAULT_SINK));
     }
     if cfg!(alsa) {
-        hints.push(String::from("load the module with `sudo modprobe snd-aloop`"));
+        hints.push(Backend::Alsa.hint(DEFAULT_SINK));
     }
     match hints.is_empty() {
         true => String::from("install libpulse-dev or libasound2-dev and build mobcam-virtualcam again"),
