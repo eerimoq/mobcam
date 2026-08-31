@@ -22,37 +22,24 @@ def find_config_toml() -> Path:
 
 class Config:
     def __init__(self) -> None:
-        self.config_toml = find_config_toml()
-        self._config: dict[str, Any] = tomllib.loads(self.config_toml.read_text())
-
-    def general(self) -> dict[str, Any]:
-        general: dict[str, Any] = self._config["general"]
-        return general
+        self._config: dict[str, Any] = tomllib.loads(find_config_toml().read_text())
 
     def remote_control_port(self) -> int:
-        port: int = self.general()["remote-control-port"]
+        port: int = self._config["general"]["remote-control-port"]
         return port
 
     def tester_ip_address(self) -> str:
-        address: str = self.general()["tester-ip-address"]
-        return address
-
-    def virtualcam_service(self) -> str:
-        service: str = self._virtualcam()["service"]
-        return service
+        return self._string("general", "tester-ip-address")
 
     def video_device(self) -> str:
-        device: str = self._virtualcam()["video-device"]
-        return device
+        return self._string("virtualcam", "video-device")
 
     def audio_playback_device(self) -> str:
-        device: str = self._virtualcam()["audio-playback-device"]
-        return device
+        return self._string("virtualcam", "audio-playback-device")
 
     def audio_capture_device(self) -> str:
-        device: str = self._virtualcam()["audio-capture-device"]
-        return device
+        return self._string("virtualcam", "audio-capture-device")
 
-    def _virtualcam(self) -> dict[str, Any]:
-        virtualcam: dict[str, Any] = self._config["virtualcam"]
-        return virtualcam
+    def _string(self, section: str, key: str) -> str:
+        value: str = self._config[section][key]
+        return value

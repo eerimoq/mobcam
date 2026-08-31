@@ -21,7 +21,6 @@ BINARY = str(ROOT_DIR / "target" / "release" / "mobcam-virtualcam")
 class VirtualCam:
     def __init__(self, config: Config) -> None:
         self._config = config
-        self._service = config.virtualcam_service()
         self._video_device = config.video_device()
         self._audio_capture_device = config.audio_capture_device()
         self.log = Log()
