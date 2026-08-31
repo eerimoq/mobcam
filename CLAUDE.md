@@ -14,6 +14,7 @@ frames to a consumer. Two consumers ship from this repository:
 | `crates/obs-plugin` | A `Mobcam` source type in OBS Studio. macOS, Windows, Linux. `cdylib`. |
 | `crates/virtualcam` | `mobcam-virtualcam`, a v4l2loopback camera plus a virtual microphone. Linux only. Binary. |
 | `crates/core` | Everything both share: usbmux transport, wire protocol, FFmpeg decoding. |
+| `crates/build` | Build script helpers both `build.rs` share: cargo environment, pkg-config, bindgen. |
 
 ## Commands
 
@@ -89,7 +90,9 @@ loaded libavcodec and libavutil have the major version the plugin was built agai
 older than it — which is the only guard on Linux, where the libraries come from the distribution.
 
 `core/build.rs` and `obs-plugin/build.rs` run bindgen at build time and write `$OUT_DIR/ffmpeg.rs`
-and `$OUT_DIR/obs.rs`, included by `ffmpeg/sys.rs` and `obs/sys.rs`. Generation is skipped when a
+and `$OUT_DIR/obs.rs`, included by `ffmpeg/sys.rs` and `obs/sys.rs`. Both are thin: the cargo
+environment, `pkg-config`, the shared bindgen settings and the stamped `generate()` live in
+`crates/build`, which each of them takes as a build dependency. Generation is skipped when a
 `.stamp` file matches the flags, header text and the OBS source hash, so touching an allowlist in
 `build.rs` regenerates and nothing else does. On Windows there is no libobs import library, so
 `obs-plugin/build.rs` parses the generated bindings into an `obs.def` and calls `lib.exe`.

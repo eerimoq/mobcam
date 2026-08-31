@@ -17,7 +17,7 @@ doctest = false
 mobcam-core = { path = "../core" }
 
 [build-dependencies]
-bindgen = "0.72"
+mobcam-build = { path = "../build" }
 
 [target.'cfg(windows)'.build-dependencies]
 cc = "1"

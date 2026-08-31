@@ -1,8 +1,9 @@
-use std::env;
+use mobcam_build::{dependencies_dir, generate, link_pkg_config, out_dir, require, target_os, write_if_changed};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
+
+const HEADER: &str = "#include <obs-module.h>\n#include <util/dstr.h>\n#include <util/platform.h>\n";
 
 enum Platform {
     Macos,
@@ -12,10 +13,7 @@ enum Platform {
 
 impl Platform {
     fn current() -> Platform {
-        match env::var("CARGO_CFG_TARGET_OS")
-            .expect("CARGO_CFG_TARGET_OS is set by cargo")
-            .as_str()
-        {
+        match target_os().as_str() {
             "macos" => Platform::Macos,
             "windows" => Platform::Windows,
             "linux" => Platform::Linux,
@@ -24,50 +22,14 @@ impl Platform {
     }
 }
 
-fn manifest_dir() -> PathBuf {
-    PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by cargo"))
-}
-
-fn out_dir() -> PathBuf {
-    PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is set by cargo"))
-}
-
-fn target() -> String {
-    env::var("TARGET").expect("TARGET is set by cargo")
-}
-
-fn repo_root() -> PathBuf {
-    manifest_dir()
-        .parent()
-        .and_then(|crates| crates.parent())
-        .expect("the crate lives in the repository")
-        .to_path_buf()
-}
-
-fn dependencies_dir() -> PathBuf {
-    repo_root().join(".deps")
-}
-
 fn obs_sources_hash() -> String {
     let marker = dependencies_dir().join(".dependency_obs-studio.sha256");
     println!("cargo:rerun-if-changed={}", marker.display());
     fs::read_to_string(&marker).unwrap_or_default().trim().to_string()
 }
 
-fn require(path: PathBuf) -> PathBuf {
-    assert!(
-        path.exists(),
-        "{} is missing; run `python3 scripts/build.py deps` to download the dependencies",
-        path.display()
-    );
-    path
-}
-
-fn write_if_changed(path: &Path, contents: &str) {
-    if fs::read_to_string(path).is_ok_and(|old| old == contents) {
-        return;
-    }
-    fs::write(path, contents).unwrap_or_else(|error| panic!("failed to write {}: {error}", path.display()));
+fn obs_include_dir() -> PathBuf {
+    require(dependencies_dir().join("obs-studio").join("libobs"))
 }
 
 fn obsconfig_dir() -> PathBuf {
@@ -80,35 +42,15 @@ fn obsconfig_dir() -> PathBuf {
     dir
 }
 
-fn pkg_config_output(packages: &[&str], flags: &str) -> String {
-    let output = Command::new("pkg-config")
-        .arg(flags)
-        .args(packages)
-        .output()
-        .expect("pkg-config is installed");
-    assert!(
-        output.status.success(),
-        "pkg-config {flags} {} failed: {}",
-        packages.join(" "),
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-    String::from_utf8(output.stdout).expect("pkg-config prints UTF-8")
-}
-
-fn pkg_config(packages: &[&str], flags: &str) -> Vec<String> {
-    pkg_config_output(packages, flags)
-        .split_whitespace()
-        .map(|flag| flag[2..].to_string())
-        .collect()
+fn configure_bundled() -> Vec<PathBuf> {
+    let prebuilt_include = require(dependencies_dir().join("prebuilt").join("include"));
+    vec![obs_include_dir(), prebuilt_include, obsconfig_dir()]
 }
 
 fn configure_macos() -> Vec<PathBuf> {
-    let dependencies = dependencies_dir();
-    let obs_include = require(dependencies.join("obs-studio").join("libobs"));
-    let prebuilt_include = require(dependencies.join("prebuilt").join("include"));
     println!("cargo:rustc-link-arg=-Wl,-undefined,dynamic_lookup");
     println!("cargo:rustc-link-arg=-Wl,-rpath,@loader_path/../Frameworks");
-    vec![obs_include, prebuilt_include, obsconfig_dir()]
+    configure_bundled()
 }
 
 #[cfg(windows)]
@@ -152,7 +94,7 @@ fn write_import_library(bindings: &Path) {
     }
     let definition = out_dir().join("obs.def");
     fs::write(&definition, exports).expect("failed to write obs.def");
-    let mut command = cc::windows_registry::find(&target(), "lib.exe")
+    let mut command = cc::windows_registry::find(&mobcam_build::target(), "lib.exe")
         .unwrap_or_else(|| panic!("lib.exe not found; a Visual Studio installation is required"));
     let status = command
         .arg("/nologo")
@@ -170,67 +112,22 @@ fn write_import_library(_bindings: &Path) {
 }
 
 fn configure_windows() -> Vec<PathBuf> {
-    let dependencies = dependencies_dir();
-    let obs_include = require(dependencies.join("obs-studio").join("libobs"));
-    let prebuilt_include = require(dependencies.join("prebuilt").join("include"));
     println!("cargo:rustc-link-search=native={}", out_dir().display());
     println!("cargo:rustc-link-lib=dylib=obs");
-    vec![obs_include, prebuilt_include, obsconfig_dir()]
+    configure_bundled()
 }
 
 fn configure_linux() -> Vec<PathBuf> {
-    let packages = ["libobs"];
-    for dir in pkg_config(&packages, "--libs-only-L") {
-        println!("cargo:rustc-link-search=native={dir}");
-    }
-    for library in pkg_config(&packages, "--libs-only-l") {
-        println!("cargo:rustc-link-lib=dylib={library}");
-    }
+    link_pkg_config(&["libobs"]);
     // The headers of the oldest supported OBS Studio, not the ones the
     // distribution installs, so that the plugin loads in every newer one as
     // well.
-    let obs_include = require(dependencies_dir().join("obs-studio").join("libobs"));
-    vec![obs_include, obsconfig_dir()]
-}
-
-fn builder(include_dirs: &[PathBuf]) -> bindgen::Builder {
-    let mut builder = bindgen::Builder::default()
-        .clang_arg(format!("--target={}", target()))
-        .clang_arg("-Wno-implicit-function-declaration")
-        .derive_default(true)
-        .generate_comments(false)
-        .layout_tests(false)
-        .default_enum_style(bindgen::EnumVariation::Consts)
-        .prepend_enum_name(false);
-    for dir in include_dirs {
-        builder = builder.clang_arg(format!("-I{}", dir.display()));
-    }
-    builder
-}
-
-fn generate(name: &str, header: &str, builder: bindgen::Builder) -> PathBuf {
-    let path = out_dir().join(format!("{name}.rs"));
-    let stamp_path = out_dir().join(format!("{name}.stamp"));
-    let stamp = format!(
-        "{}\n{header}\n{}",
-        builder.command_line_flags().join(" "),
-        obs_sources_hash()
-    );
-    if path.exists() && fs::read_to_string(&stamp_path).is_ok_and(|old| old == stamp) {
-        return path;
-    }
-    builder
-        .header_contents(&format!("{name}.h"), header)
-        .generate()
-        .unwrap_or_else(|error| panic!("failed to generate {name} bindings: {error}"))
-        .write_to_file(&path)
-        .unwrap_or_else(|error| panic!("failed to write {name}.rs: {error}"));
-    write_if_changed(&stamp_path, &stamp);
-    path
+    vec![obs_include_dir(), obsconfig_dir()]
 }
 
 fn generate_obs(include_dirs: &[PathBuf]) -> PathBuf {
-    let builder = builder(include_dirs)
+    let builder = mobcam_build::builder(include_dirs)
+        .clang_arg("-Wno-implicit-function-declaration")
         .allowlist_item("obs_.*")
         .allowlist_item("OBS_.*")
         .allowlist_item("blog")
@@ -250,11 +147,7 @@ fn generate_obs(include_dirs: &[PathBuf]) -> PathBuf {
         .allowlist_item("text_lookup_.*")
         .allowlist_item("lookup_t")
         .blocklist_function("blogva");
-    generate(
-        "obs",
-        "#include <obs-module.h>\n#include <util/dstr.h>\n#include <util/platform.h>\n",
-        builder,
-    )
+    generate("obs", HEADER, builder, &obs_sources_hash())
 }
 
 fn main() {

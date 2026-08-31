@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/obs-plugin", "crates/virtualcam"]
+members = ["crates/build", "crates/core", "crates/obs-plugin", "crates/virtualcam"]
 resolver = "3"
 
 [workspace.package]
