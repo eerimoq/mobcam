@@ -15,6 +15,7 @@ from build import REPO_ROOT
 from build import VERSION
 from build import Error
 from build import Platform
+from build import Signing
 from build import build_products
 from build import dependencies
 from build import host_platform
@@ -130,10 +131,12 @@ def build(args: argparse.Namespace) -> None:
         build_products(args.codesign_application_identity)
         package_products(
             installer=True,
-            codesign_application_identity=args.codesign_application_identity,
-            codesign_installer_identity=args.codesign_installer_identity,
-            notarization_user=args.notarization_user,
-            notarization_password=args.notarization_password,
+            signing=Signing(
+                args.codesign_application_identity,
+                args.codesign_installer_identity,
+                args.notarization_user,
+                args.notarization_password,
+            ),
         )
     else:
         build_products()

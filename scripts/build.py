@@ -29,10 +29,16 @@ class DependencySource:
     sha256: str
 
 
+@dataclass(frozen=True)
+class Signing:
+    application_identity: str | None = None
+    installer_identity: str | None = None
+    notarization_user: str | None = None
+    notarization_password: str | None = None
+
+
 @dataclass
 class Dependency:
-    label: str
-    version: str
     directory: str
     strip_root: bool
     os: dict[str, DependencySource]
@@ -131,30 +137,24 @@ OBS_STUDIO_VERSION = "28.0.0"
 OBS_STUDIO_URL = "https://github.com/obsproject/obs-studio/archive/refs/tags"
 PREBUILT_VERSION = "2026-07-15"
 PREBUILT_URL = "https://github.com/obsproject/obs-deps/releases/download"
+OBS_STUDIO_TARBALL = DependencySource(
+    url=f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.tar.gz",
+    sha256="412a1a26699a6861dbbe93346310d002369c62e00626e8c3a77c127e5e1c06e8",
+)
 DEPENDENCIES: list[Dependency] = [
     Dependency(
-        label="OBS sources",
-        version=OBS_STUDIO_VERSION,
         directory="obs-studio",
         strip_root=True,
         os={
-            "macos": DependencySource(
-                url=f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.tar.gz",
-                sha256="412a1a26699a6861dbbe93346310d002369c62e00626e8c3a77c127e5e1c06e8",
-            ),
+            "macos": OBS_STUDIO_TARBALL,
             "windows": DependencySource(
                 url=f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.zip",
                 sha256="2f54f6f658b7cada48279293c3d5b972835303accddc4e2a739c9e88cdd500cf",
             ),
-            "linux": DependencySource(
-                url=f"{OBS_STUDIO_URL}/{OBS_STUDIO_VERSION}.tar.gz",
-                sha256="412a1a26699a6861dbbe93346310d002369c62e00626e8c3a77c127e5e1c06e8",
-            ),
+            "linux": OBS_STUDIO_TARBALL,
         },
     ),
     Dependency(
-        label="Pre-Built obs-deps",
-        version=PREBUILT_VERSION,
         directory="prebuilt",
         strip_root=False,
         os={
@@ -173,6 +173,11 @@ DEPENDENCIES: list[Dependency] = [
 
 class Error(Exception):
     pass
+
+
+def require_staged(path: Path) -> None:
+    if not path.is_dir():
+        raise Error("no staged plugin found; run `python scripts/build.py build` first")
 
 
 def run(command: Command, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
@@ -508,38 +513,19 @@ def tar_xz(archive: Path, directory: Path, members: Iterable[str]) -> None:
             tar_file.add(directory / member, arcname=member)
 
 
-def package_macos(
-    installer: bool,
-    codesign_application_identity: str | None,
-    codesign_installer_identity: str | None,
-    notarization_user: str | None,
-    notarization_password: str | None,
-) -> None:
+def package_macos(installer: bool, signing: Signing) -> None:
     base = OBS_PLUGIN.output_name("macos")
     bundle, _, symbols = macos_paths()
-    if not bundle.is_dir():
-        raise Error("no staged plugin found; run `python scripts/build.py build` first")
+    require_staged(bundle)
     if installer:
-        package_macos_installer(
-            base,
-            codesign_application_identity,
-            codesign_installer_identity,
-            notarization_user,
-            notarization_password,
-        )
+        package_macos_installer(base, signing)
     else:
         tar_xz(RELEASE_DIR / f"{base}.tar.xz", OBS_PLUGIN.install_dir, [bundle.name])
     if symbols.is_dir():
         tar_xz(RELEASE_DIR / f"{base}-dSYMs.tar.xz", OBS_PLUGIN.install_dir, [symbols.name])
 
 
-def package_macos_installer(
-    base: str,
-    codesign_application_identity: str | None,
-    codesign_installer_identity: str | None,
-    notarization_user: str | None,
-    notarization_password: str | None,
-) -> None:
+def package_macos_installer(base: str, signing: Signing) -> None:
     staging = RELEASE_DIR / "installer"
     root = staging / "root" / "Library" / "Application Support" / "obs-studio" / "plugins"
     bundle, _, _ = macos_paths()
@@ -582,43 +568,25 @@ def package_macos_installer(
         ]
     )
     remove(package)
-    if codesign_installer_identity:
-        run(
-            [
-                "productsign",
-                "--sign",
-                codesign_installer_identity,
-                unsigned,
-                package,
-            ]
-        )
+    if signing.installer_identity:
+        run(["productsign", "--sign", signing.installer_identity, unsigned, package])
     else:
         unsigned.replace(package)
     remove(staging)
-    if notarization_user or notarization_password:
-        notarize(
-            package,
-            OBS_PLUGIN.name,
-            codesign_application_identity,
-            notarization_user,
-            notarization_password,
-        )
+    if signing.notarization_user or signing.notarization_password:
+        notarize(package, signing)
 
 
-def notarize(
-    package: Path,
-    name: str,
-    codesign_application_identity: str | None,
-    user: str | None,
-    password: str | None,
-) -> None:
-    team = (codesign_application_identity or "").rpartition("(")[2].rstrip(")")
+def notarize(package: Path, signing: Signing) -> None:
+    team = (signing.application_identity or "").rpartition("(")[2].rstrip(")")
+    user = signing.notarization_user
+    password = signing.notarization_password
     if not (user and password and team):
         raise Error(
             "notarization needs --notarization-user, --notarization-password "
             "and a team in --codesign-application-identity"
         )
-    profile = f"{name}-Codesign-Password"
+    profile = f"{OBS_PLUGIN.name}-Codesign-Password"
     run(
         [
             "xcrun",
@@ -648,8 +616,7 @@ def notarize(
 
 
 def package_linux(installer: bool) -> None:
-    if not (OBS_PLUGIN.install_dir / "lib").is_dir():
-        raise Error("no staged plugin found; run `python scripts/build.py build` first")
+    require_staged(OBS_PLUGIN.install_dir / "lib")
     plugin_base = OBS_PLUGIN.output_name("linux")
     tar_xz(RELEASE_DIR / f"{plugin_base}.tar.xz", OBS_PLUGIN.install_dir, ["lib", "share"])
     source_tarball()
@@ -689,8 +656,7 @@ def source_tarball() -> None:
 def package_windows(installer: bool) -> None:
     base = OBS_PLUGIN.output_name("windows")
     root = OBS_PLUGIN.install_dir / OBS_PLUGIN.module
-    if not root.is_dir():
-        raise Error("no staged plugin found; run `python scripts/build.py build` first")
+    require_staged(root)
     archive = RELEASE_DIR / f"{base}.zip"
     remove(archive)
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
@@ -733,22 +699,10 @@ def package_windows_installer(base: str) -> None:
     remove(script)
 
 
-def package_products(
-    installer: bool = False,
-    codesign_application_identity: str | None = None,
-    codesign_installer_identity: str | None = None,
-    notarization_user: str | None = None,
-    notarization_password: str | None = None,
-) -> None:
+def package_products(installer: bool = False, signing: Signing = Signing()) -> None:
     target_platform = host_platform()
     if target_platform == "macos":
-        package_macos(
-            installer,
-            codesign_application_identity,
-            codesign_installer_identity,
-            notarization_user,
-            notarization_password,
-        )
+        package_macos(installer, signing)
     elif target_platform == "windows":
         package_windows(installer)
     else:
@@ -758,10 +712,12 @@ def package_products(
 def package(args: argparse.Namespace) -> None:
     package_products(
         args.installer,
-        args.codesign_application_identity,
-        args.codesign_installer_identity,
-        args.notarization_user,
-        args.notarization_password,
+        Signing(
+            args.codesign_application_identity,
+            args.codesign_installer_identity,
+            args.notarization_user,
+            args.notarization_password,
+        ),
     )
 
 
