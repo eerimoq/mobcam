@@ -1,6 +1,7 @@
 import time
 
-from ..utils.common.ffmpeg import FfmpegVideoCodec
+from systest_moblin.ffmpeg import FfmpegVideoCodec
+
 from ..utils.generate_device_settings import AudioCodec
 from ..utils.generate_device_settings import Resolution
 from ..utils.generate_device_settings import VideoCodec

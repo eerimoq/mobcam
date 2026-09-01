@@ -1,9 +1,10 @@
 codespell
-ruff
 isort
-mypy
-systest
-xdg-base-dirs
 moblin_assistant
+mypy
 pyperclip
+ruff
+systest
+systest_moblin
 websockets
+xdg-base-dirs

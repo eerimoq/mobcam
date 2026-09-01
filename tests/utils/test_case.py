@@ -1,4 +1,5 @@
-from .common import test_case
+from systest_moblin import test_case
+
 from .moblin import Moblin
 
 

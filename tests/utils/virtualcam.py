@@ -4,10 +4,10 @@ from types import TracebackType
 from typing import Self
 
 from systest import ManagedProcess
+from systest_moblin.ffmpeg import FfmpegVideoCodec
+from systest_moblin.ffmpeg import ffmpeg_run
+from systest_moblin.ffmpeg import video_encoder_args
 
-from .common.ffmpeg import FfmpegVideoCodec
-from .common.ffmpeg import ffmpeg_run
-from .common.ffmpeg import video_encoder_args
 from .config import Config
 from .recording import Recording
 from .utils import FILES_DIR
