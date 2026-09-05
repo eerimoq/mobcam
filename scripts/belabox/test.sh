@@ -101,15 +101,9 @@ build()
 
 run_tests()
 {
-    local arguments
-
-    arguments=
-    if [ $# -gt 0 ] ; then
-        arguments=$(printf '%q ' "$@")
-    fi
     export PATH=$FFMPEG_PREFIX/bin:$PATH
     . $VENV/bin/activate
-    make test-virtualcam TEST_ARGS="$arguments"
+    python -m tests.test_virtualcam "$@"
 }
 
 main()

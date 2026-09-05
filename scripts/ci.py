@@ -31,6 +31,7 @@ UBUNTU_PACKAGES = [
     "libpulse-dev",
     "libasound2-dev",
     "pkg-config",
+    "just",
 ]
 TARGETS: dict[Platform, list[str]] = {
     "macos": sorted(MACOS_TARGETS.values()),
@@ -120,7 +121,7 @@ def style_and_lint(_: argparse.Namespace) -> None:
     dependencies()
     run([sys.executable, "-m", "pip", "install", "--requirement", REPO_ROOT / "scripts" / "requirements.txt"])
     for target in ["style-check", "lint", "unit-test", "spell-check"]:
-        run(["make", "--directory", REPO_ROOT, target])
+        run(["just", "--justfile", REPO_ROOT / "justfile", target])
 
 
 def build(args: argparse.Namespace) -> None:

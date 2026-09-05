@@ -18,30 +18,31 @@ frames to a consumer. Two consumers ship from this repository:
 
 ## Commands
 
-Build needs a [rustup](https://rustup.rs) toolchain, not a distro cargo: it is the one that honours
+Commands are recipes in `justfile`, run with [just](https://just.systems). Build needs a
+[rustup](https://rustup.rs) toolchain, not a distro cargo: it is the one that honours
 `rust-toolchain.toml` and the only one that can build the second arch of the macOS universal binary.
 
 ```shell
 rustup target add aarch64-apple-darwin x86_64-apple-darwin   # macOS only
-make build       # scripts/build.py deps && scripts/build.py build
-make install     # macOS/Linux only; installs into the user's OBS plugin dir (+ ~/.local/bin)
-make package     # release artifacts, with installers
-make clean       # removes release/ and target/
+just build       # scripts/build.py deps && scripts/build.py build
+just install     # macOS/Linux only; installs into the user's OBS plugin dir (+ ~/.local/bin)
+just package     # release artifacts, with installers
+just clean       # removes release/ and target/
 ```
 
-Quality gates. `scripts/ci.py style_and_lint` runs all of them but `make style`, which is the one
+Quality gates. `scripts/ci.py style_and_lint` runs all of them but `just style`, which is the one
 that rewrites files:
 
 ```shell
-make style        # cargo fmt, isort, ruff format
-make style-check
-make lint         # clippy --deny warnings, ruff check, mypy --strict
-make unit-test    # cargo test --workspace
-make spell-check  # codespell
+just style        # cargo fmt, isort, ruff format
+just style-check
+just lint         # clippy --deny warnings, ruff check, mypy --strict
+just unit-test    # cargo test --workspace
+just spell-check  # codespell
 ```
 
 Every tool is invoked with an explicit config out of `.config/`. Plain `cargo fmt` uses the wrong
-width — always `cargo fmt -- --config-path .config/rustfmt.toml`, or just `make style`.
+width — always `cargo fmt -- --config-path .config/rustfmt.toml`, or `just style`.
 
 A single test:
 `cargo test -p mobcam-virtualcam convert::tests::every_other_row_and_column_is_kept`. Unit tests live
@@ -55,16 +56,16 @@ tests need a device on a USB cable, a `tests/config.toml` copied from `tests/con
 and settings imported into Moblin.
 
 ```shell
-make test-generate-device-settings-clipboard   # the Moblin settings to import on the device
-make test-obs-plugin        # macOS; drives OBS Studio and records with it
-make test-virtualcam        # Linux; records the camera and the microphone with ffmpeg
-make test-virtualcam-belabox  # rsyncs the clone to a BELABOX over ssh and runs it there
+just test-generate-device-settings-clipboard   # the Moblin settings to import on the device
+just test-obs-plugin        # macOS; drives OBS Studio and records with it
+just test-virtualcam        # Linux; records the camera and the microphone with ffmpeg
+just test-virtualcam-belabox  # rsyncs the clone to a BELABOX over ssh and runs it there
 ```
 
-Both runners take extra arguments through `TEST_ARGS`, and write to `logs/` and `tests/files/`.
+Both runners pass extra arguments straight through, and write to `logs/` and `tests/files/`.
 
 Python tooling comes from `scripts/requirements.txt` (`.venv/` is already set up in a clone).
-`scripts` and `tests` are the `CODE_DIRS` the Python gates run over.
+`scripts` and `tests` are the `code_dirs` the Python gates run over.
 
 ## Dependencies and code generation
 

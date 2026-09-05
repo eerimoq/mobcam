@@ -17,7 +17,7 @@ the machine the tests run on, the one the device connects back to.
 
 1. Generate the settings.
    ```bash
-   make test-generate-device-settings-clipboard
+   just test-generate-device-settings-clipboard
    ```
 2. Import them into Moblin, on the device.
 3. Connect the device to the machine with a USB cable, unlock it and tap Trust.
@@ -37,7 +37,7 @@ arrives late looks like once OBS has re-timed everything it writes.
 ```
 
 macOS only. OBS Studio must be in `/Applications/OBS.app` with the plugin installed
-(`make install`), must have been started once so it has a configuration, and must not be running when
+(`just install`), must have been started once so it has a configuration, and must not be running when
 the tests start. The tests create and use their own `MobcamTest` profile and scene collection and
 leave the ones already there alone, and enable the obs-websocket server while they run.
 
@@ -45,7 +45,7 @@ Point the device at something that moves. A still scene gives a recording of ide
 is exactly what the duplicated frame check looks for, and every test fails.
 
 ```bash
-make test-obs-plugin
+just test-obs-plugin
 ```
 
 # Virtual camera
@@ -66,7 +66,7 @@ Linux only, on a machine set up by [install.sh](../scripts/belabox/install.sh). 
 own `mobcam-virtualcam`, so the service must not be running.
 
 ```bash
-make test-virtualcam
+just test-virtualcam
 ```
 
 Or on a BELABOX over SSH (user@belabox.local, no password), which builds, stops the service and
@@ -74,7 +74,7 @@ copies the logs and the recordings back when it is done.
 
 ```bash
 sudo apt install rsync
-make test-virtualcam-belabox
+just test-virtualcam-belabox
 ```
 
 ## BELABOX tips and tricks
